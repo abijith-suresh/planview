@@ -225,6 +225,29 @@ test("repository foundation has the expected configuration", () => {
     "core typecheck script"
   );
 
+  const storagePackageJson = readJson("packages/storage/package.json");
+  expectEqual(storagePackageJson.name, "@planview/storage", "storage package name");
+  expectEqual(storagePackageJson.private, true, "storage package privacy");
+  expectEqual(storagePackageJson.type, "module", "storage package module type");
+  expectProperty(
+    storagePackageJson.scripts,
+    "test",
+    "npm run build && node --test test/storage.test.mjs",
+    "storage test script"
+  );
+  expectProperty(
+    storagePackageJson.scripts,
+    "typecheck",
+    "tsc --project tsconfig.json --noEmit",
+    "storage typecheck script"
+  );
+  expectProperty(
+    storagePackageJson.dependencies,
+    "effect",
+    "4.0.0-beta.107",
+    "storage Effect dependency"
+  );
+
   const lockfile = readJson("package-lock.json");
   expectEqual(lockfile.lockfileVersion, 3, "lockfile version");
   assert.ok(
@@ -269,4 +292,18 @@ test("repository foundation has the expected configuration", () => {
   const coreLockPackage = lockfile.packages["packages/core"];
   expectProperty(coreLockPackage, "name", corePackageJson.name, "package-lock core package name");
   expectProperty(coreLockPackage, "version", corePackageJson.version, "package-lock core version");
+
+  const storageLockPackage = lockfile.packages["packages/storage"];
+  expectProperty(
+    storageLockPackage,
+    "name",
+    storagePackageJson.name,
+    "package-lock storage package name"
+  );
+  expectProperty(
+    storageLockPackage,
+    "version",
+    storagePackageJson.version,
+    "package-lock storage version"
+  );
 });

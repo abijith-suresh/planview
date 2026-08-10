@@ -5,14 +5,15 @@ immutable localhost URL.
 
 ## Bootstrap status
 
-Milestone 0 includes the repository foundation, the public `planview` CLI
-workspace, and the private `@planview/core` workspace. The CLI is an installable
+The foundation includes the public `planview` CLI workspace and the private
+`@planview/core` and `@planview/storage` workspaces. The CLI is an installable
 TypeScript ESM package with deterministic help and version output; application
-subcommands are intentionally deferred to later milestones. Core currently only
-resolves conventional per-user application-data paths and holds the fixed v1
-policy values; it does not create directories or perform storage I/O. The private
-`apps/site` workspace is a static project site, kept separate from the local
-daemon and application UI.
+subcommands are intentionally deferred to later milestones. Core resolves
+conventional per-user application-data paths and holds the fixed v1 policy
+values. Storage owns only daemon metadata in a versioned SQLite database: it does
+not copy files, publish URLs, run cleanup, or expose daemon/HTTP behavior. The
+private `apps/site` workspace is a static project site, kept separate from the
+local daemon and application UI.
 
 ## Prerequisites
 
@@ -30,8 +31,9 @@ npm run verify
 ```
 
 The root verification runs formatting, linting, workspace typechecks, the
-foundation smoke test, the CLI's built-in tests, and workspace builds. The CLI
-package can also be checked directly:
+foundation smoke test, the CLI's built-in tests, storage's hermetic SQLite
+integration tests, and workspace builds. The CLI package can also be checked
+directly:
 
 ```sh
 npm run typecheck --workspace planview
@@ -92,6 +94,7 @@ and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
 - `apps/cli` — public command-line package (`planview`)
 - `apps/site` — private static project site
 - `packages/core` — private path and v1 policy foundation
+- `packages/storage` — private daemon-owned SQLite metadata boundary
 - `packages/*` — reusable implementation packages
 
 Reusable packages, the application runtime, and persistence layers will be
