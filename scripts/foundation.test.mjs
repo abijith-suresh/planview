@@ -130,8 +130,14 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(packageJson.devDependencies, "typescript", "6.0.3", "TypeScript dependency");
   expectProperty(
     packageJson.scripts,
+    "build",
+    "npm run build --workspaces --if-present",
+    "build script"
+  );
+  expectProperty(
+    packageJson.scripts,
     "check",
-    "npm run format:check && npm run lint && npm run test",
+    "npm run format:check && npm run lint && npm run typecheck && npm run test",
     "check script"
   );
   expectProperty(packageJson.scripts, "format", "biome format --write .", "format script");
@@ -140,10 +146,41 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     packageJson.scripts,
     "test",
-    "node --test scripts/foundation.test.mjs",
+    "node --test scripts/foundation.test.mjs && npm run test --workspaces --if-present",
     "test script"
   );
-  expectProperty(packageJson.scripts, "verify", "npm run check", "verify script");
+  expectProperty(
+    packageJson.scripts,
+    "typecheck",
+    "npm run typecheck --workspaces --if-present",
+    "typecheck script"
+  );
+  expectProperty(packageJson.scripts, "verify", "npm run check && npm run build", "verify script");
+
+  const cliPackageJson = readJson("apps/cli/package.json");
+  expectEqual(cliPackageJson.name, "planview", "CLI package name");
+  expectEqual(cliPackageJson.type, "module", "CLI package module type");
+  expectProperty(cliPackageJson.bin, "planview", "./dist/index.js", "CLI bin mapping");
+  expectEqual(cliPackageJson.files, ["dist", "README.md"], "CLI publish files");
+  expectProperty(
+    cliPackageJson.scripts,
+    "build",
+    "tsc --project tsconfig.json && node scripts/make-executable.mjs dist/index.js",
+    "CLI build script"
+  );
+  expectProperty(cliPackageJson.scripts, "prepack", "npm run build", "CLI prepack script");
+  expectProperty(
+    cliPackageJson.scripts,
+    "typecheck",
+    "tsc --project tsconfig.json --noEmit",
+    "CLI typecheck script"
+  );
+  expectProperty(
+    cliPackageJson.scripts,
+    "test",
+    "npm run build && node --test test/cli.test.mjs",
+    "CLI test script"
+  );
 
   const lockfile = readJson("package-lock.json");
   expectEqual(lockfile.lockfileVersion, 3, "lockfile version");

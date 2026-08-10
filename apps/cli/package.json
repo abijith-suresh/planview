@@ -1,0 +1,31 @@
+{
+  "name": "planview",
+  "version": "0.1.0",
+  "description": "Turn an HTML file into a persistent, immutable localhost URL.",
+  "type": "module",
+  "engines": {
+    "node": ">=24.19.0 <25"
+  },
+  "bin": {
+    "planview": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json && node scripts/make-executable.mjs dist/index.js",
+    "prepack": "npm run build",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/cli.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1"
+  }
+}

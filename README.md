@@ -5,9 +5,10 @@ immutable localhost URL.
 
 ## Bootstrap status
 
-Milestone 0 currently contains only the repository foundation: npm workspaces,
-Node.js 24 pinning, shared strict TypeScript settings, Biome formatting/linting,
-and runnable quality scripts. There is intentionally no application source or runtime package yet.
+Milestone 0 includes the repository foundation and the public `planview` CLI
+workspace. The CLI is an installable TypeScript ESM package with deterministic
+help and version output; application subcommands are intentionally deferred to
+later milestones.
 
 ## Prerequisites
 
@@ -24,16 +25,23 @@ Run the complete foundation check with:
 npm run verify
 ```
 
-The current root check validates this foundation: formatting, linting, and a
-Node built-in smoke test for the required configuration, files, and scripts. It
-does not claim to typecheck or build future workspaces; there is no TypeScript
-input yet. When workspace packages are added, each package must declare
-`"type": "module"` and its checks must be explicitly wired into the root
-orchestration.
+The root verification runs formatting, linting, workspace typechecks, the
+foundation smoke test, the CLI's built-in tests, and workspace builds. The CLI
+package can also be checked directly:
+
+```sh
+npm run typecheck --workspace planview
+npm test --workspace planview
+npm pack --dry-run --workspace planview
+```
+
+The package dry run invokes the CLI's `prepack` build, so it does not depend on
+an existing ignored `dist` directory. Workspace checks and builds run each
+package's matching script when present.
 
 ## Planned structure
 
-- `apps/cli` — public command-line package
+- `apps/cli` — public command-line package (`planview`)
 - `apps/site` — documentation and project site
 - `packages/*` — reusable implementation packages
 

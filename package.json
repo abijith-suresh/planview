@@ -12,12 +12,14 @@
     "packages/*"
   ],
   "scripts": {
-    "check": "npm run format:check && npm run lint && npm run test",
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
-    "test": "node --test scripts/foundation.test.mjs",
-    "verify": "npm run check"
+    "test": "node --test scripts/foundation.test.mjs && npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "verify": "npm run check && npm run build"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
