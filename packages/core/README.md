@@ -1,7 +1,8 @@
 # @planview/core
 
 Private Planview primitives shared by later publication work. This package has no
-file-system inspection or copying behavior.
+file-system inspection or copying behavior. `resolveAppDataPaths()` returns
+separate `documentsDir` and `stagingDir` paths for the private storage boundary.
 
 ## Document identifiers
 

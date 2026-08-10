@@ -15,6 +15,7 @@ const paths = (appDataDir, separator = "/") => ({
   appDataDir,
   databasePath: `${appDataDir}${separator}metadata.sqlite`,
   documentsDir: `${appDataDir}${separator}documents`,
+  stagingDir: `${appDataDir}${separator}staging`,
 });
 
 test("uses XDG_DATA_HOME for Linux and WSL-style environments", () => {

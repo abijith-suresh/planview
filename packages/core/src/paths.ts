@@ -13,6 +13,7 @@ export type AppDataPaths = {
   readonly appDataDir: string;
   readonly databasePath: string;
   readonly documentsDir: string;
+  readonly stagingDir: string;
 };
 
 const APP_DIRECTORY = "planview";
@@ -69,5 +70,6 @@ export const resolveAppDataPaths = (dependencies: Partial<AppDataPathDependencie
     appDataDir,
     databasePath: pathApi.join(appDataDir, "metadata.sqlite"),
     documentsDir: pathApi.join(appDataDir, "documents"),
+    stagingDir: pathApi.join(appDataDir, "staging"),
   };
 };

@@ -10,8 +10,9 @@ The foundation includes the public `planview` CLI workspace and the private
 TypeScript ESM package with deterministic help and version output; application
 subcommands are intentionally deferred to later milestones. Core resolves
 conventional per-user application-data paths and holds the fixed v1 policy
-values. Storage owns only daemon metadata in a versioned SQLite database: it does
-not copy files, publish URLs, run cleanup, or expose daemon/HTTP behavior. The
+values. Storage owns daemon-private metadata in a versioned SQLite database and
+a narrow document-file staging/finalization boundary. It does not publish URLs,
+run cleanup policy, or expose daemon/HTTP behavior. The
 private `apps/site` workspace is a static project site, kept separate from the
 local daemon and application UI.
 
@@ -94,7 +95,7 @@ and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
 - `apps/cli` — public command-line package (`planview`)
 - `apps/site` — private static project site
 - `packages/core` — private path, v1 policy, document identifier, and source-file validation primitives
-- `packages/storage` — private daemon-owned SQLite metadata boundary
+- `packages/storage` — private daemon-owned metadata and document-file storage boundary
 - `packages/*` — reusable implementation packages
 
 Reusable packages, the application runtime, and persistence layers will be
