@@ -39,6 +39,11 @@ The package dry run invokes the CLI's `prepack` build, so it does not depend on
 an existing ignored `dist` directory. Workspace checks and builds run each
 package's matching script when present.
 
+## Contributing and releases
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for changeset and verification requirements
+and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
+
 ## Planned structure
 
 - `apps/cli` — public command-line package (`planview`)

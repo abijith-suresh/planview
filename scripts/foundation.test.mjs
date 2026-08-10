@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -127,6 +127,14 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(packageJson.engines, "npm", ">=11.16.0", "npm engine");
   expectProperty(packageJson, "packageManager", "npm@11.16.0", "package manager");
   expectProperty(packageJson.devDependencies, "@biomejs/biome", "2.5.7", "Biome dependency");
+  expectProperty(packageJson.devDependencies, "@changesets/cli", "2.31.1", "Changesets dependency");
+  expectProperty(
+    packageJson.devDependencies,
+    "@changesets/parse",
+    "0.4.3",
+    "Changesets parser dependency"
+  );
+  expectProperty(packageJson.devDependencies, "semver", "7.8.5", "SemVer dependency");
   expectProperty(packageJson.devDependencies, "typescript", "6.0.3", "TypeScript dependency");
   expectProperty(
     packageJson.scripts,
@@ -137,16 +145,22 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     packageJson.scripts,
     "check",
-    "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "npm run release-policy && npm run format:check && npm run lint && npm run typecheck && npm run test",
     "check script"
   );
   expectProperty(packageJson.scripts, "format", "biome format --write .", "format script");
   expectProperty(packageJson.scripts, "format:check", "biome format .", "format check script");
+  expectProperty(
+    packageJson.scripts,
+    "release-policy",
+    "node scripts/release-policy.mjs",
+    "release-policy script"
+  );
   expectProperty(packageJson.scripts, "lint", "biome lint .", "lint script");
   expectProperty(
     packageJson.scripts,
     "test",
-    "node --test scripts/foundation.test.mjs && npm run test --workspaces --if-present",
+    "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs && npm run test --workspaces --if-present",
     "test script"
   );
   expectProperty(
@@ -156,6 +170,18 @@ test("repository foundation has the expected configuration", () => {
     "typecheck script"
   );
   expectProperty(packageJson.scripts, "verify", "npm run check && npm run build", "verify script");
+  expectProperty(
+    packageJson.scripts,
+    "version-packages",
+    "npm run release-policy && changeset version",
+    "version-packages script"
+  );
+  expectProperty(
+    packageJson.scripts,
+    "release",
+    "npm run release-policy && npm run verify && npm run pack:check && changeset publish",
+    "release script"
+  );
 
   const cliPackageJson = readJson("apps/cli/package.json");
   expectEqual(cliPackageJson.name, "planview", "CLI package name");
@@ -203,6 +229,18 @@ test("repository foundation has the expected configuration", () => {
     "@biomejs/biome",
     packageJson.devDependencies["@biomejs/biome"],
     "package-lock root Biome dependency"
+  );
+  expectProperty(
+    lockRoot.devDependencies,
+    "@changesets/parse",
+    packageJson.devDependencies["@changesets/parse"],
+    "package-lock root Changesets parser dependency"
+  );
+  expectProperty(
+    lockRoot.devDependencies,
+    "semver",
+    packageJson.devDependencies.semver,
+    "package-lock root SemVer dependency"
   );
   expectProperty(
     lockRoot.devDependencies,

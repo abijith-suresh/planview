@@ -13,16 +13,25 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "changeset": "changeset",
+    "changeset:status": "changeset status",
+    "release-policy": "node scripts/release-policy.mjs",
+    "check": "npm run release-policy && npm run format:check && npm run lint && npm run typecheck && npm run test",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
-    "test": "node --test scripts/foundation.test.mjs && npm run test --workspaces --if-present",
+    "pack:check": "npm pack --dry-run --workspace planview",
+    "release": "npm run release-policy && npm run verify && npm run pack:check && changeset publish",
+    "test": "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs && npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "verify": "npm run check && npm run build"
+    "verify": "npm run check && npm run build",
+    "version-packages": "npm run release-policy && changeset version"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
+    "@changesets/cli": "2.31.1",
+    "@changesets/parse": "0.4.3",
+    "semver": "7.8.5",
     "typescript": "6.0.3"
   }
 }
