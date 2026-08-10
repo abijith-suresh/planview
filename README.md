@@ -55,6 +55,21 @@ normalized), for example `BASE_PATH=/planview npm run build --workspace
 derives `/name`; an explicit `BASE_PATH` always wins. The default is the root
 site with no prefix.
 
+## GitHub Actions and Pages
+
+CI runs the Node 24 quality gate for pull requests and pushes to `main`. It also
+packs the public `planview` npm package and smoke-tests the resulting tarball
+without publishing it or requiring a secret.
+
+The Pages workflow builds `apps/site` on relevant pushes to `main` and deploys it
+at `https://<owner>.github.io/<repository>/`. The existing Astro configuration
+derives the repository base path from `GITHUB_REPOSITORY`, so no `BASE_PATH` or
+secret is needed for the normal deployment.
+
+To activate deployment, set **Settings → Pages → Build and deployment → Source**
+to **GitHub Actions** in the repository. The workflow uses the `github-pages`
+environment and GitHub's Pages OIDC token; no repository secret is required.
+
 ## Security follow-up
 
 `npm audit` currently reports XSS/SSRF advisories for the pinned

@@ -1,0 +1,80 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/site/**"
+      - ".github/workflows/pages.yml"
+      - ".node-version"
+      - "package-lock.json"
+      - "package.json"
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build site (Node 24)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js from repository version file
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install exact npm from package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_manager="$(node --print "require('./package.json').packageManager ?? ''")"
+          if [[ ! "$package_manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json must declare an exact npm packageManager as npm@major.minor.patch" >&2
+            exit 1
+          fi
+          npm install --global "$package_manager"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build site
+        run: npm run build --workspace @planview/site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: apps/site/dist
+
+  deploy:
+    name: Deploy site
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0
+        with:
+          timeout: 1200000
