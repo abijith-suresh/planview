@@ -1,0 +1,29 @@
+# Contributing
+
+## Changesets
+
+User-facing changes to the public `planview` package need a changeset. Run
+`npm run changeset`, select `planview`, and choose `patch`. Until the package
+reaches `1.0.0`, Planview uses patch-only releases. The dependency-free
+`npm run release-policy` check enforces that rule for pending Changesets; it
+ignores Changesets' README/config files and entries for other (including
+private) packages.
+
+Keep the published package name as `planview` (`apps/cli/package.json`); the
+private workspace is named `planview-workspace`.
+
+Before opening a change, run:
+
+```sh
+npm ci
+npm run verify
+npm run changeset:status
+npm run pack:check
+```
+
+`npm run verify` runs the release-policy check. The same check runs before
+`npm run version-packages` and `npm run release`, so a pre-1.0.0 minor or major
+`planview` changeset cannot be versioned or published accidentally.
+
+Changesets are versioned and published by maintainers. See
+[RELEASING.md](RELEASING.md) for the release procedure.

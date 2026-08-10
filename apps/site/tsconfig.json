@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": [".astro/types.d.ts", "src/**/*", "astro.config.ts"],
+  "exclude": ["dist"],
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "jsx": "preserve",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "types": ["astro/client", "node"]
+  }
+}

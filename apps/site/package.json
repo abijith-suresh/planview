@@ -1,0 +1,16 @@
+{
+  "name": "@planview/site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "astro build",
+    "test": "node --test test/site.test.mjs",
+    "typecheck": "astro check"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@types/node": "24.10.1",
+    "astro": "5.18.1"
+  }
+}
