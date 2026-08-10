@@ -3,7 +3,9 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { Effect, Exit } from "effect";
 import { test } from "node:test";
+import { main, run } from "../dist/index.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "../..");
@@ -35,6 +37,45 @@ test("--version and -v produce the package version", () => {
   assert.equal(long.stderr, "");
   assert.equal(long.stdout, `planview ${packageJson.version}\n`);
   assert.equal(short.stdout, long.stdout);
+});
+
+test("unknown options fail as typed Effects and preserve boundary output", () => {
+  const stdout = [];
+  const stderr = [];
+  const program = run(
+    ["--unknown"],
+    (message) => stdout.push(message),
+    (message) => stderr.push(message)
+  );
+  const exit = Effect.runSyncExit(program);
+  stderr.length = 0;
+  const error = Effect.runSync(Effect.flip(program));
+
+  assert.equal(Exit.isFailure(exit), true);
+  assert.equal(error._tag, "UnknownOptionError");
+  assert.equal(error.option, "--unknown");
+  assert.deepEqual(stdout, []);
+  assert.deepEqual(stderr, [
+    "Unknown option: --unknown\n\nUsage: planview [options]\n\nOptions:\n  -h, --help     Show this help message\n  -v, --version  Show the version\n",
+  ]);
+});
+
+test("the Effect boundary maps typed argument failures to the existing exit code", () => {
+  const stdout = [];
+  const stderr = [];
+
+  assert.equal(
+    main(
+      ["--help", "unexpected"],
+      (message) => stdout.push(message),
+      (message) => stderr.push(message)
+    ),
+    1
+  );
+  assert.deepEqual(stdout, []);
+  assert.deepEqual(stderr, [
+    "Unexpected argument: unexpected\n\nUsage: planview [options]\n\nOptions:\n  -h, --help     Show this help message\n  -v, --version  Show the version\n",
+  ]);
 });
 
 test("unknown options fail with a useful error", () => {
