@@ -5,11 +5,14 @@ immutable localhost URL.
 
 ## Bootstrap status
 
-Milestone 0 includes the repository foundation and the public `planview` CLI
-workspace. The CLI is an installable TypeScript ESM package with deterministic
-help and version output; application subcommands are intentionally deferred to
-later milestones. The private `apps/site` workspace is a static project site,
-kept separate from the local daemon and application UI.
+Milestone 0 includes the repository foundation, the public `planview` CLI
+workspace, and the private `@planview/core` workspace. The CLI is an installable
+TypeScript ESM package with deterministic help and version output; application
+subcommands are intentionally deferred to later milestones. Core currently only
+resolves conventional per-user application-data paths and holds the fixed v1
+policy values; it does not create directories or perform storage I/O. The private
+`apps/site` workspace is a static project site, kept separate from the local
+daemon and application UI.
 
 ## Prerequisites
 
@@ -88,6 +91,7 @@ and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
 
 - `apps/cli` — public command-line package (`planview`)
 - `apps/site` — private static project site
+- `packages/core` — private path and v1 policy foundation
 - `packages/*` — reusable implementation packages
 
 Reusable packages, the application runtime, and persistence layers will be
