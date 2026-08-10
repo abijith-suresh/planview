@@ -93,7 +93,7 @@ and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
 
 - `apps/cli` — public command-line package (`planview`)
 - `apps/site` — private static project site
-- `packages/core` — private path and v1 policy foundation
+- `packages/core` — private path, v1 policy, document identifier, and source-file validation primitives
 - `packages/storage` — private daemon-owned SQLite metadata boundary
 - `packages/*` — reusable implementation packages
 
