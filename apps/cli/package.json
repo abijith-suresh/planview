@@ -23,13 +23,15 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc --project tsconfig.json && node scripts/make-executable.mjs dist/index.js",
+    "build": "npm run build --workspace @planview/daemon && tsc --project tsconfig.json && node scripts/bundle.mjs && node scripts/make-executable.mjs dist/index.js",
     "prepack": "npm run build",
-    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "typecheck": "npm run build --workspace @planview/daemon && tsc --project tsconfig.json --noEmit",
     "test": "npm run build && node --test test/cli.test.mjs"
   },
   "devDependencies": {
-    "@types/node": "24.10.1"
+    "@planview/daemon": "0.1.0",
+    "@types/node": "24.10.1",
+    "esbuild": "0.27.7"
   },
   "dependencies": {
     "effect": "4.0.0-beta.107"
