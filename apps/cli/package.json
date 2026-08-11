@@ -29,6 +29,7 @@
     "test": "npm run build && node --test test/cli.test.mjs"
   },
   "devDependencies": {
+    "@planview/core": "0.1.0",
     "@planview/daemon": "0.1.0",
     "@types/node": "24.10.1",
     "esbuild": "0.27.7"

@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@planview/core": "0.1.0",
+    "@planview/storage": "0.1.0",
     "effect": "4.0.0-beta.107"
   },
   "devDependencies": {

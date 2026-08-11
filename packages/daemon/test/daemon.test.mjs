@@ -14,6 +14,13 @@ import { rm } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
+import { Effect } from "effect";
+import { validateDocumentId } from "@planview/core";
+import {
+  createDocumentPublicationCoordinator,
+  openDocumentFileStore,
+  openStorage,
+} from "@planview/storage";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -319,6 +326,48 @@ test("lifecycle and status reject a descriptor endpoint mismatch with a typed er
       );
     }
   } finally {
+    await removeFixture(fixture);
+  }
+});
+
+test("exact management paths do not shadow a published id beginning with __planview", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-document-route-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const documentsDir = join(appDataDir, "documents");
+  const stagingDir = join(appDataDir, "staging");
+  const port = await freePort();
+  const sourcePath = join(fixture, "source.html");
+  const documentId = validateDocumentId("__planviewabcdefghijk");
+  writeFileSync(sourcePath, "<!doctype html><p>private-looking id</p>");
+  mkdirSync(appDataDir, { recursive: true, mode: 0o700 });
+
+  const metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+  const documentFileStore = Effect.runSync(openDocumentFileStore({ documentsDir, stagingDir }));
+  const publication = createDocumentPublicationCoordinator({
+    documentFileStore,
+    metadataStore,
+    generateId: () => documentId,
+  });
+  await publication.publish(sourcePath);
+  await documentFileStore.close();
+  metadataStore.close();
+
+  const child = startChild(appDataDir, runtimeDir, port);
+  try {
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    const document = await fetch(`http://127.0.0.1:${port}/${documentId}`);
+    assert.equal(document.status, 200);
+    assert.equal(await document.text(), "<!doctype html><p>private-looking id</p>");
+
+    const management = await fetch(`http://127.0.0.1:${port}/__planview/status`);
+    assert.equal(management.status, 401);
+    const authorized = await fetch(`http://127.0.0.1:${port}/__planview/status`, {
+      headers: { "x-planview-secret": descriptor.secret },
+    });
+    assert.equal(authorized.status, 200);
+  } finally {
+    await stopChild(child);
     await removeFixture(fixture);
   }
 });

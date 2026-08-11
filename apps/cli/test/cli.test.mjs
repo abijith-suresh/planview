@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -301,6 +302,156 @@ const freePort = () =>
       );
     });
   });
+
+test("publish validates before startup and preserves the source file", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-validation-test-"));
+  const appDataDir = join(runtimeRoot, "data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: appDataDir,
+    PLANVIEW_RUNTIME_DIR: runtimeDir,
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  };
+  const executeInFixture = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const invalidPath = join(runtimeRoot, "source.txt");
+  writeFileSync(invalidPath, "not html");
+  const invalid = executeInFixture("publish", invalidPath);
+  assert.equal(invalid.status, 1);
+  assert.equal(invalid.stdout, "");
+  assert.match(invalid.stderr, /only \.html and \.htm files are supported/);
+  assert.equal(existsSync(runtimeDir), false);
+
+  const oversizedPath = join(runtimeRoot, "oversized.html");
+  writeFileSync(oversizedPath, Buffer.alloc(10 * 1024 * 1024 + 1, 0x61));
+  const oversized = executeInFixture("publish", oversizedPath);
+  assert.equal(oversized.status, 1);
+  assert.equal(oversized.stdout, "");
+  assert.match(oversized.stderr, /must not exceed 10485760 bytes/);
+  assert.equal(existsSync(runtimeDir), false);
+  await removeFixture(runtimeRoot);
+});
+
+test("publish budgets a slow maximum-size publication before returning its committed URL", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-timeout-test-"));
+  const appDataDir = join(runtimeRoot, "data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: appDataDir,
+    PLANVIEW_RUNTIME_DIR: runtimeDir,
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+    PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "1500",
+  };
+  const sourcePath = join(runtimeRoot, "slow.html");
+  writeFileSync(sourcePath, Buffer.alloc(10 * 1024 * 1024, 0x61));
+
+  try {
+    const published = spawnSync(process.execPath, [cli, "publish", sourcePath], {
+      encoding: "utf8",
+      env: environment,
+      timeout: 30_000,
+    });
+    assert.equal(published.status, 0, published.stderr);
+    assert.equal(published.stderr, "");
+    assert.match(published.stdout, new RegExp(`^http://localhost:${port}/[A-Za-z0-9_-]{21}\\n$`));
+    const retrieved = await fetch(published.stdout.trim().replace("localhost", "127.0.0.1"));
+    assert.equal(retrieved.status, 200);
+    assert.equal((await retrieved.arrayBuffer()).byteLength, 10 * 1024 * 1024);
+  } finally {
+    spawnSync(process.execPath, [cli, "stop"], { encoding: "utf8", env: environment });
+    await removeFixture(runtimeRoot);
+  }
+});
+
+test("publish starts or reuses the daemon, serves raw immutable HTML, and records access after retrieval", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-test-"));
+  const appDataDir = join(runtimeRoot, "data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: appDataDir,
+    PLANVIEW_RUNTIME_DIR: runtimeDir,
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  };
+  const executeInFixture = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const sourcePath = join(runtimeRoot, "source.html");
+  const original = "<!doctype html><html><body><h1>snapshot one</h1></body></html>";
+  writeFileSync(sourcePath, original);
+  let database;
+
+  try {
+    const first = executeInFixture("publish", sourcePath);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(first.stderr, "");
+    assert.match(first.stdout, new RegExp(`^http://localhost:${port}/[A-Za-z0-9_-]{21}\\n$`));
+    assert.equal(readFileSync(sourcePath, "utf8"), original);
+    const firstUrl = first.stdout.trim();
+    const firstBrowserUrl = firstUrl.replace("localhost", "127.0.0.1");
+
+    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    const before = database
+      .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
+      .get({ ":id": firstUrl.slice(firstUrl.lastIndexOf("/") + 1) });
+    assert.ok(before);
+    database.close();
+    database = undefined;
+
+    writeFileSync(sourcePath, "<!doctype html><html><body>changed source</body></html>");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const retrieved = await fetch(firstBrowserUrl);
+    assert.equal(retrieved.status, 200);
+    assert.equal(retrieved.headers.get("content-type"), "text/html; charset=utf-8");
+    assert.equal(await retrieved.text(), original);
+    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    const after = database
+      .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
+      .get({ ":id": firstUrl.slice(firstUrl.lastIndexOf("/") + 1) });
+    assert.ok(after);
+    assert.ok(after.lastAccessedAt > before.lastAccessedAt);
+    assert.equal(after.createdAt, before.createdAt);
+
+    const missing = await fetch(`http://127.0.0.1:${port}/_____________________`);
+    assert.equal(missing.status, 404);
+    assert.match(missing.headers.get("content-type") ?? "", /^text\/html/);
+    assert.match(await missing.text(), /<h1>Not found<\/h1>/);
+    const method = await fetch(firstBrowserUrl, { method: "POST" });
+    assert.equal(method.status, 405);
+    assert.match(method.headers.get("content-type") ?? "", /^text\/html/);
+    assert.match(await method.text(), /<h1>Method not allowed<\/h1>/);
+
+    const unauthorized = await fetch(`http://127.0.0.1:${port}/__planview/publish`, {
+      method: "POST",
+      body: JSON.stringify({ sourcePath }),
+    });
+    assert.equal(unauthorized.status, 401);
+
+    const second = executeInFixture("publish", sourcePath);
+    assert.equal(second.status, 0, second.stderr);
+    assert.equal(second.stderr, "");
+    assert.match(second.stdout, new RegExp(`^http://localhost:${port}/[A-Za-z0-9_-]{21}\\n$`));
+    assert.notEqual(second.stdout, first.stdout);
+    const secondRetrieved = await fetch(second.stdout.trim().replace("localhost", "127.0.0.1"));
+    assert.equal(
+      await secondRetrieved.text(),
+      "<!doctype html><html><body>changed source</body></html>"
+    );
+    const firstAgain = await fetch(firstBrowserUrl);
+    assert.equal(await firstAgain.text(), original);
+  } finally {
+    database?.close();
+    executeInFixture("stop");
+    await removeFixture(runtimeRoot);
+  }
+});
 
 test("start never stops an unknown owner of the daemon port", async () => {
   const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-port-owner-test-"));
