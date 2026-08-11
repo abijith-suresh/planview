@@ -1,8 +1,11 @@
 import { realpathSync } from "node:fs";
+import { lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateSourceFileExtension, validateSourceFileSize } from "@planview/core";
 import {
   inspectDaemon,
+  publishDocument,
   restartDaemon,
   resolveDaemonConfig,
   resolveDaemonConfigForTest,
@@ -16,6 +19,7 @@ export const VERSION = "0.1.0";
 export const HELP = `Usage: planview <command>
 
 Commands:
+  publish     Publish one immutable HTML snapshot and print its localhost URL
   start       Start the local daemon, or reuse the running daemon
   status      Show daemon status without starting it
   stop        Gracefully stop the local daemon
@@ -59,13 +63,20 @@ export class DaemonCommandError extends Data.TaggedError("DaemonCommandError")<{
   readonly message: string;
 }> {}
 
+export class PublishCommandError extends Data.TaggedError("PublishCommandError")<{
+  readonly sourcePath: string;
+  readonly cause: unknown;
+  readonly message: string;
+}> {}
+
 export type CliError =
   | UnknownOptionError
   | UnknownCommandError
   | UnexpectedArgumentsError
-  | DaemonCommandError;
+  | DaemonCommandError
+  | PublishCommandError;
 
-const COMMANDS = ["start", "status", "stop", "restart"] as const;
+const COMMANDS = ["publish", "start", "status", "stop", "restart"] as const;
 type Command = (typeof COMMANDS)[number];
 
 const isCommand = (value: string | undefined): value is Command =>
@@ -92,7 +103,37 @@ const formatRunning = (status: {
   readonly port: number;
 }) => `Planview daemon is running at http://${status.host}:${status.port}/ (pid ${status.pid}).\n`;
 
-const runDaemonCommand = (command: Command, stdout: (message: string) => void) =>
+const runPublishCommand = (sourcePath: string, stdout: (message: string) => void) =>
+  Effect.tryPromise({
+    try: async () => {
+      validateSourceFileExtension(sourcePath);
+      const absoluteSourcePath = resolve(sourcePath);
+      const sourceStats = await lstat(absoluteSourcePath);
+      if (!sourceStats.isFile() || sourceStats.isSymbolicLink()) {
+        throw new Error(`The source file must be a regular HTML file: ${sourcePath}.`);
+      }
+      validateSourceFileSize(sourceStats.size);
+      const config = resolveCliDaemonConfig();
+      const published = await publishDocument(config, {
+        daemonScriptPath: daemonScriptPath(),
+        sourcePath: absoluteSourcePath,
+        sourceSizeBytes: sourceStats.size,
+      });
+      stdout(`http://localhost:${published.descriptor.port}/${published.id}\n`);
+      return 0;
+    },
+    catch: (cause) =>
+      new PublishCommandError({
+        sourcePath,
+        cause,
+        message: `Could not publish ${sourcePath}: ${describe(cause)}`,
+      }),
+  });
+
+const runDaemonCommand = (
+  command: Exclude<Command, "publish">,
+  stdout: (message: string) => void
+) =>
   Effect.tryPromise({
     try: async () => {
       const config = resolveCliDaemonConfig();
@@ -185,6 +226,19 @@ const command = (
     );
   }
 
+  if (argument === "publish") {
+    if (trailing.length !== 1 || trailing[0] === undefined) {
+      const label = trailing.length === 0 ? "Missing source file" : "Unexpected arguments";
+      return Effect.fail(
+        new UnexpectedArgumentsError({
+          arguments: trailing,
+          message: `${label}: ${trailing.join(" ")}\n\n${formatHelp()}`,
+        })
+      );
+    }
+    return runPublishCommand(trailing[0], stdout);
+  }
+
   if (trailing.length > 0) {
     const label = trailing.length === 1 ? "Unexpected argument" : "Unexpected arguments";
     return Effect.fail(
@@ -213,6 +267,7 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
         "UnknownCommandError",
         "UnexpectedArgumentsError",
         "DaemonCommandError",
+        "PublishCommandError",
       ],
       () => Effect.succeed(1)
     )

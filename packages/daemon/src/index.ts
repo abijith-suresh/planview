@@ -15,7 +15,23 @@ import { request as httpRequest } from "node:http";
 import { createConnection, type Socket } from "node:net";
 import { hostname } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
-import { resolveAppDataPaths, V1_PORT } from "@planview/core";
+import { pipeline } from "node:stream/promises";
+import {
+  resolveAppDataPaths,
+  validateDocumentId,
+  V1_MAX_HTML_SIZE_BYTES,
+  V1_PORT,
+} from "@planview/core";
+import {
+  createDocumentPublicationCoordinator,
+  DocumentPublicationNotFoundError,
+  DocumentPublicationReadError,
+  openDocumentFileStore,
+  openStorage,
+  type DocumentFileStore,
+  type DocumentPublicationCoordinator,
+  type MetadataStore,
+} from "@planview/storage";
 import { Data, Effect } from "effect";
 
 export const DAEMON_HOST = "127.0.0.1" as const;
@@ -31,10 +47,18 @@ export const DAEMON_SECRET_HEADER = "x-planview-secret";
 export const DAEMON_READY_PATH = "/__planview/ready";
 export const DAEMON_STATUS_PATH = "/__planview/status";
 export const DAEMON_SHUTDOWN_PATH = "/__planview/shutdown";
+export const DAEMON_PUBLISH_PATH = "/__planview/publish";
 const DAEMON_LOCK_VERSION = 1;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const REQUEST_TIMEOUT_MS = 1_000;
+// Publication is a synchronous request: the 201 response is sent only after
+// the immutable file and metadata row have both committed. Give the largest
+// allowed source a bounded timeout based on a conservative copy rate rather
+// than letting the general lifecycle timeout make the result ambiguous.
+export const DAEMON_PUBLISH_TIMEOUT_MIN_MS = 5_000;
+export const DAEMON_PUBLISH_TIMEOUT_MAX_MS = 60_000;
+const PUBLISH_COPY_RATE_BYTES_PER_SECOND = 1024 * 1024;
 const STARTUP_TIMEOUT_MS = 10_000;
 // A shutdown deadline is enforced by the daemon process. This margin lets a
 // lifecycle caller observe descriptor removal when the event loop is delayed.
@@ -44,9 +68,11 @@ const SHUTDOWN_POLL_GRACE_MS = 2_000;
 // stress and for several operations to pass through the same lock.
 const LIFECYCLE_LOCK_WAIT_MS = 60_000;
 const STARTUP_POLL_MS = 50;
+const MAX_PUBLISH_REQUEST_BYTES = 16 * 1024;
 const LOCAL_HOSTNAME = hostname();
 const TEST_PORT_ENV = "PLANVIEW_TEST_DAEMON_PORT";
 const TEST_ADOPTION_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_ADOPTION_PAUSE_MS";
+const TEST_PUBLISH_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS";
 const LIFECYCLE_TOKEN_ENV = "PLANVIEW_DAEMON_LIFECYCLE_TOKEN";
 const isTestProcess = () => {
   const { NODE_ENV } = process.env;
@@ -167,10 +193,28 @@ export type DaemonStatusPayload = Readonly<{
   readonly startedAt: number;
 }>;
 
+export type PublishedDaemonDocument = Readonly<{
+  readonly id: import("@planview/core").DocumentId;
+  readonly descriptor: RuntimeDescriptor;
+  readonly reused: boolean;
+}>;
+
 type DaemonResponse = Readonly<{
   readonly statusCode: number;
   readonly body: string;
 }>;
+
+const publishRequestTimeout = (sourceSizeBytes: number | undefined) => {
+  const size =
+    typeof sourceSizeBytes === "number" && Number.isSafeInteger(sourceSizeBytes)
+      ? Math.min(Math.max(sourceSizeBytes, 0), V1_MAX_HTML_SIZE_BYTES)
+      : V1_MAX_HTML_SIZE_BYTES;
+  const copyMilliseconds = Math.ceil((size / PUBLISH_COPY_RATE_BYTES_PER_SECOND) * 1_000);
+  return Math.min(
+    DAEMON_PUBLISH_TIMEOUT_MAX_MS,
+    Math.max(DAEMON_PUBLISH_TIMEOUT_MIN_MS, DAEMON_PUBLISH_TIMEOUT_MIN_MS + copyMilliseconds)
+  );
+};
 
 type LifecycleLock = Readonly<{
   readonly token: string;
@@ -865,6 +909,9 @@ const response = (
   res.end(body);
 };
 
+const htmlError = (_status: number, title: string, message: string) =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title}</title></head><body><h1>${title}</h1><p>${message}</p></body></html>`;
+
 const statusPayload = (descriptor: RuntimeDescriptor) =>
   ({
     state: "running",
@@ -892,14 +939,136 @@ const sameSecret = (left: string | undefined, right: string) => {
   return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 };
 
+const readJsonBody = async (request: import("node:http").IncomingMessage) => {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const bytes = typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk);
+    size += bytes.byteLength;
+    if (size > MAX_PUBLISH_REQUEST_BYTES) {
+      throw new Error("The publish request body is too large.");
+    }
+    chunks.push(bytes);
+  }
+  return parseJson(Buffer.concat(chunks).toString("utf8"));
+};
+
+const PRIVATE_MANAGEMENT_PATHS = new Set([
+  DAEMON_READY_PATH,
+  DAEMON_STATUS_PATH,
+  DAEMON_SHUTDOWN_PATH,
+  DAEMON_PUBLISH_PATH,
+  "/internal/ready",
+  "/internal/status",
+  "/internal/shutdown",
+]);
+
+const documentIdFromPath = (url: string) => {
+  if (!url.startsWith("/") || url.length < 2) {
+    return undefined;
+  }
+  const candidate = url.slice(1);
+  return candidate.includes("/") ? undefined : candidate;
+};
+
+const handlePublishedDocument = async (
+  documentId: string,
+  res: import("node:http").ServerResponse,
+  publicationCoordinator: DocumentPublicationCoordinator,
+  metadataStore: MetadataStore
+) => {
+  const id = (() => {
+    try {
+      return validateDocumentId(documentId);
+    } catch {
+      return undefined;
+    }
+  })();
+  if (id === undefined) {
+    response(
+      res,
+      404,
+      htmlError(404, "Not found", "That Planview document does not exist."),
+      "text/html"
+    );
+    return;
+  }
+
+  const document = await publicationCoordinator.readPublishedDocument(id).catch((cause) => {
+    if (
+      cause instanceof DocumentPublicationNotFoundError ||
+      cause instanceof DocumentPublicationReadError
+    ) {
+      return undefined;
+    }
+    throw cause;
+  });
+  if (document === undefined) {
+    response(
+      res,
+      404,
+      htmlError(404, "Not found", "That Planview document does not exist."),
+      "text/html"
+    );
+    return;
+  }
+
+  res.statusCode = 200;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+  await pipeline(document, res);
+  // The access timestamp is deliberately recorded only once the immutable file
+  // stream and the HTTP response have completed successfully.
+  try {
+    metadataStore.recordDocumentAccess(id);
+  } catch {
+    // The document was already delivered. There is no safe second response once
+    // the body has finished, so leave the daemon available for the next request.
+  }
+};
+
 const handleRequest = async (
   request: import("node:http").IncomingMessage,
   res: import("node:http").ServerResponse,
   descriptor: RuntimeDescriptor,
-  requestShutdown: () => void
+  requestShutdown: () => void,
+  publicationCoordinator: DocumentPublicationCoordinator,
+  metadataStore: MetadataStore
 ) => {
-  const url =
-    request.url === undefined ? "/" : new URL(request.url, `http://${DAEMON_HOST}`).pathname;
+  let url: string;
+  try {
+    url = request.url === undefined ? "/" : new URL(request.url, `http://${DAEMON_HOST}`).pathname;
+  } catch {
+    response(
+      res,
+      404,
+      htmlError(404, "Not found", "That Planview document does not exist."),
+      "text/html"
+    );
+    return;
+  }
+
+  // Management routes are an exact set. Do this check before the public
+  // single-segment route so a valid document id such as __planview_________x
+  // remains public without weakening authentication on management endpoints.
+  const privatePath = PRIVATE_MANAGEMENT_PATHS.has(url);
+  if (!privatePath) {
+    const documentId = documentIdFromPath(url);
+    if (documentId !== undefined) {
+      if (request.method === "GET") {
+        await handlePublishedDocument(documentId, res, publicationCoordinator, metadataStore);
+      } else {
+        response(
+          res,
+          405,
+          htmlError(405, "Method not allowed", "Planview documents are retrieved with GET."),
+          "text/html"
+        );
+      }
+      return;
+    }
+  }
+
   if (url === "/" && request.method === "GET") {
     response(
       res,
@@ -910,15 +1079,13 @@ const handleRequest = async (
     return;
   }
 
-  const privatePath =
-    url === DAEMON_READY_PATH ||
-    url === DAEMON_STATUS_PATH ||
-    url === DAEMON_SHUTDOWN_PATH ||
-    url === "/internal/ready" ||
-    url === "/internal/status" ||
-    url === "/internal/shutdown";
   if (!privatePath) {
-    response(res, 404, JSON.stringify({ error: "not_found" }));
+    response(
+      res,
+      404,
+      htmlError(404, "Not found", "That Planview document does not exist."),
+      "text/html"
+    );
     return;
   }
   if (!sameSecret(secretFrom(request), descriptor.secret)) {
@@ -939,14 +1106,59 @@ const handleRequest = async (
     requestShutdown();
     return;
   }
+  if (url === DAEMON_PUBLISH_PATH && request.method === "POST") {
+    let payload: unknown;
+    try {
+      payload = await readJsonBody(request);
+    } catch (cause) {
+      response(res, 400, JSON.stringify({ error: "invalid_request", message: describe(cause) }));
+      return;
+    }
+    const sourcePath = isRecord(payload) ? recordValue(payload, "sourcePath") : undefined;
+    if (typeof sourcePath !== "string" || sourcePath.length === 0) {
+      response(
+        res,
+        400,
+        JSON.stringify({ error: "invalid_request", message: "sourcePath is required." })
+      );
+      return;
+    }
+    try {
+      if (isTestProcess()) {
+        const pauseMilliseconds = Number(process.env[TEST_PUBLISH_PAUSE_ENV]);
+        if (Number.isFinite(pauseMilliseconds) && pauseMilliseconds > 0) {
+          await wait(pauseMilliseconds);
+        }
+      }
+      const published = await publicationCoordinator.publish(sourcePath);
+      // Keep this response synchronous: 201 means the publication is committed
+      // and can be retrieved immediately by its immutable id.
+      response(res, 201, JSON.stringify({ id: published.id }));
+    } catch (cause) {
+      response(res, 422, JSON.stringify({ error: "publish_failed", message: describe(cause) }));
+    }
+    return;
+  }
   response(res, 405, JSON.stringify({ error: "method_not_allowed" }));
 };
 
-const createDaemonServer = (descriptor: RuntimeDescriptor, requestShutdown: () => void) => {
+const createDaemonServer = (
+  descriptor: RuntimeDescriptor,
+  requestShutdown: () => void,
+  publicationCoordinator: DocumentPublicationCoordinator,
+  metadataStore: MetadataStore
+) => {
   const server = import("node:http").then(({ createServer }) => {
     const connections = new Set<Socket>();
     const httpServer = createServer((request, res) => {
-      void handleRequest(request, res, descriptor, requestShutdown).catch((cause) => {
+      void handleRequest(
+        request,
+        res,
+        descriptor,
+        requestShutdown,
+        publicationCoordinator,
+        metadataStore
+      ).catch((cause) => {
         if (!res.headersSent) {
           response(res, 500, JSON.stringify({ error: "internal_error" }));
         } else {
@@ -981,6 +1193,8 @@ const openDaemon = async (config: DaemonConfig) => {
   let server: import("node:http").Server | undefined;
   let connections: Set<Socket> | undefined;
   let descriptor: RuntimeDescriptor | undefined;
+  let documentFileStore: DocumentFileStore | undefined;
+  let metadataStore: MetadataStore | undefined;
   let closing = false;
   let shutdownRequested = false;
   let resolveShutdown: (() => void) | undefined;
@@ -989,6 +1203,17 @@ const openDaemon = async (config: DaemonConfig) => {
     resolveShutdown?.();
   };
   try {
+    metadataStore = Effect.runSync(openStorage(join(config.appDataDir, "metadata.sqlite")));
+    documentFileStore = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir: join(config.appDataDir, "documents"),
+        stagingDir: join(config.appDataDir, "staging"),
+      })
+    );
+    const publicationCoordinator = createDocumentPublicationCoordinator({
+      documentFileStore,
+      metadataStore,
+    });
     descriptor = {
       version: DAEMON_DESCRIPTOR_VERSION,
       pid: process.pid,
@@ -997,7 +1222,12 @@ const openDaemon = async (config: DaemonConfig) => {
       secret: randomBytes(32).toString("base64url"),
       startedAt: Date.now(),
     };
-    const daemonServer = await createDaemonServer(descriptor, requestShutdown);
+    const daemonServer = await createDaemonServer(
+      descriptor,
+      requestShutdown,
+      publicationCoordinator,
+      metadataStore
+    );
     server = daemonServer.server;
     connections = daemonServer.connections;
     await listen(server, config.host, config.port);
@@ -1026,6 +1256,8 @@ const openDaemon = async (config: DaemonConfig) => {
         try {
           await closeServer(runningServer, runningConnections);
         } finally {
+          await documentFileStore?.close();
+          metadataStore?.close();
           await removeDescriptorFor(paths, runningDescriptor);
         }
       },
@@ -1054,6 +1286,8 @@ const openDaemon = async (config: DaemonConfig) => {
     if (server !== undefined && connections !== undefined) {
       await closeServer(server, connections).catch(() => undefined);
     }
+    await documentFileStore?.close().catch(() => undefined);
+    metadataStore?.close();
     if (descriptor !== undefined) {
       await removeDescriptorFor(paths, descriptor).catch(() => undefined);
     }
@@ -1071,7 +1305,13 @@ const openDaemon = async (config: DaemonConfig) => {
 const isAddressInUse = (cause: unknown) =>
   typeof cause === "object" && cause !== null && "code" in cause && cause.code === "EADDRINUSE";
 
-const request = (descriptor: RuntimeDescriptor, method: string, path: string) =>
+const request = (
+  descriptor: RuntimeDescriptor,
+  method: string,
+  path: string,
+  body?: string,
+  timeoutMs = REQUEST_TIMEOUT_MS
+) =>
   new Promise<DaemonResponse>((resolvePromise, rejectPromise) => {
     const requestObject = httpRequest(
       {
@@ -1082,8 +1322,14 @@ const request = (descriptor: RuntimeDescriptor, method: string, path: string) =>
         headers: {
           [DAEMON_SECRET_HEADER]: descriptor.secret,
           Authorization: `Bearer ${descriptor.secret}`,
+          ...(body === undefined
+            ? {}
+            : {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(body),
+              }),
         },
-        timeout: REQUEST_TIMEOUT_MS,
+        timeout: timeoutMs,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -1100,7 +1346,11 @@ const request = (descriptor: RuntimeDescriptor, method: string, path: string) =>
       requestObject.destroy(new Error("The daemon request timed out."))
     );
     requestObject.on("error", rejectPromise);
-    requestObject.end();
+    if (body === undefined) {
+      requestObject.end();
+    } else {
+      requestObject.end(body);
+    }
   });
 
 const assertDescriptorEndpoint = (
@@ -1300,6 +1550,35 @@ export const startDetachedDaemon = async (config: DaemonConfig, options: StartDa
     return await startWithLock(config, options, paths, lock);
   } finally {
     await lock.release();
+  }
+};
+
+export type PublishDaemonOptions = Readonly<{
+  readonly daemonScriptPath: string;
+  readonly sourcePath: string;
+  /** The validated source size lets the client budget for the bounded copy. */
+  readonly sourceSizeBytes?: number;
+}>;
+
+export const publishDocument = async (config: DaemonConfig, options: PublishDaemonOptions) => {
+  const running = await startDetachedDaemon(config, { daemonScriptPath: options.daemonScriptPath });
+  const answer = await request(
+    running.descriptor,
+    "POST",
+    DAEMON_PUBLISH_PATH,
+    JSON.stringify({ sourcePath: options.sourcePath }),
+    publishRequestTimeout(options.sourceSizeBytes)
+  );
+  const payload = parseResponse<Record<string, unknown>>(answer, DAEMON_PUBLISH_PATH, 201);
+  try {
+    const id = validateDocumentId(recordValue(payload, "id"));
+    return { id, descriptor: running.descriptor, reused: running.reused };
+  } catch (cause) {
+    throw new DaemonRequestError({
+      path: DAEMON_PUBLISH_PATH,
+      cause,
+      message: `The daemon returned an invalid published document id for ${DAEMON_PUBLISH_PATH}.`,
+    });
   }
 };
 
