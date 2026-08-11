@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
-import { Worker } from "node:worker_threads";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import { Worker } from "node:worker_threads";
 import { Effect } from "effect";
 import {
   CURRENT_SCHEMA_VERSION,
+  openStorage,
   StorageClosedError,
   StorageInvariantError,
   StorageMigrationError,
   StorageOpenError,
   StoragePathError,
-  openStorage,
 } from "../dist/index.js";
 
 const withTempDirectory = async (prefix, callback) => {

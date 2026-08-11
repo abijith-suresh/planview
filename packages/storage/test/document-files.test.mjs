@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
 import { renameSync, symlinkSync } from "node:fs";
-import { promisify } from "node:util";
 import {
   appendFile,
   mkdir,
   mkdtemp,
-  readFile,
   readdir,
+  readFile,
   rm,
   stat,
   symlink,
@@ -15,15 +14,18 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { Effect } from "effect";
 import {
   DocumentFileAlreadyExistsError,
+  DocumentFileFinalizeError,
   DocumentFileNotRegularError,
   DocumentFileStoreClosedError,
   DocumentFileStorePathError,
+  DocumentFileTargetBusyError,
   InvalidStagedDocumentFileHandleError,
   openDocumentFileStore,
 } from "../dist/index.js";
@@ -204,7 +206,7 @@ test("rejects a FIFO in a bounded child process without opening it blocking", as
   });
 });
 
-test("rejects a source replaced while it is being staged and cleans up", () =>
+test("out-of-model hostile external source replacement fails closed during staging", () =>
   withStore(async ({ directory, store }) => {
     const source = join(directory, "raced.html");
     const replacement = join(directory, "replacement.html");
@@ -222,7 +224,7 @@ test("rejects a source replaced while it is being staged and cleans up", () =>
     assert.deepEqual(await readdir(join(directory, "staging")), []);
   }));
 
-test("rejects streamed source growth above the limit and cleans up", () =>
+test("out-of-model concurrent source mutation above the limit cleans up", () =>
   withStore(async ({ directory, store }) => {
     const source = join(directory, "growing.html");
     await writeFile(source, Buffer.alloc(V1_MAX_HTML_SIZE_BYTES, 0x62));
@@ -234,6 +236,39 @@ test("rejects streamed source growth above the limit and cleans up", () =>
         error.name === "SourceFileTooLargeError" || error.name === "DocumentFileSourceError"
     );
     assert.deepEqual(await readdir(join(directory, "staging")), []);
+  }));
+
+test("out-of-model hostile external staged-path replacement is retained during compensation", () =>
+  withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    let replacedPath;
+    const store = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        beforeStagedSourceCopy: async (stagedPath) => {
+          replacedPath = stagedPath;
+          renameSync(stagedPath, `${stagedPath}.original`);
+          await writeFile(stagedPath, "replacement staged owner");
+          throw new Error("copy interleaving fault");
+        },
+      })
+    );
+    try {
+      const source = join(directory, "failed-stage-cleanup.html");
+      await writeFile(source, "original staged owner");
+      const staging = store.stageSourceFile(source);
+      await assert.rejects(
+        staging,
+        (error) =>
+          error.name === "DocumentFileSourceError" || error.name === "SourceFileTooLargeError"
+      );
+      assert.equal(await readFile(replacedPath, "utf8"), "replacement staged owner");
+      assert.equal((await stat(`${replacedPath}.original`)).isFile(), true);
+    } finally {
+      await store.close();
+    }
   }));
 
 test("rejects symlinked or replaced storage parents before using them", async () => {
@@ -334,6 +369,69 @@ test("recovers a crash-stale finalization lock", () =>
     assert.deepEqual(await readdir(join(directory, "staging")), []);
   }));
 
+test("concurrent Planview stale-lock recovery has one atomic winner", async () => {
+  await withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    let arrived = 0;
+    let releaseBarrier;
+    const barrier = new Promise((resolve) => {
+      releaseBarrier = resolve;
+    });
+    const openRacingStore = () =>
+      Effect.runSync(
+        openDocumentFileStore({
+          documentsDir,
+          stagingDir,
+          beforeFinalizationLockRecoveryClaim: async () => {
+            arrived += 1;
+            if (arrived === 2) {
+              releaseBarrier();
+            }
+            await barrier;
+          },
+        })
+      );
+    const firstStore = openRacingStore();
+    const secondStore = openRacingStore();
+    try {
+      const source = join(directory, "concurrent-stale.html");
+      await writeFile(source, "one recovery winner");
+      const handle = await firstStore.stageSourceFile(source);
+      const lockPath = join(stagingDir, `.${handle}.lock`);
+      const child = spawn(
+        process.execPath,
+        [fileURLToPath(new URL("./finalization-lock-worker.mjs", import.meta.url)), lockPath],
+        { stdio: "ignore" }
+      );
+      const childResult = await waitForChild(child, 1_000);
+      assert.equal(childResult.code, 42);
+
+      const results = await Promise.allSettled([
+        firstStore.finalizeStagedFile(handle, validId),
+        secondStore.finalizeStagedFile(handle, validId),
+      ]);
+      assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+      assert.equal(results.filter((result) => result.status === "rejected").length, 1);
+      const rejected = results.find((result) => result.status === "rejected");
+      assert.equal(
+        rejected?.reason instanceof DocumentFileFinalizeError &&
+          rejected.reason.finalizationLockState === "retained" &&
+          rejected.reason.stagedFileState === "retained",
+        true
+      );
+      assert.equal(
+        (await readFile(join(documentsDir, `${validId}.html`))).toString(),
+        "one recovery winner"
+      );
+      assert.deepEqual(await readdir(stagingDir), []);
+    } finally {
+      await firstStore.close();
+      await secondStore.close();
+    }
+  });
+});
+
 test("does not recover an expired lock whose owner is still active", () =>
   withStore(async ({ directory, store }) => {
     const source = join(directory, "active-lock.html");
@@ -359,7 +457,297 @@ test("does not recover an expired lock whose owner is still active", () =>
     await store.finalizeStagedFile(handle, validId);
   }));
 
-test("concurrent finalization of one id has one atomic winner", () =>
+test("out-of-model hostile external lock replacement is retained", async () => {
+  await withTempDirectory(async (directory) => {
+    let lockPath;
+    let replacedLockPath;
+    let replaced = false;
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    const store = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        beforeFinalizationLockRecoveryClaim: async (candidate) => {
+          if (replaced) {
+            return;
+          }
+          replaced = true;
+          replacedLockPath = `${lockPath}.replaced`;
+          renameSync(lockPath, replacedLockPath);
+          await mkdir(lockPath);
+          const now = Date.now();
+          await writeFile(
+            join(candidate, "owner.json"),
+            JSON.stringify({
+              version: 1,
+              owner: { pid: process.pid, host: hostname(), token: "replacement-owner" },
+              acquiredAt: now,
+              leaseExpiresAt: now + 30_000,
+            })
+          );
+        },
+      })
+    );
+    try {
+      const source = join(directory, "replacement-race.html");
+      await writeFile(source, "replacement race");
+      const handle = await store.stageSourceFile(source);
+      lockPath = join(stagingDir, `.${handle}.lock`);
+      const child = spawn(
+        process.execPath,
+        [fileURLToPath(new URL("./finalization-lock-worker.mjs", import.meta.url)), lockPath],
+        { stdio: "ignore" }
+      );
+      const result = await waitForChild(child, 1_000);
+      assert.equal(result.code, 42);
+
+      await assert.rejects(
+        store.finalizeStagedFile(handle, validId),
+        (error) =>
+          error instanceof DocumentFileFinalizeError &&
+          error.finalizationLockState === "retained" &&
+          error.stagedFileState === "retained"
+      );
+      assert.equal(
+        JSON.parse(await readFile(join(lockPath, "owner.json"), "utf8")).owner.token,
+        "replacement-owner"
+      );
+      await rm(lockPath, { recursive: true, force: true });
+      await store.finalizeStagedFile(handle, validId);
+      await rm(replacedLockPath, { recursive: true, force: true });
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+test("out-of-model hostile external source replacement cannot change clone bytes", () =>
+  withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    let handle;
+    let raced = false;
+    const store = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        beforeStagedCloneLink: async () => {
+          if (raced) {
+            return;
+          }
+          raced = true;
+          renameSync(join(stagingDir, handle), join(stagingDir, "original-snapshot"));
+          await writeFile(join(stagingDir, handle), "replacement bytes");
+        },
+      })
+    );
+    try {
+      const source = join(directory, "clone-race.html");
+      await writeFile(source, "original bytes");
+      handle = await store.stageSourceFile(source);
+      await assert.rejects(
+        store.cloneStagedFile(handle),
+        (error) =>
+          error.name === "DocumentFileCloneError" &&
+          error.sourceFileState === "unknown" &&
+          error.clonedFileState === "absent" &&
+          error.finalizationLockState === "absent"
+      );
+      assert.equal(await readFile(join(stagingDir, "original-snapshot"), "utf8"), "original bytes");
+      assert.equal(await readFile(join(stagingDir, handle), "utf8"), "replacement bytes");
+    } finally {
+      await store.close();
+    }
+  }));
+
+test("out-of-model hostile external clone-path replacement is retained", () =>
+  withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    let replaced = false;
+    let clonedPath;
+    const store = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        beforeStagedCloneCleanup: async (clonedPathValue) => {
+          if (replaced) {
+            return;
+          }
+          replaced = true;
+          clonedPath = clonedPathValue;
+          renameSync(clonedPathValue, `${clonedPathValue}.original`);
+          await writeFile(clonedPath, "replacement staged bytes");
+        },
+      })
+    );
+    try {
+      const source = join(directory, "clone-cleanup-race.html");
+      await writeFile(source, "original staged bytes");
+      const handle = await store.stageSourceFile(source);
+      await assert.rejects(
+        store.cloneStagedFile(handle),
+        (error) =>
+          error.name === "DocumentFileCloneError" &&
+          error.clonedFileState === "unknown" &&
+          error.finalizationLockState === "absent"
+      );
+      assert.equal(await readFile(`${clonedPath}.original`, "utf8"), "original staged bytes");
+      assert.equal(await readFile(clonedPath, "utf8"), "replacement staged bytes");
+    } finally {
+      await store.close();
+    }
+  }));
+
+test("retains a durable target when post-publication staging fsync fails", () =>
+  withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    const store = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        beforePostPublicationStagingDirectorySync: async () => {
+          throw new Error("post-publication staging fsync failed");
+        },
+      })
+    );
+    try {
+      const source = join(directory, "post-publication-sync.html");
+      await writeFile(source, "durable target");
+      const handle = await store.stageSourceFile(source);
+
+      await assert.rejects(
+        store.finalizeStagedFile(handle, validId),
+        (error) =>
+          error instanceof DocumentFileFinalizeError &&
+          error.targetCreated === true &&
+          error.targetRecoveryPolicy === "retain" &&
+          error.targetState === "retained" &&
+          error.targetLockState === "unknown" &&
+          error.stagedFileState === "unknown" &&
+          error.finalizationLockState === "unknown"
+      );
+      assert.equal(await readFile(join(documentsDir, `${validId}.html`), "utf8"), "durable target");
+    } finally {
+      await store.close();
+    }
+  }));
+
+test("out-of-model hostile external target replacement is retained during finalization", () =>
+  withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    const store = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        beforeFinalizationTargetCleanup: async () => {
+          const target = join(documentsDir, `${validId}.html`);
+          renameSync(target, `${target}.original`);
+          await writeFile(target, "replacement target bytes");
+          throw new Error("fault after target link");
+        },
+      })
+    );
+    try {
+      const source = join(directory, "target-cleanup-race.html");
+      await writeFile(source, "original target bytes");
+      const handle = await store.stageSourceFile(source);
+      await assert.rejects(
+        store.finalizeStagedFile(handle, validId),
+        (error) =>
+          error instanceof DocumentFileFinalizeError &&
+          error.targetState === "unknown" &&
+          error.finalizationLockState === "absent"
+      );
+      assert.equal(
+        await readFile(join(documentsDir, `${validId}.html`), "utf8"),
+        "replacement target bytes"
+      );
+      assert.equal(
+        await readFile(join(documentsDir, `${validId}.html.original`), "utf8"),
+        "original target bytes"
+      );
+      assert.deepEqual(await readdir(stagingDir), []);
+    } finally {
+      await store.close();
+    }
+  }));
+
+test("target identity inspection failure retains the target as unknown", () =>
+  withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    const store = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        beforeFinalizationTargetInspection: async () => {
+          throw new Error("target inspection fault");
+        },
+      })
+    );
+    try {
+      const source = join(directory, "target-inspection-fault.html");
+      await writeFile(source, "target inspection fault");
+      const handle = await store.stageSourceFile(source);
+      await assert.rejects(
+        store.finalizeStagedFile(handle, validId),
+        (error) =>
+          error instanceof DocumentFileFinalizeError &&
+          error.targetCreated === true &&
+          error.targetState === "unknown" &&
+          error.targetCapability === undefined
+      );
+      assert.equal(
+        await readFile(join(documentsDir, `${validId}.html`), "utf8"),
+        "target inspection fault"
+      );
+      assert.deepEqual(await readdir(stagingDir), []);
+    } finally {
+      await store.close();
+    }
+  }));
+
+test("out-of-model hostile external target replacement is retained during deletion", () =>
+  withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    const store = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        beforeDocumentTargetDelete: async (targetPath) => {
+          renameSync(targetPath, `${targetPath}.original`);
+          await writeFile(targetPath, "replacement target owner");
+        },
+      })
+    );
+    try {
+      const source = join(directory, "target-delete-race.html");
+      await writeFile(source, "original target owner");
+      const handle = await store.stageSourceFile(source);
+      const capability = await store.finalizeStagedFile(handle, validId);
+      await assert.rejects(
+        store.deleteDocumentFile(validId, capability),
+        (error) => error.name === "DocumentFileDeleteError" && error.targetState === "unknown"
+      );
+      assert.equal(
+        await readFile(join(documentsDir, `${validId}.html`), "utf8"),
+        "replacement target owner"
+      );
+      assert.equal(
+        await readFile(join(documentsDir, `${validId}.html.original`), "utf8"),
+        "original target owner"
+      );
+    } finally {
+      await store.close();
+    }
+  }));
+
+test("concurrent Planview finalization of one id has one atomic winner", () =>
   withTempDirectory(async (directory) => {
     const documentsDir = join(directory, "documents");
     const stagingDir = join(directory, "staging");
@@ -391,6 +779,52 @@ test("concurrent finalization of one id has one atomic winner", () =>
     } finally {
       firstStore.close();
       secondStore.close();
+    }
+  }));
+
+test("bounds a live target-lock wait as a collision without claiming the peer lock", () =>
+  withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    let targetLockEnteredResolve;
+    const targetLockEntered = new Promise((resolve) => {
+      targetLockEnteredResolve = resolve;
+    });
+    let holdTargetLock = true;
+    const firstStore = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        beforeFinalizationTargetInspection: async () => {
+          if (!holdTargetLock) {
+            return;
+          }
+          holdTargetLock = false;
+          targetLockEnteredResolve();
+          await new Promise((resolve) => setTimeout(resolve, 64));
+        },
+      })
+    );
+    const secondStore = Effect.runSync(openDocumentFileStore({ documentsDir, stagingDir }));
+    try {
+      const firstSource = join(directory, "target-lock-winner.html");
+      const secondSource = join(directory, "target-lock-contender.html");
+      await writeFile(firstSource, "winner");
+      await writeFile(secondSource, "contender");
+      const firstHandle = await firstStore.stageSourceFile(firstSource);
+      const secondHandle = await secondStore.stageSourceFile(secondSource);
+
+      const firstFinalization = firstStore.finalizeStagedFile(firstHandle, validId);
+      await targetLockEntered;
+      await assert.rejects(
+        secondStore.finalizeStagedFile(secondHandle, validId),
+        (error) => error instanceof DocumentFileTargetBusyError
+      );
+      await firstFinalization;
+      assert.deepEqual(await readdir(stagingDir), []);
+    } finally {
+      await firstStore.close();
+      await secondStore.close();
     }
   }));
 

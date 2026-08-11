@@ -1,5 +1,5 @@
-import { hostname } from "node:os";
 import { mkdir, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 
 const [lockPath] = process.argv.slice(2);
 const now = Date.now();

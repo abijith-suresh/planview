@@ -1,23 +1,47 @@
-import { DatabaseSync } from "node:sqlite";
 import { isAbsolute } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { Data, Effect } from "effect";
 
 export {
-  type DocumentFileStore,
-  type DocumentFileStoreOptions,
   DocumentFileAlreadyExistsError,
+  DocumentFileCloneError,
   DocumentFileDeleteError,
+  DocumentFileDiscardError,
   DocumentFileFinalizeError,
+  type DocumentFileTargetCapability,
+  type DocumentFileTargetRecoveryPolicy,
   DocumentFileNotRegularError,
   DocumentFileReadError,
+  type DocumentFileResourceState,
+  DocumentFileSourceError,
+  type DocumentFileStore,
   DocumentFileStoreClosedError,
   DocumentFileStoreOpenError,
+  type DocumentFileStoreOptions,
   DocumentFileStorePathError,
-  DocumentFileSourceError,
+  DocumentFileTargetBusyError,
   InvalidStagedDocumentFileHandleError,
-  type StagedDocumentFileHandle,
   openDocumentFileStore,
+  type StagedDocumentFileHandle,
 } from "./document-files.js";
+export {
+  createDocumentPublicationCoordinator,
+  createMetadataGatedDocumentReader,
+  createPublicationCoordinator,
+  type DocumentPublicationCoordinator,
+  type DocumentPublicationCoordinatorOptions,
+  DocumentPublicationError,
+  DocumentPublicationNotFoundError,
+  type DocumentPublicationOrphanState,
+  DocumentPublicationReadError,
+  type DocumentPublicationRecovery,
+  type DocumentPublicationResource,
+  type DocumentPublicationResourceState,
+  type DocumentPublicationResult,
+  DocumentPublicationRetryLimitError,
+  type MetadataGatedDocumentReader,
+  type MetadataGatedDocumentReaderOptions,
+} from "./publication.js";
 
 export type DocumentMetadata = {
   readonly id: string;
