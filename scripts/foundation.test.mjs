@@ -208,6 +208,23 @@ test("repository foundation has the expected configuration", () => {
     "CLI test script"
   );
 
+  const corePackageJson = readJson("packages/core/package.json");
+  expectEqual(corePackageJson.name, "@planview/core", "core package name");
+  expectEqual(corePackageJson.private, true, "core package privacy");
+  expectEqual(corePackageJson.type, "module", "core package module type");
+  expectProperty(
+    corePackageJson.scripts,
+    "test",
+    "npm run build && node --test test/core.test.mjs",
+    "core test script"
+  );
+  expectProperty(
+    corePackageJson.scripts,
+    "typecheck",
+    "tsc --project tsconfig.json --noEmit",
+    "core typecheck script"
+  );
+
   const lockfile = readJson("package-lock.json");
   expectEqual(lockfile.lockfileVersion, 3, "lockfile version");
   assert.ok(
@@ -248,4 +265,8 @@ test("repository foundation has the expected configuration", () => {
     packageJson.devDependencies.typescript,
     "package-lock root TypeScript dependency"
   );
+
+  const coreLockPackage = lockfile.packages["packages/core"];
+  expectProperty(coreLockPackage, "name", corePackageJson.name, "package-lock core package name");
+  expectProperty(coreLockPackage, "version", corePackageJson.version, "package-lock core version");
 });
