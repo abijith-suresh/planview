@@ -1,4 +1,5 @@
 import { randomBytes as cryptoRandomBytes } from "node:crypto";
+import type { ReadStream } from "node:fs";
 import {
   chmodSync,
   closeSync,
@@ -12,10 +13,9 @@ import {
   realpathSync,
   type Stats,
 } from "node:fs";
+import { link, lstat, mkdir, open, rmdir, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
-import { link, lstat, mkdir, open, rename, rmdir, unlink } from "node:fs/promises";
 import { isAbsolute, join, normalize, parse, relative, resolve, sep } from "node:path";
-import type { ReadStream } from "node:fs";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
@@ -48,6 +48,9 @@ const FINALIZATION_LOCK_METADATA_BYTES = 4 * 1024;
 const FINALIZATION_LOCK_LEASE_MS = 30_000;
 const FINALIZATION_LOCK_RECOVERY_GRACE_MS = 5_000;
 const FINALIZATION_LOCK_OWNER_TOKEN_BYTES = 16;
+const FINALIZATION_LOCK_RECOVERY_CLAIM_NAME = ".recovery-claim";
+const TARGET_LOCK_WAIT_MS = 32;
+const TARGET_LOCK_RETRY_DELAY_MS = 1;
 const LOCAL_HOSTNAME = hostname();
 
 class FinalizationLockBusyError extends Error {}
@@ -75,14 +78,46 @@ export type DocumentFileStoreOptions = {
   readonly documentsDir: string;
   readonly stagingDir: string;
   readonly randomBytes?: (size: number) => Uint8Array;
+  /** Private race-test seam; production callers should leave this unset. */
+  readonly beforeFinalizationLockRecoveryClaim?: (lockPath: string) => Promise<void>;
+  /** Private race-test seam for the hard-link identity check. */
+  readonly beforeStagedCloneLink?: (sourcePath: string) => Promise<void>;
+  /** Private race-test seam for identity-safe clone compensation. */
+  readonly beforeStagedCloneCleanup?: (clonedPath: string) => Promise<void>;
+  /** Private race-test seam before the staged source is copied. */
+  readonly beforeStagedSourceCopy?: (stagedPath: string) => Promise<void>;
+  /** Private race-test seam for identity-safe source cleanup. */
+  readonly beforeStagedSourceCleanup?: (stagedPath: string) => Promise<void>;
+  /** Private fault seam before target identity inspection. */
+  readonly beforeFinalizationTargetInspection?: (targetPath: string) => Promise<void>;
+  /** Private fault seam for target residual classification. */
+  readonly beforeFinalizationTargetCleanup?: (targetPath: string) => Promise<void>;
+  /** Private fault seam immediately before the post-publication staging sync. */
+  readonly beforePostPublicationStagingDirectorySync?: () => Promise<void>;
+  /** Private race-test seam for target compensation. */
+  readonly beforeDocumentTargetDelete?: (targetPath: string) => Promise<void>;
 };
 
 declare const stagedDocumentFileHandleBrand: unique symbol;
+declare const documentFileTargetCapabilityBrand: unique symbol;
 
 /** A random capability naming one file in the private staging directory. */
 export type StagedDocumentFileHandle = string & {
   readonly [stagedDocumentFileHandleBrand]: "StagedDocumentFileHandle";
 };
+
+/**
+ * The identity returned by finalization and required for coordinator-owned
+ * target compensation. It cannot be obtained by inspecting a pathname alone.
+ */
+export type DocumentFileTargetCapability = Readonly<{
+  readonly id: string;
+  readonly identity: Readonly<Pick<Stats, "dev" | "ino" | "birthtimeMs">>;
+  readonly [documentFileTargetCapabilityBrand]: "DocumentFileTargetCapability";
+}>;
+
+export type DocumentFileResourceState = "absent" | "retained" | "unknown";
+export type DocumentFileTargetRecoveryPolicy = "delete" | "retain";
 
 export class DocumentFileStorePathError extends Data.TaggedError("DocumentFileStorePathError")<{
   readonly path: string;
@@ -125,9 +160,49 @@ export class DocumentFileAlreadyExistsError extends Data.TaggedError(
   readonly message: string;
 }> {}
 
+/** A live peer owns the id-wide target lock; callers may safely retry another id. */
+export class DocumentFileTargetBusyError extends Data.TaggedError("DocumentFileTargetBusyError")<{
+  readonly id: string;
+  readonly message: string;
+}> {}
+
 export class DocumentFileFinalizeError extends Data.TaggedError("DocumentFileFinalizeError")<{
   readonly id: string;
   readonly handle: string;
+  /** Whether a linked target may still be retained when the failure escaped. */
+  readonly targetCreated: boolean;
+  /** The identity capability for a target this finalizer linked, if retained or uncertain. */
+  readonly targetCapability?: DocumentFileTargetCapability;
+  /** Whether coordinator compensation may delete a retained target. */
+  readonly targetRecoveryPolicy: DocumentFileTargetRecoveryPolicy;
+  /** The best-known path state after any target compensation. */
+  readonly targetState: DocumentFileResourceState;
+  /** The state of the id-wide target lock used to serialize target cleanup. */
+  readonly targetLockState: DocumentFileResourceState;
+  /** Whether it is safe for the owning coordinator to try the staged handle. */
+  readonly stagingMayBeDiscarded: boolean;
+  readonly stagedFileState: DocumentFileResourceState;
+  readonly finalizationLockState: DocumentFileResourceState;
+  readonly cause: unknown;
+  readonly cleanupCause?: unknown;
+  readonly message: string;
+}> {}
+
+export class DocumentFileDiscardError extends Data.TaggedError("DocumentFileDiscardError")<{
+  readonly handle: string;
+  readonly stagedFileState: DocumentFileResourceState;
+  readonly finalizationLockState: DocumentFileResourceState;
+  readonly cause: unknown;
+  readonly cleanupCause?: unknown;
+  readonly message: string;
+}> {}
+
+export class DocumentFileCloneError extends Data.TaggedError("DocumentFileCloneError")<{
+  readonly handle: string;
+  readonly clonedHandle?: StagedDocumentFileHandle;
+  readonly sourceFileState: DocumentFileResourceState;
+  readonly clonedFileState: DocumentFileResourceState;
+  readonly finalizationLockState: DocumentFileResourceState;
   readonly cause: unknown;
   readonly cleanupCause?: unknown;
   readonly message: string;
@@ -141,6 +216,8 @@ export class DocumentFileReadError extends Data.TaggedError("DocumentFileReadErr
 
 export class DocumentFileDeleteError extends Data.TaggedError("DocumentFileDeleteError")<{
   readonly id: string;
+  readonly targetState: DocumentFileResourceState;
+  readonly targetLockState: DocumentFileResourceState;
   readonly cause: unknown;
   readonly message: string;
 }> {}
@@ -149,10 +226,20 @@ export interface DocumentFileStore {
   /** Requests closure and resolves after all already-started operations release their leases. */
   readonly close: () => Promise<void>;
   readonly stageSourceFile: (sourcePath: string) => Promise<StagedDocumentFileHandle>;
-  readonly finalizeStagedFile: (handle: StagedDocumentFileHandle, id: string) => Promise<void>;
+  readonly finalizeStagedFile: (
+    handle: StagedDocumentFileHandle,
+    id: string
+  ) => Promise<DocumentFileTargetCapability>;
   readonly readDocument: (id: string) => Promise<ReadStream>;
   readonly readDocumentFile: (id: string) => Promise<ReadStream>;
-  readonly deleteDocumentFile: (id: string) => Promise<boolean>;
+  readonly deleteDocumentFile: (
+    id: string,
+    expectedTarget?: DocumentFileTargetCapability
+  ) => Promise<boolean>;
+  /** Creates a second immutable staged handle without reopening source input. */
+  readonly cloneStagedFile: (handle: StagedDocumentFileHandle) => Promise<StagedDocumentFileHandle>;
+  /** Safely consumes a staged handle when a coordinator needs compensation. */
+  readonly discardStagedFile: (handle: StagedDocumentFileHandle) => Promise<boolean>;
 }
 
 const isFileStoreError = (error: unknown) =>
@@ -163,7 +250,10 @@ const isFileStoreError = (error: unknown) =>
   error instanceof DocumentFileNotRegularError ||
   error instanceof InvalidStagedDocumentFileHandleError ||
   error instanceof DocumentFileAlreadyExistsError ||
+  error instanceof DocumentFileTargetBusyError ||
   error instanceof DocumentFileFinalizeError ||
+  error instanceof DocumentFileDiscardError ||
+  error instanceof DocumentFileCloneError ||
   error instanceof DocumentFileReadError ||
   error instanceof DocumentFileDeleteError;
 
@@ -217,11 +307,36 @@ const canonicalPath = (path: string) => pathKey(realpathSync.native(path));
 const samePath = (left: string, right: string) => pathKey(left) === pathKey(right);
 
 const sameFileIdentity = (left: FileIdentity, right: FileIdentity) => {
-  if (left.dev !== 0 || left.ino !== 0 || right.dev !== 0 || right.ino !== 0) {
-    return left.dev === right.dev && left.ino === right.ino;
+  if (left.dev !== right.dev || left.ino !== right.ino) {
+    return false;
   }
-  return left.birthtimeMs === right.birthtimeMs;
+
+  // Device/inode is the usual POSIX identity, but birthtime distinguishes an
+  // inode that has been recycled while both observations retain the same
+  // device/inode pair. Node exposes birthtimeMs on the supported platforms;
+  // if an adapter supplies a non-finite value, fall back to dev/ino rather
+  // than rejecting a platform that does not report creation time.
+  const leftBirthtime = Number.isFinite(left.birthtimeMs) ? left.birthtimeMs : undefined;
+  const rightBirthtime = Number.isFinite(right.birthtimeMs) ? right.birthtimeMs : undefined;
+  if (leftBirthtime !== undefined && rightBirthtime !== undefined) {
+    return leftBirthtime === rightBirthtime;
+  }
+
+  // When birthtime is unavailable, dev/ino is still useful if the filesystem
+  // reports either component. With all three fields unavailable there is no
+  // identity proof, so cleanup must fail closed.
+  return left.dev !== 0 || left.ino !== 0 || right.dev !== 0 || right.ino !== 0;
 };
+
+const targetCapabilityFor = (id: string, identity: FileIdentity) =>
+  Object.freeze({
+    id,
+    identity: Object.freeze({
+      dev: identity.dev,
+      ino: identity.ino,
+      birthtimeMs: identity.birthtimeMs,
+    }),
+  }) as DocumentFileTargetCapability;
 
 const pathError = (path: string, reason: string) =>
   new DocumentFileStorePathError({
@@ -579,6 +694,7 @@ const readFinalizationLockMetadata = async (lockPath: string) => {
       metadataPath,
       false
     );
+    const metadataIdentity = await metadataFile.stat();
     const contents = Buffer.alloc(FINALIZATION_LOCK_METADATA_BYTES + 1);
     const { bytesRead } = await metadataFile.read(contents, 0, contents.length, 0);
     if (bytesRead > FINALIZATION_LOCK_METADATA_BYTES) {
@@ -619,11 +735,15 @@ const readFinalizationLockMetadata = async (lockPath: string) => {
     }
 
     return {
-      version: 1,
-      owner: { pid, host, token },
-      acquiredAt,
-      leaseExpiresAt,
-    } satisfies FinalizationLockMetadata;
+      metadata: {
+        version: 1,
+        owner: { pid, host, token },
+        acquiredAt,
+        leaseExpiresAt,
+      } satisfies FinalizationLockMetadata,
+      identity: lockStats,
+      metadataIdentity,
+    };
   } catch (cause) {
     if (isNotFound(cause)) {
       return undefined;
@@ -645,13 +765,145 @@ const isProcessAlive = (pid: number) => {
   }
 };
 
-const removeFinalizationLockDirectory = async (lockPath: string) => {
+type FinalizationRecoveryClaim = {
+  readonly version: 1;
+  readonly owner: {
+    readonly pid: number;
+    readonly host: string;
+  };
+  readonly token: string;
+  readonly claimedAt: number;
+  readonly leaseExpiresAt: number;
+};
+
+type FinalizationRecoveryClaimObservation = FinalizationRecoveryClaim & {
+  readonly identity: FileIdentity;
+};
+
+type FinalizationLockLease = {
+  readonly identity: FileIdentity;
+  readonly metadataIdentity?: FileIdentity;
+  readonly recoveryClaimName?: string;
+  readonly recoveryClaimIdentity?: FileIdentity;
+};
+
+const readFinalizationRecoveryClaim = async (claimPath: string) => {
+  let claimFile: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    claimFile = await openWithoutFollowingLinks(claimPath, constants.O_RDONLY, claimPath, false);
+    const claimIdentity = await claimFile.stat();
+    const contents = Buffer.alloc(FINALIZATION_LOCK_METADATA_BYTES + 1);
+    const { bytesRead } = await claimFile.read(contents, 0, contents.length, 0);
+    if (bytesRead > FINALIZATION_LOCK_METADATA_BYTES) {
+      return undefined;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(contents.subarray(0, bytesRead).toString("utf8"));
+    } catch {
+      return undefined;
+    }
+    if (!isRecord(parsed)) {
+      return undefined;
+    }
+    const ownerValue = Reflect.get(parsed, "owner");
+    if (!isRecord(ownerValue)) {
+      return undefined;
+    }
+    const owner = ownerValue;
+    const { version, token, claimedAt, leaseExpiresAt } = parsed;
+    const { pid, host } = owner;
+    if (
+      version !== 1 ||
+      typeof pid !== "number" ||
+      !Number.isSafeInteger(pid) ||
+      pid <= 0 ||
+      typeof host !== "string" ||
+      host.length === 0 ||
+      typeof token !== "string" ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(token) ||
+      typeof claimedAt !== "number" ||
+      !Number.isSafeInteger(claimedAt) ||
+      typeof leaseExpiresAt !== "number" ||
+      !Number.isSafeInteger(leaseExpiresAt) ||
+      claimedAt < 0 ||
+      leaseExpiresAt < claimedAt ||
+      leaseExpiresAt - claimedAt > FINALIZATION_LOCK_LEASE_MS
+    ) {
+      return undefined;
+    }
+    return {
+      version: 1,
+      owner: { pid, host },
+      token,
+      claimedAt,
+      leaseExpiresAt,
+      identity: claimIdentity,
+    } satisfies FinalizationRecoveryClaimObservation;
+  } catch (cause) {
+    if (isNotFound(cause)) {
+      return undefined;
+    }
+    throw cause;
+  } finally {
+    await claimFile?.close();
+  }
+};
+
+const removeFinalizationLockDirectory = async (lockPath: string, lease?: FinalizationLockLease) => {
+  if (lease !== undefined) {
+    const current = await lstat(lockPath);
+    if (!sameFileIdentity(lease.identity, current)) {
+      throw new Error("The finalization lock was replaced before its owner could release it.");
+    }
+  }
+
   const metadataPath = join(lockPath, FINALIZATION_LOCK_METADATA_NAME);
+  if (lease !== undefined) {
+    try {
+      const currentMetadata = await lstat(metadataPath);
+      if (
+        lease.metadataIdentity === undefined ||
+        !sameFileIdentity(lease.metadataIdentity, currentMetadata)
+      ) {
+        throw new Error(
+          "The finalization lock metadata identity was unavailable or replaced before release."
+        );
+      }
+    } catch (cause) {
+      if (!isNotFound(cause)) {
+        throw cause;
+      }
+    }
+  }
   try {
     await unlink(metadataPath);
   } catch (cause) {
     if (!isNotFound(cause)) {
       throw cause;
+    }
+  }
+  if (lease?.recoveryClaimName !== undefined) {
+    const recoveryClaimPath = join(lockPath, lease.recoveryClaimName);
+    try {
+      const currentClaim = await lstat(recoveryClaimPath);
+      if (
+        lease.recoveryClaimIdentity === undefined ||
+        !sameFileIdentity(lease.recoveryClaimIdentity, currentClaim)
+      ) {
+        throw new Error("The stale-lock recovery claim identity was unavailable or replaced.");
+      }
+    } catch (cause) {
+      if (!isNotFound(cause)) {
+        throw cause;
+      }
+    }
+    try {
+      await unlink(recoveryClaimPath);
+    } catch (cause) {
+      if (!isNotFound(cause)) {
+        throw cause;
+      }
     }
   }
   try {
@@ -663,31 +915,139 @@ const removeFinalizationLockDirectory = async (lockPath: string) => {
   }
 };
 
-const recoverStaleFinalizationLock = async (lockPath: string) => {
-  const metadata = await readFinalizationLockMetadata(lockPath);
+const recoverStaleFinalizationLock = async (
+  lockPath: string,
+  beforeClaim?: (lockPath: string) => Promise<void>
+) => {
+  const observation = await readFinalizationLockMetadata(lockPath);
+  const metadata = observation?.metadata;
   if (
+    observation === undefined ||
     metadata === undefined ||
     metadata.owner.host !== LOCAL_HOSTNAME ||
     metadata.leaseExpiresAt > Date.now() - FINALIZATION_LOCK_RECOVERY_GRACE_MS ||
     isProcessAlive(metadata.owner.pid)
   ) {
-    return false;
+    return undefined;
   }
 
-  const quarantinePath = `${lockPath}.recovery-${metadata.owner.token}-${process.pid}-${cryptoRandomBytes(8).toString("hex")}`;
+  const claimPath = join(lockPath, FINALIZATION_LOCK_RECOVERY_CLAIM_NAME);
+  // A fixed claim name is deliberate: O_EXCL is the one atomic transition that
+  // gives a stale-lock recovery owner authority. Random claim names let two
+  // recoverers both believe they won. An existing claim is only reapable when
+  // its claimant is definitely dead; otherwise the lock remains busy.
   try {
-    // Rename moves precisely the lock directory that was inspected. It avoids
-    // the unsafe remove-then-create gap in which another finalizer could win.
-    await rename(lockPath, quarantinePath);
+    const existingClaim = await readFinalizationRecoveryClaim(claimPath);
+    if (existingClaim !== undefined) {
+      if (
+        existingClaim.owner.host !== LOCAL_HOSTNAME ||
+        existingClaim.leaseExpiresAt > Date.now() - FINALIZATION_LOCK_RECOVERY_GRACE_MS ||
+        isProcessAlive(existingClaim.owner.pid)
+      ) {
+        return undefined;
+      }
+      // Do not guess when an old claim has malformed or replaced contents. A
+      // well-formed, definitely dead claim can be removed before the exclusive
+      // create below; competing removers are harmless because only one create
+      // can succeed. If the directory changed, leave it untouched and report busy.
+      const current = await lstat(lockPath);
+      if (!sameFileIdentity(observation.identity, current)) {
+        return undefined;
+      }
+      try {
+        const currentClaim = await lstat(claimPath);
+        if (!sameFileIdentity(existingClaim.identity, currentClaim)) {
+          return undefined;
+        }
+        await unlink(claimPath);
+      } catch (cause) {
+        if (!isNotFound(cause)) {
+          throw cause;
+        }
+      }
+    } else {
+      try {
+        await lstat(claimPath);
+        // A malformed claim is intentionally retained. It is not safe to infer
+        // that its owner is gone from untrusted bytes.
+        return undefined;
+      } catch (cause) {
+        if (!isNotFound(cause)) {
+          throw cause;
+        }
+      }
+    }
   } catch (cause) {
     if (isNotFound(cause)) {
-      return false;
+      return undefined;
     }
     throw cause;
   }
 
-  await removeFinalizationLockDirectory(quarantinePath);
-  return true;
+  await beforeClaim?.(lockPath);
+  let claimFile: Awaited<ReturnType<typeof open>> | undefined;
+  let claimIdentity: FileIdentity | undefined;
+  try {
+    claimFile = await open(
+      claimPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
+      PRIVATE_FILE_MODE
+    );
+    const claimedAt = Date.now();
+    await claimFile.writeFile(
+      JSON.stringify({
+        version: 1,
+        owner: { pid: process.pid, host: LOCAL_HOSTNAME },
+        token: metadata.owner.token,
+        claimedAt,
+        leaseExpiresAt: claimedAt + FINALIZATION_LOCK_LEASE_MS,
+      }),
+      "utf8"
+    );
+    await claimFile.sync();
+    claimIdentity = await claimFile.stat();
+  } catch (cause) {
+    if (errorCode(cause) === "EEXIST" || isNotFound(cause)) {
+      return undefined;
+    }
+    throw cause;
+  } finally {
+    await claimFile?.close().catch(() => undefined);
+  }
+
+  try {
+    const current = await lstat(lockPath);
+    if (!sameFileIdentity(observation.identity, current)) {
+      // Remove only the marker inode created by this attempt. If the path was
+      // replaced after the marker was created, the marker is in the old
+      // directory; if it was replaced before creation, this removes our marker
+      // from the replacement without touching its owner metadata.
+      if (claimIdentity !== undefined) {
+        try {
+          const currentClaim = await lstat(claimPath);
+          if (sameFileIdentity(claimIdentity, currentClaim)) {
+            await unlink(claimPath);
+          }
+        } catch {
+          // The replacement remains conservatively busy if our marker cannot
+          // be removed without an identity proof.
+        }
+      }
+      return undefined;
+    }
+    const currentClaim = await lstat(claimPath);
+    return {
+      identity: current,
+      metadataIdentity: observation.metadataIdentity,
+      recoveryClaimName: FINALIZATION_LOCK_RECOVERY_CLAIM_NAME,
+      recoveryClaimIdentity: currentClaim,
+    } satisfies FinalizationLockLease;
+  } catch (cause) {
+    if (isNotFound(cause)) {
+      return undefined;
+    }
+    throw cause;
+  }
 };
 
 const createFinalizationLockMetadata = () => {
@@ -704,54 +1064,65 @@ const createFinalizationLockMetadata = () => {
   } satisfies FinalizationLockMetadata;
 };
 
-const acquireFinalizationLock = async (lockPath: string) => {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      await mkdir(lockPath, { mode: PRIVATE_DIRECTORY_MODE });
-    } catch (cause) {
-      if (errorCode(cause) !== "EEXIST") {
-        throw cause;
-      }
-      if (attempt === 0) {
-        try {
-          if (await recoverStaleFinalizationLock(lockPath)) {
-            continue;
-          }
-        } catch {
-          // A lock that cannot be inspected or quarantined is retained. Treat it
-          // as busy rather than deleting the staged file behind an owner.
-        }
-      }
-      throw new FinalizationLockBusyError("The staged document file is already being finalized.");
-    }
-
-    const metadataPath = join(lockPath, FINALIZATION_LOCK_METADATA_NAME);
-    const metadata = createFinalizationLockMetadata();
-    let metadataFile: Awaited<ReturnType<typeof open>> | undefined;
-    try {
-      metadataFile = await open(
-        metadataPath,
-        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
-        PRIVATE_FILE_MODE
-      );
-      await metadataFile.writeFile(JSON.stringify(metadata), "utf8");
-      await metadataFile.sync();
-      await metadataFile.close();
-      metadataFile = undefined;
-    } catch (cause) {
-      await metadataFile?.close().catch(() => undefined);
-      metadataFile = undefined;
-      try {
-        await removeFinalizationLockDirectory(lockPath);
-      } catch (cleanupCause) {
-        throw new Error(
-          `Could not initialize finalization lock: ${describe(cause)}; cleanup also failed: ${describe(cleanupCause)}`
-        );
-      }
+const acquireFinalizationLock = async (
+  lockPath: string,
+  beforeRecoveryClaim?: (lockPath: string) => Promise<void>
+) => {
+  let createdIdentity: FileIdentity | undefined;
+  try {
+    await mkdir(lockPath, { mode: PRIVATE_DIRECTORY_MODE });
+    createdIdentity = await lstat(lockPath);
+  } catch (cause) {
+    if (errorCode(cause) !== "EEXIST") {
       throw cause;
     }
-    return;
+    try {
+      const recovered = await recoverStaleFinalizationLock(lockPath, beforeRecoveryClaim);
+      if (recovered !== undefined) {
+        return recovered;
+      }
+    } catch {
+      // A lock that cannot be inspected or atomically claimed is retained.
+      // Treat it as busy rather than deleting the staged file behind an owner.
+    }
+    throw new FinalizationLockBusyError("The staged document file is already being finalized.");
   }
+
+  const metadataPath = join(lockPath, FINALIZATION_LOCK_METADATA_NAME);
+  const metadata = createFinalizationLockMetadata();
+  let metadataFile: Awaited<ReturnType<typeof open>> | undefined;
+  let metadataIdentity: FileIdentity | undefined;
+  try {
+    metadataFile = await open(
+      metadataPath,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
+      PRIVATE_FILE_MODE
+    );
+    await metadataFile.writeFile(JSON.stringify(metadata), "utf8");
+    await metadataFile.sync();
+    metadataIdentity = await metadataFile.stat();
+    await metadataFile.close();
+    metadataFile = undefined;
+  } catch (cause) {
+    await metadataFile?.close().catch(() => undefined);
+    metadataFile = undefined;
+    try {
+      await removeFinalizationLockDirectory(
+        lockPath,
+        createdIdentity === undefined ? undefined : { identity: createdIdentity }
+      );
+    } catch (cleanupCause) {
+      throw new Error(
+        `Could not initialize finalization lock: ${describe(cause)}; cleanup also failed: ${describe(cleanupCause)}`
+      );
+    }
+    throw cause;
+  }
+  const identity = await lstat(lockPath);
+  return {
+    identity,
+    ...(metadataIdentity === undefined ? {} : { metadataIdentity }),
+  } satisfies FinalizationLockLease;
 };
 
 const entryPath = (directory: TrustedDirectory, name: string) =>
@@ -796,11 +1167,30 @@ const createStore = ({
   documentsDir,
   stagingDir,
   randomBytes,
+  beforeFinalizationLockRecoveryClaim,
+  beforeStagedCloneLink,
+  beforeStagedCloneCleanup,
+  beforeStagedSourceCopy,
+  beforeStagedSourceCleanup,
+  beforeFinalizationTargetInspection,
+  beforeFinalizationTargetCleanup,
+  beforePostPublicationStagingDirectorySync,
+  beforeDocumentTargetDelete,
 }: {
   readonly documentsDir: TrustedDirectory;
   readonly stagingDir: TrustedDirectory;
   readonly randomBytes?: (size: number) => Uint8Array;
+  readonly beforeFinalizationLockRecoveryClaim?: (lockPath: string) => Promise<void>;
+  readonly beforeStagedCloneLink?: (sourcePath: string) => Promise<void>;
+  readonly beforeStagedCloneCleanup?: (clonedPath: string) => Promise<void>;
+  readonly beforeStagedSourceCopy?: (stagedPath: string) => Promise<void>;
+  readonly beforeStagedSourceCleanup?: (stagedPath: string) => Promise<void>;
+  readonly beforeFinalizationTargetInspection?: (targetPath: string) => Promise<void>;
+  readonly beforeFinalizationTargetCleanup?: (targetPath: string) => Promise<void>;
+  readonly beforePostPublicationStagingDirectorySync?: () => Promise<void>;
+  readonly beforeDocumentTargetDelete?: (targetPath: string) => Promise<void>;
 }) => {
+  const stagedIdentities = new Map<string, FileIdentity>();
   let closeRequested = false;
   let directoriesClosed = false;
   let activeOperations = 0;
@@ -845,9 +1235,30 @@ const createStore = ({
 
   const stagingPath = (handle: unknown) => entryPath(stagingDir, validateStagedHandle(handle));
   const documentPath = (id: string) => entryPath(documentsDir, `${validateDocumentId(id)}.html`);
-  const unlinkEntry = async (directory: TrustedDirectory, name: string) => {
+  const discardEntry = async (
+    directory: TrustedDirectory,
+    name: string,
+    expectedIdentity: FileIdentity
+  ) => {
     verifyTrustedDirectory(directory);
-    await unlink(entryPath(directory, name));
+    const path = entryPath(directory, name);
+    let current: Stats;
+    try {
+      current = await lstat(path);
+    } catch (cause) {
+      if (isNotFound(cause)) {
+        return false;
+      }
+      throw cause;
+    }
+    if (current.isSymbolicLink() || !current.isFile()) {
+      throw regularFileError(path);
+    }
+    if (!sameFileIdentity(expectedIdentity, current)) {
+      throw new Error("The file was replaced before identity-safe discard.");
+    }
+    await unlink(path);
+    return true;
   };
   const close = () => {
     if (closePromise === undefined) {
@@ -911,6 +1322,10 @@ const createStore = ({
               throw regularFileError(stagingPath(candidate));
             }
             handle = candidate;
+            // Retain the inode identity for every later cleanup. A handle is a
+            // pathname capability, not proof that a replacement at that path
+            // belongs to this staging operation.
+            stagedIdentities.set(candidate, stagedStats);
             break;
           } catch (cause) {
             if (staged !== undefined) {
@@ -927,6 +1342,7 @@ const createStore = ({
           throw new Error("Could not allocate a unique staged document file handle.");
         }
         ensureTrustedRoots();
+        await beforeStagedSourceCopy?.(stagingPath(handle));
 
         sourceStream = source.createReadStream({ autoClose: true });
         let copiedBytes = 0;
@@ -969,6 +1385,7 @@ const createStore = ({
         );
         try {
           await durableStaged.sync();
+          stagedIdentities.set(handle, await durableStaged.stat());
         } finally {
           await durableStaged.close().catch(() => undefined);
         }
@@ -990,7 +1407,8 @@ const createStore = ({
         let cleanupCause: unknown;
         if (handle !== undefined && !keepStaged) {
           try {
-            await unlinkEntry(stagingDir, handle);
+            await beforeStagedSourceCleanup?.(stagingPath(handle));
+            await discardStagedFile(handle);
           } catch (cleanupError) {
             if (!isNotFound(cleanupError)) {
               cleanupCause = cleanupError;
@@ -1035,26 +1453,125 @@ const createStore = ({
       const sourcePath = stagingPath(handle);
       const targetPath = documentPath(documentId);
       const lockPath = entryPath(stagingDir, `.${handle}.lock`);
+      const targetLockPath = entryPath(stagingDir, `.${documentId}.target.lock`);
       let source: Awaited<ReturnType<typeof open>> | undefined;
+      let lockLease: FinalizationLockLease | undefined;
       let lockOwned = false;
       let anotherFinalizerOwnsLock = false;
+      let targetLockLease: FinalizationLockLease | undefined;
+      let targetLockOwned = false;
+      let stagedFileState: DocumentFileResourceState = "retained";
+      let finalizationLockState: DocumentFileResourceState = "absent";
+      let targetLockState: DocumentFileResourceState = "absent";
       let targetNeedsCleanup = false;
+      let targetCreated = false;
+      let postPublicationStagingSyncFailed = false;
+      let targetRecoveryPolicy: DocumentFileTargetRecoveryPolicy = "delete";
+      let targetState: DocumentFileResourceState = "absent";
       let targetIdentity: FileIdentity | undefined;
+      let targetCapability: DocumentFileTargetCapability | undefined;
+      let sourceIdentity: FileIdentity | undefined;
       let cleanupCause: unknown;
+      const discardFinalizationStaged = async () => {
+        const expectedIdentity = sourceIdentity ?? stagedIdentities.get(handle);
+        if (expectedIdentity === undefined) {
+          try {
+            await lstat(sourcePath);
+          } catch (cause) {
+            if (isNotFound(cause)) {
+              stagedIdentities.delete(handle);
+              return false;
+            }
+            throw cause;
+          }
+          throw new Error("The staged document file identity was unavailable for cleanup.");
+        }
+        await beforeStagedSourceCleanup?.(sourcePath);
+        const removed = await discardEntry(stagingDir, handle, expectedIdentity);
+        stagedIdentities.delete(handle);
+        return removed;
+      };
 
       try {
-        source = await openWithoutFollowingLinks(sourcePath, constants.O_RDONLY, sourcePath, false);
+        const expectedStagedIdentity = stagedIdentities.get(handle);
+        try {
+          source = await openWithoutFollowingLinks(
+            sourcePath,
+            constants.O_RDONLY,
+            sourcePath,
+            false
+          );
+        } catch (sourceOpenCause) {
+          stagedFileState = isNotFound(sourceOpenCause) ? "absent" : "unknown";
+          throw sourceOpenCause;
+        }
         const sourceStats = await source.stat();
+        sourceIdentity = sourceStats;
         validateSourceFileSize(sourceStats.size);
+        if (
+          expectedStagedIdentity !== undefined &&
+          !sameFileIdentity(expectedStagedIdentity, sourceStats)
+        ) {
+          stagedFileState = "unknown";
+          throw new Error("The staged document file was replaced before finalization.");
+        }
 
         try {
-          await acquireFinalizationLock(lockPath);
+          lockLease = await acquireFinalizationLock(lockPath, beforeFinalizationLockRecoveryClaim);
           lockOwned = true;
+          finalizationLockState = "retained";
           await syncDirectory(stagingDir);
         } catch (cause) {
           if (cause instanceof FinalizationLockBusyError) {
             anotherFinalizerOwnsLock = true;
+            finalizationLockState = "retained";
+          } else {
+            finalizationLockState = "unknown";
           }
+          throw cause;
+        }
+
+        try {
+          const waitDeadline = process.hrtime.bigint() + BigInt(TARGET_LOCK_WAIT_MS) * 1_000_000n;
+          let targetLockCause: unknown;
+          while (targetLockLease === undefined) {
+            try {
+              targetLockLease = await acquireFinalizationLock(
+                targetLockPath,
+                beforeFinalizationLockRecoveryClaim
+              );
+              targetLockCause = undefined;
+            } catch (cause) {
+              targetLockCause = cause;
+              if (!(cause instanceof FinalizationLockBusyError)) {
+                break;
+              }
+              const remainingNanoseconds = waitDeadline - process.hrtime.bigint();
+              if (remainingNanoseconds <= 0n) {
+                break;
+              }
+              const remainingMilliseconds = Number((remainingNanoseconds + 999_999n) / 1_000_000n);
+              await new Promise<void>((resolve) =>
+                setTimeout(resolve, Math.min(TARGET_LOCK_RETRY_DELAY_MS, remainingMilliseconds))
+              );
+            }
+          }
+          if (targetLockLease === undefined) {
+            if (targetLockCause instanceof FinalizationLockBusyError) {
+              throw new DocumentFileTargetBusyError({
+                id: documentId,
+                message: `Document target ${documentId} remained locked by a live peer after ${TARGET_LOCK_WAIT_MS}ms.`,
+              });
+            }
+            throw targetLockCause ?? new FinalizationLockBusyError("The target is busy.");
+          }
+          targetLockOwned = true;
+          targetLockState = "retained";
+          await syncDirectory(stagingDir);
+        } catch (cause) {
+          // A busy peer owns this id-wide lock. It is not this finalizer's
+          // resource and must not be surfaced as this caller's retained lock.
+          targetLockState = cause instanceof DocumentFileTargetBusyError ? "absent" : "unknown";
           throw cause;
         }
 
@@ -1080,6 +1597,8 @@ const createStore = ({
           // used here. The source and target must support hard links and share a volume.
           await link(sourcePath, targetPath);
           targetNeedsCleanup = true;
+          targetCreated = true;
+          targetState = "retained";
         } catch (cause) {
           if (errorCode(cause) === "EEXIST") {
             await classifyTargetCollision(targetPath, documentId);
@@ -1087,6 +1606,7 @@ const createStore = ({
           throw cause;
         }
 
+        await beforeFinalizationTargetInspection?.(targetPath);
         const targetStats = await lstat(targetPath);
         const sourceAfterLink = await source.stat();
         if (
@@ -1097,44 +1617,100 @@ const createStore = ({
           throw regularFileError(targetPath);
         }
         targetIdentity = targetStats;
+        targetCapability = targetCapabilityFor(documentId, targetStats);
 
+        await beforeFinalizationTargetCleanup?.(targetPath);
         await syncDirectory(documentsDir);
+        // Once the target directory is synced, the target is the recoverable
+        // durable result. Later staging cleanup failures must not retract it.
+        targetRecoveryPolicy = "retain";
         targetNeedsCleanup = false;
         await source.close();
         source = undefined;
-        await unlinkEntry(stagingDir, handle);
-        await removeFinalizationLockDirectory(lockPath);
+        await discardFinalizationStaged();
+        stagedFileState = "absent";
+        await removeFinalizationLockDirectory(lockPath, lockLease);
+        lockLease = undefined;
         lockOwned = false;
-        await syncDirectory(stagingDir);
-        return;
+        finalizationLockState = "absent";
+        await removeFinalizationLockDirectory(targetLockPath, targetLockLease);
+        targetLockLease = undefined;
+        targetLockOwned = false;
+        targetLockState = "absent";
+        try {
+          await beforePostPublicationStagingDirectorySync?.();
+          await syncDirectory(stagingDir);
+        } catch (postPublicationSyncCause) {
+          // A failed directory sync makes the durability of every just-removed
+          // staging entry ambiguous. Keep all residual states recoverable and
+          // let the coordinator preserve the already-synced target.
+          postPublicationStagingSyncFailed = true;
+          stagedFileState = "unknown";
+          finalizationLockState = "unknown";
+          targetLockState = "unknown";
+          throw postPublicationSyncCause;
+        }
+        if (targetCapability === undefined) {
+          throw new Error("The finalized document target identity was unavailable.");
+        }
+        return targetCapability;
       } catch (cause) {
         await source?.close().catch((closeError) => {
           cleanupCause ??= closeError;
         });
         source = undefined;
 
-        if (targetNeedsCleanup && !anotherFinalizerOwnsLock) {
+        if (targetNeedsCleanup && targetLockOwned) {
           try {
-            const targetStats = await lstat(targetPath);
-            if (
-              targetIdentity === undefined ||
-              !targetStats.isFile() ||
-              targetStats.isSymbolicLink() ||
-              !sameFileIdentity(targetIdentity, targetStats)
-            ) {
-              throw new Error("The unpublished document target changed before cleanup.");
-            }
-            await unlinkEntry(documentsDir, `${documentId}.html`);
-            targetNeedsCleanup = false;
-            try {
-              await syncDirectory(documentsDir);
-            } catch (targetSyncCleanupError) {
-              cleanupCause ??= targetSyncCleanupError;
+            if (targetIdentity === undefined) {
+              // A successful link is not enough to authorize pathname cleanup:
+              // if target inspection failed, we cannot prove that this path is
+              // still the inode created by this finalizer. Inspect only to
+              // distinguish a known-absent path; never delete without the
+              // identity captured immediately after link().
+              try {
+                await lstat(targetPath);
+              } catch (inspectionCause) {
+                if (isNotFound(inspectionCause)) {
+                  targetNeedsCleanup = false;
+                  targetCreated = false;
+                  targetState = "absent";
+                } else {
+                  throw inspectionCause;
+                }
+              }
+              if (targetNeedsCleanup) {
+                throw new Error(
+                  "The finalized document target identity was unavailable for cleanup."
+                );
+              }
+            } else {
+              const removedTarget = await discardEntry(
+                documentsDir,
+                `${documentId}.html`,
+                targetIdentity
+              );
+              targetNeedsCleanup = false;
+              targetCreated = false;
+              targetState = "absent";
+              if (removedTarget) {
+                try {
+                  await syncDirectory(documentsDir);
+                } catch (targetSyncCleanupError) {
+                  targetState = "unknown";
+                  cleanupCause ??= targetSyncCleanupError;
+                }
+              }
             }
           } catch (targetCleanupError) {
             if (isNotFound(targetCleanupError)) {
               targetNeedsCleanup = false;
+              targetCreated = false;
+              targetState = "absent";
             } else {
+              // The path may now be a replacement. Publication compensation
+              // must not delete it by document id after identity is uncertain.
+              targetState = "unknown";
               cleanupCause ??= targetCleanupError;
             }
           }
@@ -1142,28 +1718,61 @@ const createStore = ({
 
         if (lockOwned) {
           try {
-            await unlinkEntry(stagingDir, handle);
+            await discardFinalizationStaged();
+            stagedFileState = "absent";
           } catch (sourceCleanupError) {
-            if (!isNotFound(sourceCleanupError)) {
+            if (isNotFound(sourceCleanupError)) {
+              stagedFileState = "absent";
+            } else {
+              stagedFileState = "unknown";
               cleanupCause ??= sourceCleanupError;
             }
           }
           try {
-            await removeFinalizationLockDirectory(lockPath);
+            await removeFinalizationLockDirectory(lockPath, lockLease);
+            lockLease = undefined;
             lockOwned = false;
+            finalizationLockState = "absent";
           } catch (lockCleanupError) {
             if (!isNotFound(lockCleanupError)) {
+              finalizationLockState = "retained";
               cleanupCause ??= lockCleanupError;
+            } else {
+              lockLease = undefined;
+              lockOwned = false;
+              finalizationLockState = "absent";
             }
           }
-        } else if (!anotherFinalizerOwnsLock) {
-          // If opening the staged file failed before the lock was acquired, removing
-          // this opaque handle is still safe: unlink() never follows a symlink.
+        } else if (!anotherFinalizerOwnsLock && !postPublicationStagingSyncFailed) {
+          // Cleanup takes the same per-handle lock even when this finalizer
+          // failed before acquiring it. A busy lock is retained for its owner.
           try {
-            await unlinkEntry(stagingDir, handle);
+            await discardFinalizationStaged();
+            stagedFileState = "absent";
           } catch (sourceCleanupError) {
-            if (!isNotFound(sourceCleanupError)) {
+            if (isNotFound(sourceCleanupError)) {
+              stagedFileState = "absent";
+            } else {
+              stagedFileState = "unknown";
               cleanupCause ??= sourceCleanupError;
+            }
+          }
+        }
+
+        if (targetLockOwned) {
+          try {
+            await removeFinalizationLockDirectory(targetLockPath, targetLockLease);
+            targetLockLease = undefined;
+            targetLockOwned = false;
+            targetLockState = "absent";
+          } catch (targetLockCleanupError) {
+            if (isNotFound(targetLockCleanupError)) {
+              targetLockLease = undefined;
+              targetLockOwned = false;
+              targetLockState = "absent";
+            } else {
+              targetLockState = "retained";
+              cleanupCause ??= targetLockCleanupError;
             }
           }
         }
@@ -1171,6 +1780,7 @@ const createStore = ({
         if (
           cleanupCause === undefined &&
           (cause instanceof DocumentFileAlreadyExistsError ||
+            cause instanceof DocumentFileTargetBusyError ||
             cause instanceof DocumentFileNotRegularError)
         ) {
           throw cause;
@@ -1178,9 +1788,359 @@ const createStore = ({
         throw new DocumentFileFinalizeError({
           id: documentId,
           handle,
+          targetCreated,
+          ...(targetCapability === undefined ? {} : { targetCapability }),
+          targetRecoveryPolicy,
+          targetState,
+          targetLockState,
+          stagingMayBeDiscarded: !anotherFinalizerOwnsLock && finalizationLockState === "absent",
+          stagedFileState,
+          finalizationLockState,
           cause,
           ...(cleanupCause === undefined ? {} : { cleanupCause }),
           message: `Could not finalize staged document file for ${documentId}: ${describe(cause)}${cleanupCause === undefined ? "" : `; cleanup also failed: ${describe(cleanupCause)}`}`,
+        });
+      }
+    } finally {
+      releaseOperation();
+    }
+  };
+
+  const cloneStagedFile = async (handleValue: StagedDocumentFileHandle) => {
+    const releaseOperation = beginOperation();
+    try {
+      ensureTrustedRoots();
+      const handle = validateStagedHandle(handleValue);
+      const sourcePath = stagingPath(handle);
+      const lockPath = entryPath(stagingDir, `.${handle}.lock`);
+      let source: Awaited<ReturnType<typeof open>> | undefined;
+      let targetHandle: StagedDocumentFileHandle | undefined;
+      let targetIdentity: FileIdentity | undefined;
+      let lockLease: FinalizationLockLease | undefined;
+      let lockOwned = false;
+      let sourceFileState: DocumentFileResourceState = "retained";
+      let clonedFileState: DocumentFileResourceState = "absent";
+      let finalizationLockState: DocumentFileResourceState = "absent";
+      let targetCreated = false;
+      let cleanupCause: unknown;
+
+      const linkClone = async (candidate: StagedDocumentFileHandle) => {
+        // Check the pathname again after the race seam and immediately before
+        // link(). The descriptor check below remains authoritative if the path
+        // is replaced in the small interval that follows.
+        const sourceFile = source;
+        let sourceBeforeLink: Stats;
+        try {
+          sourceBeforeLink = await lstat(sourcePath);
+        } catch (cause) {
+          sourceFileState = isNotFound(cause) ? "absent" : "unknown";
+          throw cause;
+        }
+        let sourceAtLink: Stats | undefined;
+        try {
+          sourceAtLink = await sourceFile?.stat();
+        } catch (cause) {
+          sourceFileState = "unknown";
+          throw cause;
+        }
+        if (
+          sourceFile === undefined ||
+          sourceAtLink === undefined ||
+          sourceBeforeLink.isSymbolicLink() ||
+          !sourceBeforeLink.isFile() ||
+          !sameFileIdentity(sourceBeforeLink, sourceAtLink)
+        ) {
+          sourceFileState = "unknown";
+          throw new Error("The staged source file changed before it was cloned.");
+        }
+        await link(sourcePath, stagingPath(candidate));
+        targetHandle = candidate;
+        targetCreated = true;
+        clonedFileState = "retained";
+        const clonedStats = await lstat(stagingPath(candidate));
+        targetIdentity = clonedStats;
+        stagedIdentities.set(candidate, clonedStats);
+        let sourceAfterLink: Stats;
+        try {
+          sourceAfterLink = await sourceFile.stat();
+        } catch (cause) {
+          sourceFileState = "unknown";
+          throw cause;
+        }
+        if (
+          clonedStats.isSymbolicLink() ||
+          !clonedStats.isFile() ||
+          !sameFileIdentity(clonedStats, sourceAfterLink) ||
+          clonedStats.size !== sourceAfterLink.size
+        ) {
+          sourceFileState = "unknown";
+          throw new Error("The cloned staged document file changed while it was being linked.");
+        }
+      };
+
+      try {
+        try {
+          lockLease = await acquireFinalizationLock(lockPath, beforeFinalizationLockRecoveryClaim);
+          lockOwned = true;
+          finalizationLockState = "retained";
+          await syncDirectory(stagingDir);
+        } catch (cause) {
+          if (cause instanceof FinalizationLockBusyError) {
+            finalizationLockState = "retained";
+          } else {
+            finalizationLockState = "unknown";
+          }
+          throw cause;
+        }
+
+        try {
+          source = await openWithoutFollowingLinks(
+            sourcePath,
+            constants.O_RDONLY,
+            sourcePath,
+            false
+          );
+        } catch (cause) {
+          sourceFileState = isNotFound(cause) ? "absent" : "unknown";
+          throw cause;
+        }
+        const sourceStats = await source.stat();
+        const expectedSourceIdentity = stagedIdentities.get(handle);
+        if (
+          expectedSourceIdentity !== undefined &&
+          !sameFileIdentity(expectedSourceIdentity, sourceStats)
+        ) {
+          sourceFileState = "unknown";
+          throw new Error("The staged source file was replaced before it was cloned.");
+        }
+        validateSourceFileSize(sourceStats.size);
+        await source.sync();
+        await beforeStagedCloneLink?.(sourcePath);
+
+        for (let attempt = 0; attempt < MAX_STAGED_ALLOCATION_ATTEMPTS; attempt += 1) {
+          const candidate = createStagedHandle(generateBytes);
+          try {
+            // link() supplies no-replace allocation and preserves the immutable
+            // staged bytes without reopening caller input.
+            await linkClone(candidate);
+            await beforeStagedCloneCleanup?.(stagingPath(candidate));
+            const clonedAfterCleanupRace = await lstat(stagingPath(candidate));
+            if (
+              targetIdentity === undefined ||
+              !sameFileIdentity(targetIdentity, clonedAfterCleanupRace)
+            ) {
+              throw new Error("The cloned staged document file changed before cleanup.");
+            }
+            const sourceAtLink = await source.stat();
+            if (
+              !sameFileIdentity(sourceStats, sourceAtLink) ||
+              sourceAtLink.size !== sourceStats.size
+            ) {
+              sourceFileState = "unknown";
+              throw new Error("The staged source file changed while it was being cloned.");
+            }
+            break;
+          } catch (cause) {
+            if (errorCode(cause) !== "EEXIST") {
+              throw cause;
+            }
+          }
+        }
+
+        if (targetHandle === undefined) {
+          // Keep deterministic random seams useful while retaining a system
+          // random fallback for the private clone allocation.
+          for (let attempt = 0; attempt < MAX_STAGED_ALLOCATION_ATTEMPTS; attempt += 1) {
+            const candidate = createStagedHandle(cryptoRandomBytes);
+            try {
+              await linkClone(candidate);
+              await beforeStagedCloneCleanup?.(stagingPath(candidate));
+              const clonedAfterCleanupRace = await lstat(stagingPath(candidate));
+              if (
+                targetIdentity === undefined ||
+                !sameFileIdentity(targetIdentity, clonedAfterCleanupRace)
+              ) {
+                throw new Error("The cloned staged document file changed before cleanup.");
+              }
+              const sourceAtLink = await source.stat();
+              if (
+                !sameFileIdentity(sourceStats, sourceAtLink) ||
+                sourceAtLink.size !== sourceStats.size
+              ) {
+                sourceFileState = "unknown";
+                throw new Error("The staged source file changed while it was being cloned.");
+              }
+              break;
+            } catch (cause) {
+              if (errorCode(cause) !== "EEXIST") {
+                throw cause;
+              }
+            }
+          }
+        }
+        if (targetHandle === undefined) {
+          throw new Error("Could not allocate a unique cloned staged document file handle.");
+        }
+        await syncDirectory(stagingDir);
+        await source.close();
+        source = undefined;
+        await removeFinalizationLockDirectory(lockPath, lockLease);
+        lockLease = undefined;
+        lockOwned = false;
+        finalizationLockState = "absent";
+        await syncDirectory(stagingDir);
+        return targetHandle;
+      } catch (cause) {
+        await source?.close().catch((closeError) => {
+          cleanupCause ??= closeError;
+        });
+        source = undefined;
+        if (targetCreated && targetHandle !== undefined) {
+          try {
+            if (targetIdentity === undefined) {
+              throw new Error("The cloned staged file identity was unavailable for cleanup.");
+            }
+            const removed = await discardEntry(stagingDir, targetHandle, targetIdentity);
+            stagedIdentities.delete(targetHandle);
+            if (!removed) {
+              clonedFileState = "absent";
+            } else {
+              targetCreated = false;
+              clonedFileState = "absent";
+              await syncDirectory(stagingDir);
+            }
+          } catch (targetCleanupError) {
+            if (isNotFound(targetCleanupError)) {
+              clonedFileState = "absent";
+            } else {
+              // Never unlink a path whose identity no longer matches the link
+              // made by this clone. It may now belong to a replacement handle.
+              clonedFileState = "unknown";
+              cleanupCause ??= targetCleanupError;
+            }
+          }
+        }
+        if (lockOwned) {
+          try {
+            await removeFinalizationLockDirectory(lockPath, lockLease);
+            lockLease = undefined;
+            lockOwned = false;
+            finalizationLockState = "absent";
+          } catch (lockCleanupError) {
+            if (isNotFound(lockCleanupError)) {
+              lockLease = undefined;
+              lockOwned = false;
+              finalizationLockState = "absent";
+            } else {
+              finalizationLockState = "retained";
+              cleanupCause ??= lockCleanupError;
+            }
+          }
+        }
+        throw new DocumentFileCloneError({
+          handle,
+          ...(targetHandle === undefined ? {} : { clonedHandle: targetHandle }),
+          sourceFileState,
+          clonedFileState,
+          finalizationLockState,
+          cause,
+          ...(cleanupCause === undefined ? {} : { cleanupCause }),
+          message: `Could not clone staged document file ${handle}: ${describe(cause)}${cleanupCause === undefined ? "" : `; cleanup also failed: ${describe(cleanupCause)}`}`,
+        });
+      }
+    } finally {
+      releaseOperation();
+    }
+  };
+
+  const discardStagedFile = async (handleValue: StagedDocumentFileHandle) => {
+    const releaseOperation = beginOperation();
+    try {
+      ensureTrustedRoots();
+      const handle = validateStagedHandle(handleValue);
+      const lockPath = entryPath(stagingDir, `.${handle}.lock`);
+      let lockLease: FinalizationLockLease | undefined;
+      let lockOwned = false;
+      let stagedFileState: DocumentFileResourceState = "retained";
+      let finalizationLockState: DocumentFileResourceState = "absent";
+      let removed = false;
+      let cleanupCause: unknown;
+
+      try {
+        // Taking the same lock as finalization makes compensation safe when a
+        // caller accidentally shares a handle with another finalizer. A busy
+        // lock is retained for that owner and is reported as an orphan rather
+        // than guessed at or removed.
+        lockLease = await acquireFinalizationLock(lockPath, beforeFinalizationLockRecoveryClaim);
+        lockOwned = true;
+        finalizationLockState = "retained";
+        await syncDirectory(stagingDir);
+        try {
+          const expectedIdentity = stagedIdentities.get(handle);
+          if (expectedIdentity === undefined) {
+            try {
+              await lstat(stagingPath(handle));
+              throw new Error("The staged document file identity was unavailable for discard.");
+            } catch (cause) {
+              if (isNotFound(cause)) {
+                removed = false;
+                stagedFileState = "absent";
+              } else {
+                throw cause;
+              }
+            }
+          } else {
+            removed = await discardEntry(stagingDir, handle, expectedIdentity);
+            stagedFileState = "absent";
+            stagedIdentities.delete(handle);
+          }
+        } catch (cause) {
+          if (isNotFound(cause)) {
+            stagedFileState = "absent";
+          } else {
+            stagedFileState = "unknown";
+            throw cause;
+          }
+        }
+        if (removed) {
+          await syncDirectory(stagingDir);
+        }
+        await removeFinalizationLockDirectory(lockPath, lockLease);
+        lockLease = undefined;
+        lockOwned = false;
+        finalizationLockState = "absent";
+        await syncDirectory(stagingDir);
+        return removed;
+      } catch (cause) {
+        if (cause instanceof FinalizationLockBusyError) {
+          finalizationLockState = "retained";
+        } else if (finalizationLockState === "absent") {
+          finalizationLockState = "unknown";
+        }
+        if (lockOwned) {
+          try {
+            await removeFinalizationLockDirectory(lockPath, lockLease);
+            lockLease = undefined;
+            lockOwned = false;
+            finalizationLockState = "absent";
+          } catch (lockCleanupError) {
+            if (isNotFound(lockCleanupError)) {
+              lockLease = undefined;
+              lockOwned = false;
+              finalizationLockState = "absent";
+            } else {
+              finalizationLockState = "retained";
+              cleanupCause = lockCleanupError;
+            }
+          }
+        }
+        throw new DocumentFileDiscardError({
+          handle,
+          stagedFileState,
+          finalizationLockState,
+          cause,
+          ...(cleanupCause === undefined ? {} : { cleanupCause }),
+          message: `Could not discard staged document file ${handle}: ${describe(cause)}${cleanupCause === undefined ? "" : `; cleanup also failed: ${describe(cleanupCause)}`}`,
         });
       }
     } finally {
@@ -1215,33 +2175,112 @@ const createStore = ({
     }
   };
 
-  const deleteDocumentFile = async (id: string) => {
+  const deleteDocumentFile = async (id: string, expectedTarget?: DocumentFileTargetCapability) => {
     const releaseOperation = beginOperation();
     try {
       ensureTrustedRoots();
       const documentId = validateDocumentId(id);
       const path = documentPath(documentId);
+      const targetLockPath = entryPath(stagingDir, `.${documentId}.target.lock`);
+      let targetLockLease: FinalizationLockLease | undefined;
+      let targetLockOwned = false;
+      let targetLockState: DocumentFileResourceState = "absent";
+      let targetState: DocumentFileResourceState = "unknown";
+      let result = false;
+      let failure: unknown;
+
       try {
+        try {
+          targetLockLease = await acquireFinalizationLock(
+            targetLockPath,
+            beforeFinalizationLockRecoveryClaim
+          );
+        } catch (cause) {
+          targetLockState = cause instanceof FinalizationLockBusyError ? "retained" : "unknown";
+          throw cause;
+        }
+        targetLockOwned = true;
+        targetLockState = "retained";
+        await syncDirectory(stagingDir);
         const stats = await lstat(path);
+        targetState = "retained";
         if (stats.isSymbolicLink() || !stats.isFile()) {
           throw regularFileError(path);
         }
-        await unlinkEntry(documentsDir, `${documentId}.html`);
-        await syncDirectory(documentsDir);
-        return true;
+        if (expectedTarget !== undefined) {
+          if (
+            expectedTarget.id !== documentId ||
+            !sameFileIdentity(expectedTarget.identity, stats)
+          ) {
+            throw new Error("The document target was replaced before identity-safe deletion.");
+          }
+        }
+        await beforeDocumentTargetDelete?.(path);
+        const targetAfterRace = await lstat(path);
+        if (
+          targetAfterRace.isSymbolicLink() ||
+          !targetAfterRace.isFile() ||
+          !sameFileIdentity(stats, targetAfterRace) ||
+          (expectedTarget !== undefined &&
+            !sameFileIdentity(expectedTarget.identity, targetAfterRace))
+        ) {
+          throw new Error("The document target was replaced before identity-safe deletion.");
+        }
+        const removed = await discardEntry(
+          documentsDir,
+          `${documentId}.html`,
+          expectedTarget?.identity ?? stats
+        );
+        result = removed;
+        targetState = "absent";
+        if (removed) {
+          await syncDirectory(documentsDir);
+        }
       } catch (cause) {
+        failure = cause;
         if (isNotFound(cause)) {
-          return false;
+          targetState = "absent";
+        } else if (targetState === "retained") {
+          targetState = "unknown";
         }
-        if (cause instanceof DocumentFileNotRegularError) {
-          throw cause;
-        }
-        throw new DocumentFileDeleteError({
-          id: documentId,
-          cause,
-          message: `Could not delete document file ${documentId}: ${describe(cause)}`,
-        });
       }
+
+      if (targetLockOwned) {
+        try {
+          await removeFinalizationLockDirectory(targetLockPath, targetLockLease);
+          targetLockLease = undefined;
+          targetLockOwned = false;
+          targetLockState = "absent";
+          await syncDirectory(stagingDir);
+        } catch (lockCleanupCause) {
+          // If removal returned but directory synchronization failed, the
+          // current pathname is no longer known to contain the lock, but its
+          // durable state is ambiguous. Do not report that as definitely
+          // retained.
+          targetLockState = targetLockOwned ? "retained" : "unknown";
+          failure =
+            failure === undefined
+              ? lockCleanupCause
+              : new AggregateError([failure, lockCleanupCause], "Document target cleanup failed.");
+        }
+      }
+
+      if (failure === undefined) {
+        return result;
+      }
+      if (isNotFound(failure) && targetLockState === "absent") {
+        return result;
+      }
+      if (failure instanceof DocumentFileNotRegularError) {
+        throw failure;
+      }
+      throw new DocumentFileDeleteError({
+        id: documentId,
+        targetState,
+        targetLockState,
+        cause: failure,
+        message: `Could not delete document file ${documentId}: ${describe(failure)}`,
+      });
     } finally {
       releaseOperation();
     }
@@ -1254,6 +2293,8 @@ const createStore = ({
     readDocument,
     readDocumentFile: readDocument,
     deleteDocumentFile,
+    cloneStagedFile,
+    discardStagedFile,
   };
 };
 
@@ -1288,6 +2329,36 @@ const initializeStore = (options: DocumentFileStoreOptions) => {
       documentsDir,
       stagingDir,
       ...(options.randomBytes === undefined ? {} : { randomBytes: options.randomBytes }),
+      ...(options.beforeFinalizationLockRecoveryClaim === undefined
+        ? {}
+        : { beforeFinalizationLockRecoveryClaim: options.beforeFinalizationLockRecoveryClaim }),
+      ...(options.beforeStagedCloneLink === undefined
+        ? {}
+        : { beforeStagedCloneLink: options.beforeStagedCloneLink }),
+      ...(options.beforeStagedCloneCleanup === undefined
+        ? {}
+        : { beforeStagedCloneCleanup: options.beforeStagedCloneCleanup }),
+      ...(options.beforeStagedSourceCopy === undefined
+        ? {}
+        : { beforeStagedSourceCopy: options.beforeStagedSourceCopy }),
+      ...(options.beforeStagedSourceCleanup === undefined
+        ? {}
+        : { beforeStagedSourceCleanup: options.beforeStagedSourceCleanup }),
+      ...(options.beforeFinalizationTargetInspection === undefined
+        ? {}
+        : { beforeFinalizationTargetInspection: options.beforeFinalizationTargetInspection }),
+      ...(options.beforeFinalizationTargetCleanup === undefined
+        ? {}
+        : { beforeFinalizationTargetCleanup: options.beforeFinalizationTargetCleanup }),
+      ...(options.beforePostPublicationStagingDirectorySync === undefined
+        ? {}
+        : {
+            beforePostPublicationStagingDirectorySync:
+              options.beforePostPublicationStagingDirectorySync,
+          }),
+      ...(options.beforeDocumentTargetDelete === undefined
+        ? {}
+        : { beforeDocumentTargetDelete: options.beforeDocumentTargetDelete }),
     });
   } catch (cause) {
     if (documentsDir !== undefined) {

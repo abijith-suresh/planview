@@ -24,23 +24,34 @@ changes. FIFO/device opens are rejected before opening; the Unix open also uses
 `O_NONBLOCK` and `O_NOFOLLOW` for the remaining replacement window. Windows has
 no Node `O_NONBLOCK` equivalent, so a hostile replacement race there is covered
 only by the post-open checks and the local-trust limitation. Failed stages
-remove their partial file while the trusted root remains available; if the root
-is actively replaced, cleanup fails closed and may leave an orphan for later
+remove their partial file while the trusted root remains available; cleanup is serialized with finalization and compares the staged
+device/inode identity plus birthtime when available before unlinking. If the pathname was replaced or the root is
+actively replaced, cleanup fails closed and may leave an orphan for later
 policy-driven cleanup.
 
 `finalizeStagedFile(handle, id)` validates both values and publishes with
 `fs.link`, which is an atomic no-replace hard-link operation on the supported
-local filesystems. It deliberately does not use `rename`: POSIX `rename` can
-replace a target created concurrently. A per-handle atomic lock directory
-contains owner/lease metadata. An expired lock
+local filesystems. On success it returns an opaque target identity capability;
+coordinator compensation must use that capability rather than deleting by
+pathname. It deliberately does not use `rename`: POSIX `rename` can replace a
+target created concurrently. Per-handle and per-target atomic lock directories
+contain owner/lease metadata. An expired lock
 is recovered only after a 30-second lease plus a 5-second grace period, when its
 metadata identifies this host and a process that is definitely gone; malformed,
-unknown, or still-live locks are retained and reported as busy. Recovery renames the exact stale directory to a private quarantine before
-removing its expected metadata, so it never removes an active lock by guessing.
+unknown, or still-live locks are retained and reported as busy. Recovery first creates one fixed-name `O_EXCL` claim inside the inspected lock
+directory; that single exclusive transition gives at most one recovery attempt
+ownership. It then rechecks the lock inode identity. A concurrent replacement
+therefore cannot be claimed or removed by pathname; a replacement or failed
+identity check is retained as busy. The claim is released with the owner
+metadata only by the claimant; a well-formed claim left by a crashed recovery
+attempt is reaped after its own lease and grace period when its owner is
+definitely gone, while malformed or unknown claims remain busy.
 The target must be a regular file, must not already exist, and must be on the same
 hard-link-capable filesystem; there is no copy or unsafe rename fallback. The
 staged name and lock are removed after publication when the trusted roots remain
-available.
+available. Target compensation requires the identity captured from the target
+inspection immediately after linking; an unavailable or ambiguous inspection is
+reported as unknown rather than cleaned up by document-id pathname.
 
 The staged file is synced before linking. On POSIX, the target directory and then
 the staging directory are synced when Node and the filesystem support directory
@@ -48,9 +59,13 @@ the staging directory are synced when Node and the filesystem support directory
 directory-sync guarantee is unavailable. Bad descriptors, non-directories, and
 other I/O errors are failures, not unsupported cases. If target-directory sync
 fails after linking, the still-unpublished target is removed before the failure is
-reported. A later staging-directory cleanup-sync failure occurs after publication
-and does not retract the document. On Windows, Node has no directory-handle sync
-API here: file syncing and atomic hard-link behavior remain, but directory-entry
+reported. After target-directory sync succeeds, the target is the recoverable
+durable result: a later staging-directory cleanup-sync failure does not retract
+it. The typed finalization error reports `targetRecoveryPolicy: "retain"` and
+precise retained/unknown target, staged-file, per-handle-lock, and per-target-lock
+states, so publication compensation must preserve the target even when metadata
+is absent. On Windows, Node has no directory-handle sync API here: file syncing
+and atomic hard-link behavior remain, but directory-entry
 crash durability is not promised.
 
 On Linux installations with `/proc/self/fd`, the store holds trusted directory
@@ -66,7 +81,11 @@ not make an impossible absolute-containment claim against a concurrent hostile
 filesystem change on the fallback platforms. That is an unavoidable Node
 limitation accepted by the PRD's single-user local trust model. Source paths
 outside the store receive the same checks; Windows reparse points cannot be
-exhaustively classified through these APIs.
+exhaustively classified through these APIs. These checks detect many races but
+cannot close every residual path TOCTOU window against a malicious same-user
+process continuously replacing Planview-owned paths. That hostile filesystem
+behavior is outside the trusted v1 model: Planview does not add native OS code
+or fail Windows merely to defend against it.
 
 Each store operation takes a lease. `close()` rejects new operations immediately
 and returns a promise that resolves only after already-started operations release
@@ -75,18 +94,83 @@ close from invalidating an in-flight operation's descriptor. The returned stream
 own their file descriptors independently of the store lease.
 
 `readDocumentFile(id)` (also exposed as `readDocument`) validates the identifier
-and returns a Node read stream rather than loading the document into memory.
-`deleteDocumentFile(id)` validates the identifier and returns whether a regular
-document was removed. Invalid IDs and handles are rejected before any owned path
-is constructed. No database, daemon, publication URL, cleanup policy, or transport
-is included in this boundary.
+and returns a Node read stream rather than loading the document into memory. It is
+the physical-file primitive and must not be used as a published read boundary.
+`deleteDocumentFile(id, capability?)` validates the identifier and returns
+whether a regular document was removed. Its typed failure reports both target
+and target-lock state for recovery accounting. When a capability is supplied, deletion
+rechecks the finalized inode identity and retains a replacement instead of
+unlinking it. Target deletion is serialized with finalization. `cloneStagedFile`
+and `discardStagedFile` are required store operations: publication never falls
+back to reopening caller input or silently skips owned cleanup. Invalid IDs and
+handles are rejected before any owned path
+is constructed. No daemon, publication URL, cleanup policy, or transport is
+included in this boundary.
+
+## Publication coordination
+
+`createDocumentPublicationCoordinator({ documentFileStore, metadataStore })` is a
+private composition boundary for the first user-visible storage operation. It
+stages source bytes once, clones that immutable staging snapshot for bounded ID
+collision retries, finalizes a document file, measures the finalized bytes, and
+inserts immutable SQLite metadata. It returns a frozen `{ id, metadata }` result
+only after file finalization and metadata insertion have completed. Source input
+is only opened for reading and is never removed or modified; the snapshot also
+means that deletion or mutation of the input cannot change a retry.
+
+The coordinator skips IDs occupied by a metadata preflight, retries no-replace
+document-file collisions, and retries SQLite ID uniqueness collisions only after
+metadata absence is observed. A unique database exception with a present or
+unreadable row is otherwise ambiguous: it is never silently retried, and a
+possible file/metadata pair is retained behind a typed recoverable error. Matching id, timestamp, and size fields are not an ownership
+proof; without a private insertion token the bounded behavior is to retain the
+possible pair as unknown rather than retrying or declaring success. Normal
+failures compensate the created document file only with the identity
+capability returned by finalization, and compensate every owned staged handle
+whose lock and inode state is known safe; unknown residuals are reported for
+recovery. A generic stage-adapter failure is treated as possibly having created
+an unidentifiable staged file, so the recovery error includes an anonymous
+`unknown` staged resource rather than silently discarding that possibility.
+Compensation failures are elevated
+with structured `orphan.resources` entries for all retained or uncertain
+files, metadata rows, staged handles, and finalization locks; no ambiguous row
+is deleted by guessing. ID generation, the clock, collision classification,
+published-size reading, and the stores are injected seams for deterministic
+fault testing. The private store seam reports typed partial clone/finalization
+errors; a generic adapter fault is treated as possibly retaining every known
+and unidentifiable staged file or lock.
+
+Use `createMetadataGatedDocumentReader` or the coordinator's
+`readPublishedDocument` for every later published read. It proves metadata
+presence before opening the physical file, so a finalized file without a
+committed row is not exposed. A row whose file is missing fails as a read error;
+the seam never turns physical presence into publication success.
+
+Filesystem publication and SQLite commit are different durability domains. The
+coordinator deliberately does **not** claim a cross-filesystem atomic
+transaction. Exact remaining crash properties are: a crash after staged-file
+sync can leave a staged snapshot; after target-link/directory sync and before
+metadata commit it can leave a physical file with no row (the gated reader
+rejects it); a post-publication staging-directory sync failure can leave that
+recoverable target with unknown staging/lock durability and no row (the
+coordinator never deletes the target under the retain policy); after metadata
+commit and before snapshot cleanup it can leave a valid published pair plus
+duplicate staging; and a crash or thrown error at the metadata boundary can
+leave an unknown pair. Lock metadata/claims and directory
+entries have the platform-specific sync limits described above. These states are
+returned for a later reconciliation slice; this slice does not perform startup
+reconciliation, retention cleanup, daemon/HTTP/CLI work, or public URL printing.
+Tests labeled concurrent Planview operations cover cooperating store instances
+and normal lock/collision races. Tests labeled out-of-model hostile external
+replacement deliberately simulate a malicious same-user filesystem process; they
+verify fail-closed diagnostics and preservation where possible, not a v1
+containment guarantee.
 
 ## Metadata
 
 `openStorage(path)` remains the typed Effect boundary for the private SQLite
 metadata store. It opens SQLite through Node 24's built-in `node:sqlite` module
 and applies the versioned schema using `PRAGMA user_version`. The v1 table contains
-only `id`, `createdAt`, `lastAccessedAt`, and `size`; metadata and document bytes
-are intentionally not integrated in this slice. Metadata mutations use SQLite
-transactions; query failures remain native SQLite errors rather than being wrapped
+only `id`, `createdAt`, `lastAccessedAt`, and `size`. Metadata mutations use
+SQLite transactions; query failures remain native SQLite errors rather than being wrapped
 one by one.
