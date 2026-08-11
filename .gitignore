@@ -3,6 +3,7 @@ dist/
 .astro/
 coverage/
 *.tsbuildinfo
+*.tgz
 .npm/
 npm-debug.log*
 .env

@@ -67,7 +67,10 @@ site with no prefix.
 
 CI runs the Node 24 quality gate for pull requests and pushes to `main`. It also
 packs the public `planview` npm package and smoke-tests the resulting tarball
-without publishing it or requiring a secret.
+without publishing it or requiring a secret. The release workflow runs after
+changes land on `main`, verifies and packs the immutable package, then publishes
+only `planview` using the `RELEASE_TOKEN` repository secret. Manual release runs
+default to a no-publish dry run. See [RELEASING.md](RELEASING.md) for details.
 
 The Pages workflow builds `apps/site` on relevant pushes to `main` and deploys it
 at `https://<owner>.github.io/<repository>/`. The existing Astro configuration
