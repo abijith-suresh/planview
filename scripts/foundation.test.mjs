@@ -191,14 +191,14 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     cliPackageJson.scripts,
     "build",
-    "tsc --project tsconfig.json && node scripts/make-executable.mjs dist/index.js",
+    "npm run build --workspace @planview/daemon && tsc --project tsconfig.json && node scripts/bundle.mjs && node scripts/make-executable.mjs dist/index.js",
     "CLI build script"
   );
   expectProperty(cliPackageJson.scripts, "prepack", "npm run build", "CLI prepack script");
   expectProperty(
     cliPackageJson.scripts,
     "typecheck",
-    "tsc --project tsconfig.json --noEmit",
+    "npm run build --workspace @planview/daemon && tsc --project tsconfig.json --noEmit",
     "CLI typecheck script"
   );
   expectProperty(

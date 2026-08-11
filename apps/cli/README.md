@@ -1,28 +1,31 @@
 # Planview CLI
 
-The public `planview` command-line package. This milestone provides the
-installable CLI baseline with deterministic help and version output; application
-subcommands arrive in later milestones.
+The public `planview` command-line package. This slice provides the private
+localhost daemon lifecycle only:
 
 ```sh
-npx planview --help
-npx planview --version
+npx planview start
+npx planview status
+npx planview stop
+npx planview restart
 ```
 
-## Effect boundary
+The daemon is detached, bound only to the fixed `127.0.0.1:4777`, and stores
+its protected runtime descriptor below the persistent Planview app-data
+directory. `status` does not start a daemon; `start` reuses an authenticated
+daemon it owns and never terminates an unknown process listening on the port.
 
-The CLI pins the Effect 4 beta core package at `4.0.0-beta.107`. This is an
-intentional exact beta pin rather than a range: Effect 4 is still pre-release,
-and keeping the upgrade point explicit prevents a lockfile refresh from
-silently changing its API. The package is exercised on the repository's Node
-24.19.0 baseline. Only the core `effect` package is used; platform and CLI
-packages from the Effect 3 line are not compatible with this slice.
+On POSIX, the app-data and runtime directories are owned by the current UID and
+protected with `0700`; descriptor and lock files are owned by that UID and
+protected with `0600`. Windows does not expose a portable Node API for enforcing
+NTFS ACLs or classifying every reparse point, so those mode values are not a
+Windows privacy guarantee. Consistent with the PRD's single-user local trust
+model, Windows users must provision an account-owned, non-user-writable app-data
+directory. Planview claims loopback binding and authenticated lifecycle
+requests, not hostile-local-user filesystem isolation on Windows.
 
-`run` is the import-safe command program. It returns an
-`Effect<number, CliError>`: output callbacks are sequenced at the boundary and
-argument failures are tagged, typed Effect failures. Help and version formatting
-remain pure string formatting, so the Effect integration does not turn static
-text into an unnecessary abstraction. `main` is the small process boundary that
-uses the Effect runtime, handles those typed failures, and returns the existing
-exit codes. The executable guard remains import-safe, while the built bin runs
-that boundary through `Effect.runSync`.
+## Published artifact
+
+The private daemon workspace is bundled into the CLI's `dist` artifact during
+build and pack. The published package therefore has no runtime dependency on a
+private `@planview/*` workspace.
