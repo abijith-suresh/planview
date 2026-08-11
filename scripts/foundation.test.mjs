@@ -214,6 +214,12 @@ test("repository foundation has the expected configuration", () => {
   expectEqual(corePackageJson.type, "module", "core package module type");
   expectProperty(
     corePackageJson.scripts,
+    "build",
+    "tsc --build tsconfig.json",
+    "core build script"
+  );
+  expectProperty(
+    corePackageJson.scripts,
     "test",
     "npm run build && node --test test/core.test.mjs test/core-identifiers.test.mjs test/core-source-validation.test.mjs",
     "core test script"
@@ -221,8 +227,22 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     corePackageJson.scripts,
     "typecheck",
-    "tsc --project tsconfig.json --noEmit",
+    "tsc --project tsconfig.typecheck.json",
     "core typecheck script"
+  );
+  const coreTsConfig = readJson("packages/core/tsconfig.json");
+  expectProperty(coreTsConfig.compilerOptions, "composite", true, "core composite build setting");
+  expectProperty(
+    coreTsConfig.compilerOptions,
+    "tsBuildInfoFile",
+    "dist/.tsbuildinfo",
+    "core build state location"
+  );
+  const coreTypecheckTsConfig = readJson("packages/core/tsconfig.typecheck.json");
+  expectEqual(
+    coreTypecheckTsConfig.compilerOptions,
+    { noEmit: true, composite: false },
+    "core clean-checkout typecheck compiler options"
   );
 
   const storagePackageJson = readJson("packages/storage/package.json");
@@ -231,15 +251,50 @@ test("repository foundation has the expected configuration", () => {
   expectEqual(storagePackageJson.type, "module", "storage package module type");
   expectProperty(
     storagePackageJson.scripts,
+    "build",
+    "tsc --build tsconfig.json",
+    "storage build script"
+  );
+  expectProperty(
+    storagePackageJson.scripts,
     "test",
-    "npm run build && node --test test/storage.test.mjs",
+    "npm run build && node --test test/storage.test.mjs test/document-files.test.mjs",
     "storage test script"
   );
   expectProperty(
     storagePackageJson.scripts,
     "typecheck",
-    "tsc --project tsconfig.json --noEmit",
+    "tsc --project tsconfig.typecheck.json",
     "storage typecheck script"
+  );
+  const storageTsConfig = readJson("packages/storage/tsconfig.json");
+  expectProperty(
+    storageTsConfig.compilerOptions,
+    "composite",
+    true,
+    "storage composite build setting"
+  );
+  expectProperty(
+    storageTsConfig.compilerOptions,
+    "tsBuildInfoFile",
+    "dist/.tsbuildinfo",
+    "storage build state location"
+  );
+  expectEqual(
+    storageTsConfig.references,
+    [{ path: "../core" }],
+    "storage TypeScript project references"
+  );
+  const storageTypecheckTsConfig = readJson("packages/storage/tsconfig.typecheck.json");
+  expectEqual(
+    storageTypecheckTsConfig.compilerOptions,
+    {
+      noEmit: true,
+      composite: false,
+      rootDir: "..",
+      paths: { "@planview/core": ["../core/src/index.ts"] },
+    },
+    "storage clean-checkout typecheck compiler options"
   );
   expectProperty(
     storagePackageJson.dependencies,

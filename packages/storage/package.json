@@ -10,14 +10,15 @@
     }
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
-    "typecheck": "tsc --project tsconfig.json --noEmit",
-    "test": "npm run build && node --test test/storage.test.mjs"
+    "build": "tsc --build tsconfig.json",
+    "typecheck": "tsc --project tsconfig.typecheck.json",
+    "test": "npm run build && node --test test/storage.test.mjs test/document-files.test.mjs"
   },
   "devDependencies": {
     "@types/node": "24.10.1"
   },
   "dependencies": {
+    "@planview/core": "0.1.0",
     "effect": "4.0.0-beta.107"
   }
 }

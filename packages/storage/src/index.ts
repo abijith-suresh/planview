@@ -2,6 +2,23 @@ import { DatabaseSync } from "node:sqlite";
 import { isAbsolute } from "node:path";
 import { Data, Effect } from "effect";
 
+export {
+  type DocumentFileStore,
+  type DocumentFileStoreOptions,
+  DocumentFileAlreadyExistsError,
+  DocumentFileDeleteError,
+  DocumentFileFinalizeError,
+  DocumentFileNotRegularError,
+  DocumentFileReadError,
+  DocumentFileStoreClosedError,
+  DocumentFileStoreOpenError,
+  DocumentFileStorePathError,
+  DocumentFileSourceError,
+  InvalidStagedDocumentFileHandleError,
+  type StagedDocumentFileHandle,
+  openDocumentFileStore,
+} from "./document-files.js";
+
 export type DocumentMetadata = {
   readonly id: string;
   readonly createdAt: number;
