@@ -10,8 +10,8 @@
     }
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
-    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "build": "tsc --build tsconfig.json",
+    "typecheck": "tsc --project tsconfig.typecheck.json",
     "test": "npm run build && node --test test/core.test.mjs test/core-identifiers.test.mjs test/core-source-validation.test.mjs"
   },
   "devDependencies": {
