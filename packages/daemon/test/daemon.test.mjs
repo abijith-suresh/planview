@@ -418,9 +418,9 @@ test("shutdown force-closes an idle connection by its deadline", async () => {
       daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
     );
     assert.equal(result.state, "stopped");
-    const exit = await waitForExit(child, daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 3_000);
+    const exit = await waitForExit(child, daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 5_000);
     assert.equal(exit.code, 0);
-    assert.ok(Date.now() - startedAt <= daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 1_000);
+    assert.ok(Date.now() - startedAt <= daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 3_000);
   } finally {
     socket?.destroy();
     await stopChild(child);

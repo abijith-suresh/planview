@@ -36,6 +36,13 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const REQUEST_TIMEOUT_MS = 1_000;
 const STARTUP_TIMEOUT_MS = 10_000;
+// A shutdown deadline is enforced by the daemon process. This margin lets a
+// lifecycle caller observe descriptor removal when the event loop is delayed.
+const SHUTDOWN_POLL_GRACE_MS = 2_000;
+// Lifecycle calls can legitimately queue behind a slow shutdown/startup. Keep
+// lock acquisition bounded, but long enough for the concurrent lifecycle
+// stress and for several operations to pass through the same lock.
+const LIFECYCLE_LOCK_WAIT_MS = 60_000;
 const STARTUP_POLL_MS = 50;
 const LOCAL_HOSTNAME = hostname();
 const TEST_PORT_ENV = "PLANVIEW_TEST_DAEMON_PORT";
@@ -613,7 +620,7 @@ const releaseLock = (lockPath: string, token: string) => async () => {
 
 const createLock = async (
   paths: DaemonPaths,
-  deadline = Date.now() + STARTUP_TIMEOUT_MS,
+  deadline = Date.now() + LIFECYCLE_LOCK_WAIT_MS,
   lockPath = paths.lockPath
 ) => {
   const token = randomBytes(32).toString("base64url");
@@ -1288,7 +1295,7 @@ const startWithLock = async (
 
 export const startDetachedDaemon = async (config: DaemonConfig, options: StartDaemonOptions) => {
   const paths = await prepareLifecyclePaths(config);
-  const lock = await createLock(paths, Date.now() + STARTUP_TIMEOUT_MS);
+  const lock = await createLock(paths);
   try {
     return await startWithLock(config, options, paths, lock);
   } finally {
@@ -1304,7 +1311,8 @@ const stopWithLock = async (config: DaemonConfig) => {
   const paths = resolveDaemonPaths(config);
   const answer = await request(current.descriptor, "POST", DAEMON_SHUTDOWN_PATH);
   parseResponse<Record<string, unknown>>(answer, DAEMON_SHUTDOWN_PATH, 202);
-  const deadline = Date.now() + DAEMON_SHUTDOWN_TIMEOUT_MS + REQUEST_TIMEOUT_MS;
+  const deadline =
+    Date.now() + DAEMON_SHUTDOWN_TIMEOUT_MS + REQUEST_TIMEOUT_MS + SHUTDOWN_POLL_GRACE_MS;
   while (Date.now() < deadline) {
     const descriptor = await readDaemonDescriptor(paths);
     if (descriptor !== undefined) {
@@ -1327,7 +1335,7 @@ const stopWithLock = async (config: DaemonConfig) => {
 
 export const stopDaemon = async (config: DaemonConfig) => {
   const paths = await prepareLifecyclePaths(config);
-  const lock = await createLock(paths, Date.now() + STARTUP_TIMEOUT_MS);
+  const lock = await createLock(paths);
   try {
     return await stopWithLock(config);
   } finally {
@@ -1337,7 +1345,7 @@ export const stopDaemon = async (config: DaemonConfig) => {
 
 export const restartDaemon = async (config: DaemonConfig, options: StartDaemonOptions) => {
   const paths = await prepareLifecyclePaths(config);
-  const lock = await createLock(paths, Date.now() + STARTUP_TIMEOUT_MS);
+  const lock = await createLock(paths);
   try {
     await stopWithLock(config);
     return await startWithLock(config, options, paths, lock);
