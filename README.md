@@ -8,9 +8,10 @@ immutable localhost URL.
 The foundation includes the public `planview` CLI workspace and the private
 `@planview/core`, `@planview/daemon`, and `@planview/storage` workspaces. The CLI
 is an installable TypeScript ESM package with detached daemon lifecycle
-commands: `start`, `status`, `stop`, and `restart`, plus `publish <file>` for
-immutable HTML snapshots. The private daemon is bundled into the one published
-CLI artifact and owns loopback-only lifecycle HTTP and direct snapshot serving.
+commands: `start`, `status`, `stop`, and `restart`, plus `publish <file>` and
+`get <id|url>` for immutable HTML snapshots. The private daemon is bundled into
+the one published CLI artifact and owns loopback-only lifecycle HTTP and direct
+snapshot serving.
 Core resolves conventional per-user application-data paths and holds the fixed
 v1 policy values. Storage owns daemon-private metadata in a versioned SQLite
 database, immutable document-file staging/finalization, and a private
@@ -104,5 +105,5 @@ and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
 - `packages/storage` — private daemon-owned metadata and document-file storage boundary
 - `packages/*` — reusable implementation packages
 
-SQLite-backed publication and direct URL retrieval are implemented. Cleanup and
-skills beyond this first publish slice remain later milestones.
+SQLite-backed publication and CLI retrieval are implemented. Cleanup and skills
+beyond this first publish slice remain later milestones.

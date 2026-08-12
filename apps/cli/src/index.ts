@@ -1,19 +1,25 @@
-import packageJson from "../package.json" with { type: "json" };
 import { realpathSync } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateSourceFileExtension, validateSourceFileSize } from "@planview/core";
+import {
+  isValidDocumentId,
+  V1_PORT,
+  validateSourceFileExtension,
+  validateSourceFileSize,
+} from "@planview/core";
 import {
   inspectDaemon,
   publishDocument,
-  restartDaemon,
   resolveDaemonConfig,
   resolveDaemonConfigForTest,
+  restartDaemon,
+  retrieveDocument,
   startDetachedDaemon,
   stopDaemon,
 } from "@planview/daemon";
 import { Data, Effect } from "effect";
+import packageJson from "../package.json" with { type: "json" };
 
 const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
@@ -29,6 +35,7 @@ export const HELP = `Usage: planview <command>
 
 Commands:
   publish     Publish one immutable HTML snapshot and print its localhost URL
+  get         Retrieve a stored HTML snapshot by id or exact local URL
   start       Start the local daemon, or reuse the running daemon
   status      Show daemon status without starting it
   stop        Gracefully stop the local daemon
@@ -43,9 +50,68 @@ export const formatHelp = () => HELP;
 
 export const formatVersion = () => `planview ${VERSION}\n`;
 
-const writeStdout = (message: string) => {
-  process.stdout.write(message);
-};
+type StdoutWriter = (message: string | Uint8Array) => void | Promise<void>;
+
+const writeStdout: StdoutWriter = (message) =>
+  new Promise<void>((resolvePromise, rejectPromise) => {
+    let writeFinished = false;
+    let waitingForDrain = true;
+    let settled = false;
+
+    const cleanup = () => {
+      process.stdout.off("drain", onDrain);
+      process.stdout.off("error", onError);
+    };
+    const finish = (cause?: Error) => {
+      if (settled) {
+        return;
+      }
+      if (cause !== undefined) {
+        settled = true;
+        // Keep the error listener until a possible write error event arrives;
+        // some streams report EPIPE through both the callback and the event.
+        process.stdout.off("drain", onDrain);
+        rejectPromise(cause);
+        return;
+      }
+      if (!writeFinished || waitingForDrain) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolvePromise();
+    };
+    const onError = (cause: Error) => {
+      finish(cause);
+      process.stdout.off("error", onError);
+    };
+    const onDrain = () => {
+      waitingForDrain = false;
+      finish();
+    };
+    const onWrite = (cause?: Error | null) => {
+      if (cause !== undefined && cause !== null) {
+        finish(cause);
+        return;
+      }
+      writeFinished = true;
+      finish();
+    };
+
+    process.stdout.once("error", onError);
+    try {
+      waitingForDrain = !process.stdout.write(message, onWrite);
+    } catch (cause) {
+      finish(cause instanceof Error ? cause : new Error(String(cause)));
+      return;
+    }
+    if (!waitingForDrain) {
+      finish();
+    } else {
+      process.stdout.once("drain", onDrain);
+      finish();
+    }
+  });
 
 const writeStderr = (message: string) => {
   process.stderr.write(message);
@@ -78,14 +144,21 @@ export class PublishCommandError extends Data.TaggedError("PublishCommandError")
   readonly message: string;
 }> {}
 
+export class GetCommandError extends Data.TaggedError("GetCommandError")<{
+  readonly reference: string;
+  readonly cause: unknown;
+  readonly message: string;
+}> {}
+
 export type CliError =
   | UnknownOptionError
   | UnknownCommandError
   | UnexpectedArgumentsError
   | DaemonCommandError
-  | PublishCommandError;
+  | PublishCommandError
+  | GetCommandError;
 
-const COMMANDS = ["publish", "start", "status", "stop", "restart"] as const;
+const COMMANDS = ["publish", "get", "start", "status", "stop", "restart"] as const;
 type Command = (typeof COMMANDS)[number];
 
 const isCommand = (value: string | undefined): value is Command =>
@@ -112,7 +185,7 @@ const formatRunning = (status: {
   readonly port: number;
 }) => `Planview daemon is running at http://${status.host}:${status.port}/ (pid ${status.pid}).\n`;
 
-const runPublishCommand = (sourcePath: string, stdout: (message: string) => void) =>
+const runPublishCommand = (sourcePath: string, stdout: StdoutWriter) =>
   Effect.tryPromise({
     try: async () => {
       validateSourceFileExtension(sourcePath);
@@ -128,7 +201,7 @@ const runPublishCommand = (sourcePath: string, stdout: (message: string) => void
         sourcePath: absoluteSourcePath,
         sourceSizeBytes: sourceStats.size,
       });
-      stdout(`http://localhost:${published.descriptor.port}/${published.id}\n`);
+      await stdout(`http://localhost:${published.descriptor.port}/${published.id}\n`);
       return 0;
     },
     catch: (cause) =>
@@ -139,16 +212,33 @@ const runPublishCommand = (sourcePath: string, stdout: (message: string) => void
       }),
   });
 
-const runDaemonCommand = (
-  command: Exclude<Command, "publish">,
-  stdout: (message: string) => void
-) =>
+const runGetCommand = (reference: string, stdout: StdoutWriter) =>
+  Effect.tryPromise({
+    try: async () => {
+      const config = resolveCliDaemonConfig();
+      const documentId = parseDocumentReference(reference, config.port);
+      await retrieveDocument(config, {
+        daemonScriptPath: daemonScriptPath(),
+        documentId,
+        onChunk: (chunk) => stdout(chunk),
+      });
+      return 0;
+    },
+    catch: (cause) =>
+      new GetCommandError({
+        reference,
+        cause,
+        message: `Could not retrieve ${reference}: ${describe(cause)}`,
+      }),
+  });
+
+const runDaemonCommand = (command: Exclude<Command, "publish" | "get">, stdout: StdoutWriter) =>
   Effect.tryPromise({
     try: async () => {
       const config = resolveCliDaemonConfig();
       if (command === "status") {
         const result = await inspectDaemon(config);
-        stdout(
+        await stdout(
           result.state === "running"
             ? formatRunning(result.status)
             : "Planview daemon is not running.\n"
@@ -158,20 +248,20 @@ const runDaemonCommand = (
 
       if (command === "stop") {
         await stopDaemon(config);
-        stdout("Planview daemon stopped.\n");
+        await stdout("Planview daemon stopped.\n");
         return 0;
       }
 
       if (command === "restart") {
         const result = await restartDaemon(config, { daemonScriptPath: daemonScriptPath() });
-        stdout(
+        await stdout(
           `Planview daemon restarted at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
         );
         return 0;
       }
 
       const result = await startDetachedDaemon(config, { daemonScriptPath: daemonScriptPath() });
-      stdout(
+      await stdout(
         result.reused
           ? `Planview daemon is already running at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
           : `Planview daemon started at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
@@ -186,9 +276,36 @@ const runDaemonCommand = (
       }),
   });
 
+const parseDocumentReference = (reference: string, port: number) => {
+  if (isValidDocumentId(reference)) {
+    return reference;
+  }
+
+  const expectedPort = String(port);
+  const urlPrefixes = [`http://localhost:${expectedPort}/`, `http://127.0.0.1:${expectedPort}/`];
+  const prefix = urlPrefixes.find((candidate) => reference.startsWith(candidate));
+  if (prefix === undefined || reference.length <= prefix.length) {
+    throw new Error(
+      "Document reference must be a valid 21-character id or an exact local Planview URL."
+    );
+  }
+
+  const candidate = reference.slice(prefix.length);
+  if (!isValidDocumentId(candidate)) {
+    throw new Error(
+      "Document reference must be a valid 21-character id or an exact local Planview URL."
+    );
+  }
+
+  return candidate;
+};
+
+export const parseGetReference = (reference: string, port = V1_PORT) =>
+  parseDocumentReference(reference, port);
+
 const command = (
   args: readonly string[],
-  stdout: (message: string) => void
+  stdout: StdoutWriter
 ): Effect.Effect<number, CliError> => {
   const [argument, ...trailing] = args;
 
@@ -235,9 +352,14 @@ const command = (
     );
   }
 
-  if (argument === "publish") {
+  if (argument === "publish" || argument === "get") {
     if (trailing.length !== 1 || trailing[0] === undefined) {
-      const label = trailing.length === 0 ? "Missing source file" : "Unexpected arguments";
+      const label =
+        trailing.length === 0
+          ? argument === "publish"
+            ? "Missing source file"
+            : "Missing document id or URL"
+          : "Unexpected arguments";
       return Effect.fail(
         new UnexpectedArgumentsError({
           arguments: trailing,
@@ -245,7 +367,9 @@ const command = (
         })
       );
     }
-    return runPublishCommand(trailing[0], stdout);
+    return argument === "publish"
+      ? runPublishCommand(trailing[0], stdout)
+      : runGetCommand(trailing[0], stdout);
   }
 
   if (trailing.length > 0) {
@@ -277,6 +401,7 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
         "UnexpectedArgumentsError",
         "DaemonCommandError",
         "PublishCommandError",
+        "GetCommandError",
       ],
       () => Effect.succeed(1)
     )
