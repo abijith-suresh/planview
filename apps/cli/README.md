@@ -30,6 +30,34 @@ human-readable summary to stdout. `status` does not start a daemon; `start`
 reuses an authenticated daemon it owns and never terminates an unknown process
 listening on the port.
 
+The package also bundles independent `planview` and `create-html` Agent Skills.
+Install both into `~/.agents/skills` with:
+
+```sh
+planview skills install
+```
+
+Installation refuses to replace an existing skill directory. Use
+`planview skills install --force` for an explicit replacement. The installer
+creates missing home parents, requires the destination parents to be owned by
+the current user and not writable by group/other, stages both trees privately,
+and uses a durable journal plus a per-destination lock. A later invocation
+recovers an interrupted transaction before inspecting or changing either skill.
+It rejects static symlinks and unsafe ownership/modes and never follows links
+while copying the bundle.
+
+The lock serializes cooperating Planview installers, but it is not a lock on
+readers of `~/.agents/skills`. Portable Node has no atomic operation that
+replaces two sibling directories at once, so a reader that ignores the lock can
+briefly observe one old and one new tree (or one tree missing) while a commit is
+in progress. The journal makes normal installer crashes recoverable to the
+previous or committed generation; it cannot provide directory-level atomicity
+or protect against a hostile external process replacing paths between Node's
+checks and filesystem operations. That replacement race is outside the PRD's
+single-user v1 trust model. Windows mode/ownership values and reparse-point
+classification likewise remain platform limitations, so Windows users must
+provision an account-owned, non-user-writable home/destination.
+
 On POSIX, the app-data and runtime directories are owned by the current UID and
 protected with `0700`; descriptor and lock files are owned by that UID and
 protected with `0600`. Windows does not expose a portable Node API for enforcing
@@ -42,5 +70,5 @@ requests, not hostile-local-user filesystem isolation on Windows.
 ## Published artifact
 
 The private daemon workspace is bundled into the CLI's `dist` artifact during
-build and pack. The published package therefore has no runtime dependency on a
-private `@planview/*` workspace.
+build and pack. The published package includes the Agent Skills under `skills/`
+and therefore has no runtime dependency on a private `@planview/*` workspace.

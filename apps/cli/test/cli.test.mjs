@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -846,6 +850,232 @@ test("clean uses the authenticated daemon policy and startup reconciliation", as
   }
 });
 
+test("skills install stages both skills, refuses conflicts, and supports explicit replacement", async () => {
+  const home = mkdtempSync(join(tmpdir(), "planview-skills-home-"));
+  const environment = { ...process.env, HOME: home, USERPROFILE: home };
+  const executeInHome = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], {
+      encoding: "utf8",
+      env: environment,
+    });
+  const skillsRoot = join(home, ".agents", "skills");
+
+  try {
+    const installed = executeInHome("skills", "install");
+    assert.equal(installed.status, 0, installed.stderr);
+    assert.match(installed.stdout, /Installed planview and create-html skills/);
+    assert.match(readFileSync(join(skillsRoot, "planview", "SKILL.md"), "utf8"), /# Planview/);
+    assert.match(
+      readFileSync(join(skillsRoot, "create-html", "SKILL.md"), "utf8"),
+      /browser-native/
+    );
+    assert.equal(
+      existsSync(join(skillsRoot, "create-html", "references", "browser-native-patterns.md")),
+      true
+    );
+
+    const refused = executeInHome("skills", "install");
+    assert.equal(refused.status, 1);
+    assert.match(refused.stderr, /already exists/);
+
+    const forced = executeInHome("skills", "install", "--force");
+    assert.equal(forced.status, 0, forced.stderr);
+  } finally {
+    await removeFixture(home);
+  }
+
+  const conflictHome = mkdtempSync(join(tmpdir(), "planview-skills-conflict-"));
+  mkdirSync(join(conflictHome, ".agents", "skills", "planview"), { recursive: true });
+  const conflict = spawnSync(process.execPath, [cli, "skills", "install"], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: conflictHome, USERPROFILE: conflictHome },
+  });
+  try {
+    assert.equal(conflict.status, 1);
+    assert.equal(existsSync(join(conflictHome, ".agents", "skills", "create-html")), false);
+  } finally {
+    await removeFixture(conflictHome);
+  }
+});
+
+test("skills install rejects a symlinked ~/.agents escape", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink fixtures require platform support");
+    return;
+  }
+  const home = mkdtempSync(join(tmpdir(), "planview-skills-symlink-"));
+  const outside = mkdtempSync(join(tmpdir(), "planview-skills-outside-"));
+  symlinkSync(outside, join(home, ".agents"), "dir");
+  const result = spawnSync(process.execPath, [cli, "skills", "install"], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+  try {
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /symbolic link/);
+    assert.equal(existsSync(join(outside, "skills")), false);
+  } finally {
+    await removeFixture(home);
+    await removeFixture(outside);
+  }
+});
+
+test("skills install creates a completely fresh HOME", async () => {
+  const parent = mkdtempSync(join(tmpdir(), "planview-skills-fresh-parent-"));
+  const home = join(parent, "home-that-does-not-exist");
+  const result = spawnSync(process.execPath, [cli, "skills", "install"], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(home), true);
+    assert.equal(existsSync(join(home, ".agents", "skills", "planview", "SKILL.md")), true);
+    assert.equal(existsSync(join(home, ".agents", "skills", "create-html", "SKILL.md")), true);
+  } finally {
+    await removeFixture(parent);
+  }
+});
+
+test("skills recovery repairs every crash boundary before the next install", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("the crash fixture uses SIGKILL");
+    return;
+  }
+  const crashPoints = [
+    "after-stage",
+    "after-backup-planview",
+    "after-install-planview",
+    "after-backup-create-html",
+    "after-install-create-html",
+    "after-commit",
+    "after-remove-previous-planview",
+    "after-remove-previous-create-html",
+  ];
+
+  for (const crashPoint of crashPoints) {
+    const home = mkdtempSync(join(tmpdir(), `planview-skills-crash-${crashPoint}-`));
+    const environment = { ...process.env, HOME: home, USERPROFILE: home };
+    const skillsRoot = join(home, ".agents", "skills");
+    const executeInHome = (...args) =>
+      spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+
+    try {
+      assert.equal(executeInHome("skills", "install").status, 0);
+      const expectedPlanview = readFileSync(join(skillsRoot, "planview", "SKILL.md"), "utf8");
+      const expectedCreateHtml = readFileSync(join(skillsRoot, "create-html", "SKILL.md"), "utf8");
+      writeFileSync(join(skillsRoot, "planview", "SKILL.md"), "old planview");
+      writeFileSync(join(skillsRoot, "create-html", "SKILL.md"), "old create-html");
+
+      const crashed = spawnSync(process.execPath, [cli, "skills", "install", "--force"], {
+        encoding: "utf8",
+        env: { ...environment, PLANVIEW_TEST_SKILLS_CRASH_AT: crashPoint },
+      });
+      assert.equal(crashed.status, null, `${crashPoint} should terminate the process`);
+      assert.equal(crashed.signal, "SIGKILL");
+
+      const recovered = executeInHome("skills", "install", "--force");
+      assert.equal(recovered.status, 0, `${crashPoint}: ${recovered.stderr}`);
+      assert.equal(
+        readFileSync(join(skillsRoot, "planview", "SKILL.md"), "utf8"),
+        expectedPlanview
+      );
+      assert.equal(
+        readFileSync(join(skillsRoot, "create-html", "SKILL.md"), "utf8"),
+        expectedCreateHtml
+      );
+      assert.deepEqual(
+        readdirSync(skillsRoot).filter((entry) => entry.startsWith(".planview-skills-")),
+        []
+      );
+    } finally {
+      await removeFixture(home);
+    }
+  }
+});
+
+test("concurrent forced skills installs serialize on one lock", async () => {
+  const home = mkdtempSync(join(tmpdir(), "planview-skills-concurrent-"));
+  const environment = { ...process.env, HOME: home, USERPROFILE: home };
+  const skillsRoot = join(home, ".agents", "skills");
+  let first;
+  let second;
+
+  try {
+    const initial = spawnSync(process.execPath, [cli, "skills", "install"], {
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(initial.status, 0, initial.stderr);
+    first = spawn(process.execPath, [cli, "skills", "install", "--force"], {
+      encoding: "utf8",
+      env: {
+        ...environment,
+        PLANVIEW_TEST_SKILLS_PAUSE_AT: "after-lock",
+        PLANVIEW_TEST_SKILLS_PAUSE_MS: "250",
+      },
+    });
+    second = spawn(process.execPath, [cli, "skills", "install", "--force"], {
+      encoding: "utf8",
+      env: environment,
+    });
+    const results = await Promise.all([waitForExit(first), waitForExit(second)]);
+    assert.equal(results[0].code, 0);
+    assert.equal(results[1].code, 0);
+    assert.equal(existsSync(join(skillsRoot, "planview", "SKILL.md")), true);
+    assert.equal(existsSync(join(skillsRoot, "create-html", "SKILL.md")), true);
+    assert.deepEqual(
+      readdirSync(skillsRoot).filter((entry) => entry.startsWith(".planview-skills-")),
+      []
+    );
+  } finally {
+    for (const child of [first, second]) {
+      if (child?.exitCode === null && child.signalCode === null) {
+        child.kill("SIGTERM");
+        await waitForExit(child).catch(() => undefined);
+      }
+    }
+    await removeFixture(home);
+  }
+});
+
+test("skills install rejects unsafe destination modes and static skill links", async (t) => {
+  if (process.platform === "win32") {
+    t.skip("POSIX mode fixtures are not portable to Windows");
+    return;
+  }
+
+  const modeHome = mkdtempSync(join(tmpdir(), "planview-skills-mode-"));
+  mkdirSync(join(modeHome, ".agents"), { mode: 0o700 });
+  chmodSync(join(modeHome, ".agents"), 0o777);
+  const unsafeMode = spawnSync(process.execPath, [cli, "skills", "install"], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: modeHome, USERPROFILE: modeHome },
+  });
+  assert.equal(unsafeMode.status, 1);
+  assert.match(unsafeMode.stderr, /writable by another user/);
+  assert.equal(existsSync(join(modeHome, ".agents", "skills")), false);
+  await removeFixture(modeHome);
+
+  const linkHome = mkdtempSync(join(tmpdir(), "planview-skills-link-"));
+  const outside = mkdtempSync(join(tmpdir(), "planview-skills-link-outside-"));
+  mkdirSync(join(linkHome, ".agents", "skills"), { recursive: true, mode: 0o700 });
+  symlinkSync(outside, join(linkHome, ".agents", "skills", "planview"), "dir");
+  const staticLink = spawnSync(process.execPath, [cli, "skills", "install", "--force"], {
+    encoding: "utf8",
+    env: { ...process.env, HOME: linkHome, USERPROFILE: linkHome },
+  });
+  try {
+    assert.equal(staticLink.status, 1);
+    assert.match(staticLink.stderr, /symbolic link/);
+    assert.equal(readdirSync(outside).length, 0);
+  } finally {
+    await removeFixture(linkHome);
+    await removeFixture(outside);
+  }
+});
+
 test("a clean build is included by the package dry run", () => {
   rmSync(resolve(packageRoot, "dist"), { force: true, recursive: true });
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -858,4 +1088,10 @@ test("a clean build is included by the package dry run", () => {
   assert.equal(result.error, undefined);
   assert.match(result.stdout, /"path": "dist\/index\.js"/);
   assert.match(result.stdout, /"path": "dist\/index\.d\.ts"/);
+  assert.match(result.stdout, /"path": "skills\/planview\/SKILL\.md"/);
+  assert.match(result.stdout, /"path": "skills\/create-html\/SKILL\.md"/);
+  assert.match(
+    result.stdout,
+    /"path": "skills\/create-html\/references\/browser-native-patterns\.md"/
+  );
 });
