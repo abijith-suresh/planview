@@ -105,5 +105,6 @@ and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
 - `packages/storage` — private daemon-owned metadata and document-file storage boundary
 - `packages/*` — reusable implementation packages
 
-SQLite-backed publication and CLI retrieval are implemented. Cleanup and skills
-beyond this first publish slice remain later milestones.
+SQLite-backed publication and CLI retrieval are implemented. The daemon performs
+startup reconciliation and authenticated 30-day last-access cleanup at startup and
+every 24 hours; `planview clean` invokes the same policy.

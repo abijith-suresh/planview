@@ -284,7 +284,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     storagePackageJson.scripts,
     "test",
-    "npm run build && node --test test/storage.test.mjs test/document-files.test.mjs test/publication.test.mjs",
+    "npm run build && node --test test/storage.test.mjs test/document-files.test.mjs test/publication.test.mjs test/cleanup.test.mjs",
     "storage test script"
   );
   expectProperty(

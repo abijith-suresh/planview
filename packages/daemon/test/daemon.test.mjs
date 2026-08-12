@@ -447,6 +447,55 @@ test("concurrent starts, stops, and restarts share one lifecycle lock", async ()
   }
 });
 
+test("shutdown waits for a manual cleanup before closing storage", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-clean-shutdown-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const documentsDir = join(appDataDir, "documents");
+  const port = await freePort();
+  const child = startChild(appDataDir, runtimeDir, port);
+  let metadataStore;
+  try {
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
+    metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    const documents = 200;
+    for (let index = 0; index < documents; index += 1) {
+      const documentId = `a${index.toString(36).padStart(20, "0")}`;
+      writeFileSync(join(documentsDir, `${documentId}.html`), "x");
+      metadataStore.insertDocumentMetadata({
+        id: documentId,
+        createdAt: 1,
+        lastAccessedAt: 1,
+        size: 1,
+      });
+    }
+    const cleanResponsePromise = fetch(`http://127.0.0.1:${port}/__planview/clean`, {
+      method: "POST",
+      headers: { "x-planview-secret": descriptor.secret },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const result = await daemon.stopDaemon(
+      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    );
+    const cleanResponse = await cleanResponsePromise;
+    assert.equal(cleanResponse.status, 200);
+    assert.equal((await cleanResponse.json()).removedDocuments, documents);
+    assert.equal(result.state, "stopped");
+    const exit = await waitForExit(child);
+    assert.equal(exit.code, 0);
+  } finally {
+    metadataStore?.close();
+    await stopChild(child);
+    await removeFixture(fixture);
+  }
+});
+
 test("shutdown force-closes an idle connection by its deadline", async () => {
   const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-shutdown-"));
   const appDataDir = join(fixture, "app-data");

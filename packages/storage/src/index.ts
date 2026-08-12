@@ -7,6 +7,10 @@ export {
   DocumentFileCloneError,
   DocumentFileDeleteError,
   DocumentFileDiscardError,
+  DocumentFileReadActiveError,
+  type DocumentFileObservation,
+  type DocumentFileReconciliationResult,
+  DOCUMENT_FILE_RECOVERY_GRACE_MILLISECONDS,
   DocumentFileFinalizeError,
   type DocumentFileTargetCapability,
   type DocumentFileTargetRecoveryPolicy,
@@ -24,6 +28,16 @@ export {
   openDocumentFileStore,
   type StagedDocumentFileHandle,
 } from "./document-files.js";
+export {
+  createCleanupCoordinator,
+  createDocumentCleanupCoordinator,
+  DocumentCleanupError,
+  type DocumentCleanupFailure,
+  type DocumentCleanupCoordinatorOptions,
+  type DocumentCleanupResult,
+  V1_ORPHAN_RECONCILIATION_GRACE_MILLISECONDS,
+  V1_RETENTION_MILLISECONDS,
+} from "./cleanup.js";
 export {
   createDocumentPublicationCoordinator,
   createMetadataGatedDocumentReader,
@@ -54,6 +68,13 @@ export type DocumentAggregate = {
   readonly count: number;
   readonly size: number;
 };
+
+export type DocumentMetadataMatch = Readonly<{
+  readonly id: string;
+  readonly createdAt: number;
+  readonly lastAccessedAt: number;
+  readonly size: number;
+}>;
 
 export class StoragePathError extends Data.TaggedError("StoragePathError")<{
   readonly path: string;
@@ -86,9 +107,17 @@ export interface MetadataStore {
   readonly close: () => void;
   readonly insertDocumentMetadata: (metadata: DocumentMetadata) => void;
   readonly getDocumentMetadata: (id: string) => DocumentMetadata | undefined;
+  readonly listDocumentMetadata: () => readonly DocumentMetadata[];
   readonly recordDocumentAccess: (id: string, accessedAt?: number) => boolean;
   readonly getDocumentAggregate: () => DocumentAggregate;
   readonly deleteDocument: (id: string) => boolean;
+  /** Deletes only if the row is still older than the supplied retention cutoff. */
+  readonly deleteDocumentIfLastAccessedBefore: (
+    id: string,
+    cutoff: number
+  ) => DocumentMetadata | undefined;
+  /** Deletes only when every immutable field still matches the observation. */
+  readonly deleteDocumentIfMatches: (metadata: DocumentMetadataMatch) => boolean;
 }
 
 const CURRENT_SCHEMA_VERSION = 1;
@@ -368,6 +397,16 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     return row === undefined ? undefined : documentFromRow(row);
   };
 
+  const listDocumentMetadata = () => {
+    ensureOpen();
+    return database
+      .prepare(
+        "SELECT id, createdAt, lastAccessedAt, size FROM documents ORDER BY lastAccessedAt ASC, id ASC"
+      )
+      .all()
+      .map(documentFromRow);
+  };
+
   const recordDocumentAccess = (id: string, accessedAt = Date.now()) => {
     ensureOpen();
     const documentId = validateId(id);
@@ -428,13 +467,57 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     });
   };
 
+  const deleteDocumentIfLastAccessedBefore = (id: string, cutoff: number) => {
+    ensureOpen();
+    const documentId = validateId(id);
+    const timestamp = validateNonNegativeInteger(cutoff, "cutoff");
+    return inTransaction(database, () => {
+      const row = database
+        .prepare("SELECT id, createdAt, lastAccessedAt, size FROM documents WHERE id = :id")
+        .get({ ":id": documentId });
+      if (row === undefined) {
+        return undefined;
+      }
+      const metadata = documentFromRow(row);
+      const result = database
+        .prepare("DELETE FROM documents WHERE id = :id AND lastAccessedAt < :cutoff")
+        .run({ ":id": documentId, ":cutoff": timestamp });
+      return result.changes > 0 ? metadata : undefined;
+    });
+  };
+
+  const deleteDocumentIfMatches = (metadata: DocumentMetadataMatch) => {
+    ensureOpen();
+    const normalized = validateMetadata(metadata);
+    return inTransaction(database, () => {
+      const result = database
+        .prepare(
+          `DELETE FROM documents
+           WHERE id = :id
+             AND createdAt = :createdAt
+             AND lastAccessedAt = :lastAccessedAt
+             AND size = :size`
+        )
+        .run({
+          ":id": normalized.id,
+          ":createdAt": normalized.createdAt,
+          ":lastAccessedAt": normalized.lastAccessedAt,
+          ":size": normalized.size,
+        });
+      return result.changes > 0;
+    });
+  };
+
   return {
     close,
     insertDocumentMetadata,
     getDocumentMetadata,
+    listDocumentMetadata,
     recordDocumentAccess,
     getDocumentAggregate,
     deleteDocument,
+    deleteDocumentIfLastAccessedBefore,
+    deleteDocumentIfMatches,
   };
 };
 

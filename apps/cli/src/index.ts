@@ -15,6 +15,7 @@ import {
   resolveDaemonConfigForTest,
   restartDaemon,
   retrieveDocument,
+  cleanDaemon,
   startDetachedDaemon,
   stopDaemon,
 } from "@planview/daemon";
@@ -40,6 +41,7 @@ Commands:
   status      Show daemon status without starting it
   stop        Gracefully stop the local daemon
   restart     Restart the local daemon
+  clean       Remove expired snapshots and reconcile storage
 
 Options:
   -h, --help     Show this help message
@@ -158,7 +160,7 @@ export type CliError =
   | PublishCommandError
   | GetCommandError;
 
-const COMMANDS = ["publish", "get", "start", "status", "stop", "restart"] as const;
+const COMMANDS = ["publish", "get", "start", "status", "stop", "restart", "clean"] as const;
 type Command = (typeof COMMANDS)[number];
 
 const isCommand = (value: string | undefined): value is Command =>
@@ -258,6 +260,25 @@ const runDaemonCommand = (command: Exclude<Command, "publish" | "get">, stdout: 
           `Planview daemon restarted at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
         );
         return 0;
+      }
+
+      if (command === "clean") {
+        const result = await cleanDaemon(config, { daemonScriptPath: daemonScriptPath() });
+        const failures = result.result.failures.length;
+        const summary =
+          result.result.removedDocuments === 0 &&
+          result.result.removedDocumentFiles === 0 &&
+          result.result.removedMetadataRows === 0 &&
+          result.result.removedStagedFiles === 0 &&
+          result.result.removedFinalizationLocks === 0 &&
+          result.result.retainedEntries === 0
+            ? "Planview cleanup found no expired or inconsistent snapshots."
+            : `Planview cleanup removed ${result.result.removedDocuments} expired snapshot${result.result.removedDocuments === 1 ? "" : "s"}, reconciled ${result.result.removedMetadataRows} metadata row${result.result.removedMetadataRows === 1 ? "" : "s"} and ${result.result.removedDocumentFiles} document file${result.result.removedDocumentFiles === 1 ? "" : "s"}, reclaimed ${result.result.reclaimedBytes} bytes, and removed ${result.result.removedStagedFiles} staged file${result.result.removedStagedFiles === 1 ? "" : "s"} and ${result.result.removedFinalizationLocks} finalization lock${result.result.removedFinalizationLocks === 1 ? "" : "s"}.`;
+        const retained = result.result.retainedEntries;
+        await stdout(
+          `${summary}${retained === 0 ? "" : ` ${retained} state${retained === 1 ? "" : "s"} retained for retry.`}\n`
+        );
+        return failures === 0 ? 0 : 1;
       }
 
       const result = await startDetachedDaemon(config, { daemonScriptPath: daemonScriptPath() });

@@ -14,9 +14,13 @@ On POSIX, Planview creates the app-data and runtime directories as `0700`,
 requires them to be owned by the current UID, and writes the descriptor and
 single lifecycle lock as `0600` files owned by that UID. Runtime state must remain below
 the Planview app-data directory. The loopback listener also requires its random
-secret for lifecycle and publish management endpoints. Published document ids
-are served directly as HTML without an application wrapper; missing documents
-return HTML 404 responses and other methods return 405.
+secret for lifecycle, publish, and cleanup management endpoints. Published
+document ids are served directly as HTML without an application wrapper; missing
+documents return HTML 404 responses and other methods return 405. Startup
+reconciles interrupted publication state and metadata/file inconsistencies before
+readiness. The same authenticated cleanup policy removes snapshots whose
+`lastAccessedAt` is older than the fixed 30-day retention window at startup and
+every 24 hours.
 
 Windows privacy is deliberately described honestly. Node does not provide a
 portable API here to inspect or enforce NTFS ACLs or to classify every reparse
