@@ -1,5 +1,14 @@
 # planview
 
+## 0.1.2
+
+### Patch Changes
+
+- 79c59a3: Add `planview get` for streaming immutable snapshots by document id or exact local URL.
+- 3942f49: Add authenticated 30-day snapshot cleanup, startup reconciliation, and automatic daemon retention maintenance.
+- 8c42285: Add bundled `planview` and `create-html` Agent Skills with a safe
+  `planview skills install` command.
+
 ## 0.1.1
 
 ### Patch Changes

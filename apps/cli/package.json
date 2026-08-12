@@ -1,6 +1,6 @@
 {
   "name": "planview",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Turn an HTML file into a persistent, immutable localhost URL.",
   "type": "module",
   "engines": {
