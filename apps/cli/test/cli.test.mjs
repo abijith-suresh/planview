@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -749,6 +757,91 @@ test("start never stops an unknown owner of the daemon port", async () => {
     await new Promise((resolve, reject) =>
       owner.close((error) => (error ? reject(error) : resolve()))
     );
+    await removeFixture(runtimeRoot);
+  }
+});
+
+test("clean uses the authenticated daemon policy and startup reconciliation", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-clean-cli-test-"));
+  const appDataDir = join(runtimeRoot, "data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: appDataDir,
+    PLANVIEW_RUNTIME_DIR: runtimeDir,
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  };
+  const executeInFixture = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const sourcePath = join(runtimeRoot, "cleanup.html");
+  writeFileSync(sourcePath, "cleanup me");
+  let database;
+
+  try {
+    const published = executeInFixture("publish", sourcePath);
+    assert.equal(published.status, 0, published.stderr);
+    const documentId = published.stdout.trim().split("/").at(-1);
+    assert.ok(documentId);
+    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    database
+      .prepare("UPDATE documents SET createdAt = 1, lastAccessedAt = 1 WHERE id = :id")
+      .run({ ":id": documentId });
+    database.close();
+    database = undefined;
+
+    assert.equal(executeInFixture("stop").status, 0);
+    const restartedForStartupCleanup = executeInFixture("start");
+    assert.equal(restartedForStartupCleanup.status, 0, restartedForStartupCleanup.stderr);
+    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    assert.equal(
+      database.prepare("SELECT id FROM documents WHERE id = :id").get({ ":id": documentId }),
+      undefined
+    );
+    database.close();
+    database = undefined;
+
+    const secondPublished = executeInFixture("publish", sourcePath);
+    assert.equal(secondPublished.status, 0, secondPublished.stderr);
+    const secondDocumentId = secondPublished.stdout.trim().split("/").at(-1);
+    assert.ok(secondDocumentId);
+    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    database
+      .prepare("UPDATE documents SET createdAt = 1, lastAccessedAt = 1 WHERE id = :id")
+      .run({ ":id": secondDocumentId });
+    database.close();
+    database = undefined;
+
+    const descriptor = JSON.parse(readFileSync(join(runtimeDir, "daemon.json"), "utf8"));
+    const unauthorized = await fetch(`http://127.0.0.1:${port}/__planview/clean`, {
+      method: "POST",
+    });
+    assert.equal(unauthorized.status, 401);
+
+    const cleaned = executeInFixture("clean");
+    assert.equal(cleaned.status, 0, cleaned.stderr);
+    assert.equal(cleaned.stderr, "");
+    assert.match(cleaned.stdout, /Planview cleanup removed 1 expired snapshot/);
+    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    assert.equal(
+      database.prepare("SELECT id FROM documents WHERE id = :id").get({ ":id": secondDocumentId }),
+      undefined
+    );
+    database.close();
+    database = undefined;
+
+    const orphanId = "z".repeat(21);
+    writeFileSync(join(appDataDir, "documents", `${orphanId}.html`), "orphan");
+    const stale = new Date(Date.now() - 35_001);
+    utimesSync(join(appDataDir, "documents", `${orphanId}.html`), stale, stale);
+    const restarted = executeInFixture("restart");
+    assert.equal(restarted.status, 0, restarted.stderr);
+    assert.equal(existsSync(join(appDataDir, "documents", `${orphanId}.html`)), false);
+    assert.equal(descriptor.host, "127.0.0.1");
+  } finally {
+    database?.close();
+    executeInFixture("stop");
     await removeFixture(runtimeRoot);
   }
 });

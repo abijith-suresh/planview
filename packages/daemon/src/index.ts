@@ -18,12 +18,16 @@ import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import {
   resolveAppDataPaths,
+  V1_CLEANUP_INTERVAL_HOURS,
   V1_MAX_HTML_SIZE_BYTES,
   V1_PORT,
   validateDocumentId,
 } from "@planview/core";
 import {
+  createDocumentCleanupCoordinator,
   createDocumentPublicationCoordinator,
+  type DocumentCleanupFailure,
+  type DocumentCleanupResult,
   type DocumentFileStore,
   type DocumentPublicationCoordinator,
   DocumentPublicationNotFoundError,
@@ -48,10 +52,16 @@ export const DAEMON_READY_PATH = "/__planview/ready";
 export const DAEMON_STATUS_PATH = "/__planview/status";
 export const DAEMON_SHUTDOWN_PATH = "/__planview/shutdown";
 export const DAEMON_PUBLISH_PATH = "/__planview/publish";
+export const DAEMON_CLEAN_PATH = "/__planview/clean";
+export const DAEMON_CLEANUP_INTERVAL_MS = V1_CLEANUP_INTERVAL_HOURS * 60 * 60 * 1_000;
 const DAEMON_LOCK_VERSION = 1;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const REQUEST_TIMEOUT_MS = 1_000;
+export const DAEMON_CLEANUP_TIMEOUT_MIN_MS = 10_000;
+export const DAEMON_CLEANUP_TIMEOUT_MAX_MS = 60_000;
+const CLEANUP_DOCUMENT_BUDGET_MS = 20;
+const CLEANUP_BYTE_BUDGET_BYTES_PER_MS = 128 * 1024;
 // Publication is a synchronous request: the 201 response is sent only after
 // the immutable file and metadata row have both committed. Give the largest
 // allowed source a bounded timeout based on a conservative copy rate rather
@@ -59,7 +69,7 @@ const REQUEST_TIMEOUT_MS = 1_000;
 export const DAEMON_PUBLISH_TIMEOUT_MIN_MS = 5_000;
 export const DAEMON_PUBLISH_TIMEOUT_MAX_MS = 60_000;
 const PUBLISH_COPY_RATE_BYTES_PER_SECOND = 1024 * 1024;
-const STARTUP_TIMEOUT_MS = 10_000;
+const STARTUP_TIMEOUT_MS = DAEMON_CLEANUP_TIMEOUT_MAX_MS;
 // A shutdown deadline is enforced by the daemon process. This margin lets a
 // lifecycle caller observe descriptor removal when the event loop is delayed.
 const SHUTDOWN_POLL_GRACE_MS = 2_000;
@@ -197,6 +207,12 @@ export type PublishedDaemonDocument = Readonly<{
   readonly id: import("@planview/core").DocumentId;
   readonly descriptor: RuntimeDescriptor;
   readonly reused: boolean;
+}>;
+
+export type CleanedDaemonDocuments = Readonly<{
+  readonly descriptor: RuntimeDescriptor;
+  readonly reused: boolean;
+  readonly result: DocumentCleanupResult;
 }>;
 
 export type RetrieveDaemonOptions = Readonly<{
@@ -959,11 +975,39 @@ const readJsonBody = async (request: import("node:http").IncomingMessage) => {
   return parseJson(Buffer.concat(chunks).toString("utf8"));
 };
 
+type OperationGate = <Value>(operation: () => Promise<Value>) => Promise<Value>;
+
+// Publication, cleanup, and the metadata-gated read are different durability
+// domains. A process-local gate closes the remaining interleaving window: a
+// cleanup never removes a target while a read has validated its row, and a
+// startup/periodic pass never races a publication's file-to-row commit.
+const createOperationGate = () => {
+  let tail = Promise.resolve();
+
+  const run: OperationGate = async (operation) => {
+    const previous = tail;
+    let release: (() => void) | undefined;
+    tail = new Promise<void>((resolvePromise) => {
+      release = resolvePromise;
+    });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release?.();
+    }
+  };
+
+  return run;
+};
+
 const PRIVATE_MANAGEMENT_PATHS = new Set([
   DAEMON_READY_PATH,
   DAEMON_STATUS_PATH,
   DAEMON_SHUTDOWN_PATH,
   DAEMON_PUBLISH_PATH,
+  DAEMON_CLEAN_PATH,
+  "/internal/clean",
   "/internal/ready",
   "/internal/status",
   "/internal/shutdown",
@@ -1039,7 +1083,10 @@ const handleRequest = async (
   descriptor: RuntimeDescriptor,
   requestShutdown: () => void,
   publicationCoordinator: DocumentPublicationCoordinator,
-  metadataStore: MetadataStore
+  metadataStore: MetadataStore,
+  runCleanup: () => Promise<DocumentCleanupResult>,
+  isReady: () => boolean,
+  operationGate: OperationGate
 ) => {
   let url: string;
   try {
@@ -1062,7 +1109,13 @@ const handleRequest = async (
     const documentId = documentIdFromPath(url);
     if (documentId !== undefined) {
       if (request.method === "GET") {
-        await handlePublishedDocument(documentId, res, publicationCoordinator, metadataStore);
+        if (!isReady()) {
+          response(res, 503, JSON.stringify({ error: "not_ready" }));
+          return;
+        }
+        await operationGate(() =>
+          handlePublishedDocument(documentId, res, publicationCoordinator, metadataStore)
+        );
       } else {
         response(
           res,
@@ -1078,7 +1131,7 @@ const handleRequest = async (
   if (url === "/" && request.method === "GET") {
     response(
       res,
-      200,
+      isReady() ? 200 : 503,
       `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Planview daemon</title></head><body><h1>Planview daemon running</h1><p>Listening on ${descriptor.host}:${descriptor.port}.</p></body></html>`,
       "text/html"
     );
@@ -1100,6 +1153,10 @@ const handleRequest = async (
   }
 
   if ((url === DAEMON_READY_PATH || url === "/internal/ready") && request.method === "GET") {
+    if (!isReady()) {
+      response(res, 503, JSON.stringify({ ready: false, ...statusPayload(descriptor) }));
+      return;
+    }
     response(res, 200, JSON.stringify({ ready: true, ...statusPayload(descriptor) }));
     return;
   }
@@ -1107,9 +1164,32 @@ const handleRequest = async (
     response(res, 200, JSON.stringify(statusPayload(descriptor)));
     return;
   }
+  if (!isReady() && !(url === DAEMON_SHUTDOWN_PATH || url === "/internal/shutdown")) {
+    response(res, 503, JSON.stringify({ error: "not_ready" }));
+    return;
+  }
   if ((url === DAEMON_SHUTDOWN_PATH || url === "/internal/shutdown") && request.method === "POST") {
     response(res, 202, JSON.stringify({ shuttingDown: true }));
     requestShutdown();
+    return;
+  }
+  if ((url === DAEMON_CLEAN_PATH || url === "/internal/clean") && request.method === "POST") {
+    try {
+      const result = await runCleanup();
+      response(
+        res,
+        200,
+        JSON.stringify({
+          ...result,
+          failures: result.failures.map(({ cause, ...failure }) => ({
+            ...failure,
+            cause: describe(cause),
+          })),
+        })
+      );
+    } catch (cause) {
+      response(res, 500, JSON.stringify({ error: "cleanup_failed", message: describe(cause) }));
+    }
     return;
   }
   if (url === DAEMON_PUBLISH_PATH && request.method === "POST") {
@@ -1136,7 +1216,7 @@ const handleRequest = async (
           await wait(pauseMilliseconds);
         }
       }
-      const published = await publicationCoordinator.publish(sourcePath);
+      const published = await operationGate(() => publicationCoordinator.publish(sourcePath));
       // Keep this response synchronous: 201 means the publication is committed
       // and can be retrieved immediately by its immutable id.
       response(res, 201, JSON.stringify({ id: published.id }));
@@ -1152,7 +1232,10 @@ const createDaemonServer = (
   descriptor: RuntimeDescriptor,
   requestShutdown: () => void,
   publicationCoordinator: DocumentPublicationCoordinator,
-  metadataStore: MetadataStore
+  metadataStore: MetadataStore,
+  runCleanup: () => Promise<DocumentCleanupResult>,
+  isReady: () => boolean,
+  operationGate: OperationGate
 ) => {
   const server = import("node:http").then(({ createServer }) => {
     const connections = new Set<Socket>();
@@ -1163,7 +1246,10 @@ const createDaemonServer = (
         descriptor,
         requestShutdown,
         publicationCoordinator,
-        metadataStore
+        metadataStore,
+        runCleanup,
+        isReady,
+        operationGate
       ).catch((cause) => {
         if (!res.headersSent) {
           response(res, 500, JSON.stringify({ error: "internal_error" }));
@@ -1201,6 +1287,9 @@ const openDaemon = async (config: DaemonConfig) => {
   let descriptor: RuntimeDescriptor | undefined;
   let documentFileStore: DocumentFileStore | undefined;
   let metadataStore: MetadataStore | undefined;
+  let cleanupTimer: NodeJS.Timeout | undefined;
+  let cleanupInFlight: Promise<unknown> = Promise.resolve();
+  let startupReady = false;
   let closing = false;
   let shutdownRequested = false;
   let resolveShutdown: (() => void) | undefined;
@@ -1209,17 +1298,34 @@ const openDaemon = async (config: DaemonConfig) => {
     resolveShutdown?.();
   };
   try {
-    metadataStore = Effect.runSync(openStorage(join(config.appDataDir, "metadata.sqlite")));
-    documentFileStore = Effect.runSync(
+    const openedMetadataStore = Effect.runSync(
+      openStorage(join(config.appDataDir, "metadata.sqlite"))
+    );
+    metadataStore = openedMetadataStore;
+    const openedDocumentFileStore = Effect.runSync(
       openDocumentFileStore({
         documentsDir: join(config.appDataDir, "documents"),
         stagingDir: join(config.appDataDir, "staging"),
       })
     );
+    documentFileStore = openedDocumentFileStore;
     const publicationCoordinator = createDocumentPublicationCoordinator({
-      documentFileStore,
-      metadataStore,
+      documentFileStore: openedDocumentFileStore,
+      metadataStore: openedMetadataStore,
     });
+    const cleanup = createDocumentCleanupCoordinator({
+      documentFileStore: openedDocumentFileStore,
+      metadataStore: openedMetadataStore,
+    });
+    const operationGate = createOperationGate();
+    const runCleanup = () => {
+      // Manual and scheduled cleanup share the same tracked promise. Shutdown
+      // must wait for a cleanup request already being served, not only for the
+      // interval callback's last run.
+      const operation = operationGate(() => cleanup.clean());
+      cleanupInFlight = operation.catch(() => undefined);
+      return operation;
+    };
     descriptor = {
       version: DAEMON_DESCRIPTOR_VERSION,
       pid: process.pid,
@@ -1232,7 +1338,10 @@ const openDaemon = async (config: DaemonConfig) => {
       descriptor,
       requestShutdown,
       publicationCoordinator,
-      metadataStore
+      metadataStore,
+      runCleanup,
+      () => startupReady,
+      operationGate
     );
     server = daemonServer.server;
     connections = daemonServer.connections;
@@ -1240,11 +1349,17 @@ const openDaemon = async (config: DaemonConfig) => {
     if (server === undefined || descriptor === undefined || connections === undefined) {
       throw new Error("The daemon listener was not initialized.");
     }
-    // Complete the authenticated readiness handshake before publishing the
-    // descriptor. Other lifecycle operations use the same lock and cannot
-    // inspect the port or descriptor until this daemon is fully usable.
-    await requestReady(descriptor);
+    // Publish the endpoint while startup cleanup is in progress, but keep
+    // readiness false. Callers can distinguish a live, bounded reconciliation
+    // from a dead child instead of waiting on an invisible process.
     await writeProtectedDescriptor(paths, descriptor);
+    await runCleanup();
+    startupReady = true;
+    await requestReady(descriptor);
+    cleanupTimer = setInterval(() => {
+      void runCleanup().catch(() => undefined);
+    }, DAEMON_CLEANUP_INTERVAL_MS);
+    cleanupTimer.unref();
     await lock.release();
     const runningServer = server;
     const runningConnections = connections;
@@ -1259,6 +1374,11 @@ const openDaemon = async (config: DaemonConfig) => {
         }
         closing = true;
         resolveShutdown = undefined;
+        if (cleanupTimer !== undefined) {
+          clearInterval(cleanupTimer);
+          cleanupTimer = undefined;
+        }
+        await cleanupInFlight;
         try {
           await closeServer(runningServer, runningConnections);
         } finally {
@@ -1483,6 +1603,11 @@ const requestReady = async (descriptor: RuntimeDescriptor) => {
   return parseResponse<Record<string, unknown>>(answer, DAEMON_READY_PATH, 200);
 };
 
+const requestClean = async (descriptor: RuntimeDescriptor, timeoutMs: number) => {
+  const answer = await request(descriptor, "POST", DAEMON_CLEAN_PATH, undefined, timeoutMs);
+  return parseResponse<Record<string, unknown>>(answer, DAEMON_CLEAN_PATH, 200);
+};
+
 const portIsOpen = (host: string, port: number) =>
   new Promise<boolean>((resolvePromise) => {
     let settled = false;
@@ -1529,9 +1654,38 @@ export const inspectDaemon = async (config: DaemonConfig): Promise<DaemonState> 
   }
 };
 
-const waitForReady = async (config: DaemonConfig) => {
+const cleanupTimeoutFor = (count: number, size: number) => {
+  const documentBudget = count * CLEANUP_DOCUMENT_BUDGET_MS;
+  const byteBudget = Math.ceil(size / CLEANUP_BYTE_BUDGET_BYTES_PER_MS);
+  return Math.min(
+    DAEMON_CLEANUP_TIMEOUT_MAX_MS,
+    Math.max(
+      DAEMON_CLEANUP_TIMEOUT_MIN_MS,
+      DAEMON_CLEANUP_TIMEOUT_MIN_MS + documentBudget + byteBudget
+    )
+  );
+};
+
+const estimateCleanupTimeout = (config: DaemonConfig) => {
+  try {
+    const metadataStore = Effect.runSync(openStorage(join(config.appDataDir, "metadata.sqlite")));
+    try {
+      const aggregate = metadataStore.getDocumentAggregate();
+      return cleanupTimeoutFor(aggregate.count, aggregate.size);
+    } finally {
+      metadataStore.close();
+    }
+  } catch {
+    // Startup can still create/migrate the database. If its size cannot be
+    // sampled, use the bounded maximum rather than making readiness timing
+    // depend on an unobserved, and therefore ambiguous, estimate.
+    return DAEMON_CLEANUP_TIMEOUT_MAX_MS;
+  }
+};
+
+const waitForReady = async (config: DaemonConfig, timeoutMs = STARTUP_TIMEOUT_MS) => {
   const paths = resolveDaemonPaths(config);
-  const deadline = Date.now() + STARTUP_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const descriptor = await readDaemonDescriptor(paths);
     if (descriptor !== undefined) {
@@ -1557,9 +1711,12 @@ const waitForReady = async (config: DaemonConfig) => {
         // the readiness response is observable. Keep polling within the bound.
       }
     }
-    // The caller owns the lifecycle lock for this entire wait. Do not probe
-    // the port here: an in-flight startup owns that port and a second probe
-    // must never classify it as an unknown process.
+    // A descriptor may disappear after this child becomes ready when a
+    // concurrent lifecycle operation immediately performs its own restart.
+    // Continue to the bounded deadline and observe the next descriptor rather
+    // than misclassifying that normal handoff as this startup's failure. Do not
+    // probe the port here: an in-flight startup owns it and a second probe must
+    // never classify it as an unknown process.
     await wait(STARTUP_POLL_MS);
   }
   throw new DaemonRequestError({
@@ -1585,7 +1742,8 @@ const startWithLock = async (
   config: DaemonConfig,
   options: StartDaemonOptions,
   paths: DaemonPaths,
-  lock: LifecycleLock
+  lock: LifecycleLock,
+  startupTimeoutMs: number
 ) => {
   const current = await inspectDaemon(config);
   if (current.state === "running") {
@@ -1623,14 +1781,15 @@ const startWithLock = async (
   // progress or after the daemon has recorded its ownership.
   lock.handoff();
   child.unref();
-  return waitForReady(config);
+  return waitForReady(config, startupTimeoutMs);
 };
 
 export const startDetachedDaemon = async (config: DaemonConfig, options: StartDaemonOptions) => {
   const paths = await prepareLifecyclePaths(config);
+  const startupTimeoutMs = estimateCleanupTimeout(config);
   const lock = await createLock(paths);
   try {
-    return await startWithLock(config, options, paths, lock);
+    return await startWithLock(config, options, paths, lock, startupTimeoutMs);
   } finally {
     await lock.release();
   }
@@ -1642,6 +1801,90 @@ export type PublishDaemonOptions = Readonly<{
   /** The validated source size lets the client budget for the bounded copy. */
   readonly sourceSizeBytes?: number;
 }>;
+
+const cleanupResultFromPayload = (payload: Record<string, unknown>) => {
+  const numericFields = [
+    "now",
+    "cutoff",
+    "removedDocuments",
+    "removedDocumentFiles",
+    "removedMetadataRows",
+    "removedStagedFiles",
+    "removedFinalizationLocks",
+    "reclaimedBytes",
+    "retainedEntries",
+  ] as const;
+  if (
+    numericFields.some(
+      (field) =>
+        typeof recordValue(payload, field) !== "number" ||
+        !Number.isSafeInteger(recordValue(payload, field)) ||
+        (recordValue(payload, field) as number) < 0
+    )
+  ) {
+    throw new DaemonRequestError({
+      path: DAEMON_CLEAN_PATH,
+      cause: payload,
+      message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
+    });
+  }
+  const rawFailures = recordValue(payload, "failures");
+  if (!Array.isArray(rawFailures)) {
+    throw new DaemonRequestError({
+      path: DAEMON_CLEAN_PATH,
+      cause: payload,
+      message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
+    });
+  }
+  const failures = rawFailures.map((failure) => {
+    if (!isRecord(failure) || typeof recordValue(failure, "phase") !== "string") {
+      throw new DaemonRequestError({
+        path: DAEMON_CLEAN_PATH,
+        cause: payload,
+        message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
+      });
+    }
+    const phase = recordValue(failure, "phase");
+    if (phase !== "staging" && phase !== "metadata" && phase !== "document-file") {
+      throw new DaemonRequestError({
+        path: DAEMON_CLEAN_PATH,
+        cause: payload,
+        message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
+      });
+    }
+    const id = recordValue(failure, "id");
+    const message = recordValue(failure, "message");
+    if ((id !== undefined && typeof id !== "string") || typeof message !== "string") {
+      throw new DaemonRequestError({
+        path: DAEMON_CLEAN_PATH,
+        cause: payload,
+        message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
+      });
+    }
+    const normalizedPhase: DocumentCleanupFailure["phase"] =
+      phase === "staging" ? "staging" : phase === "metadata" ? "metadata" : "document-file";
+    return {
+      phase: normalizedPhase,
+      ...(id === undefined ? {} : { id }),
+      cause: recordValue(failure, "cause"),
+      message,
+    };
+  });
+  const numberValue = (field: (typeof numericFields)[number]) =>
+    recordValue(payload, field) as number;
+  return {
+    now: numberValue("now"),
+    cutoff: numberValue("cutoff"),
+    removedDocuments: numberValue("removedDocuments"),
+    removedDocumentFiles: numberValue("removedDocumentFiles"),
+    removedMetadataRows: numberValue("removedMetadataRows"),
+    removedStagedFiles: numberValue("removedStagedFiles"),
+    removedFinalizationLocks: numberValue("removedFinalizationLocks"),
+    reclaimedBytes: numberValue("reclaimedBytes"),
+    retainedEntries: numberValue("retainedEntries"),
+    failures,
+  } satisfies DocumentCleanupResult;
+};
 
 export const publishDocument = async (config: DaemonConfig, options: PublishDaemonOptions) => {
   const running = await startDetachedDaemon(config, { daemonScriptPath: options.daemonScriptPath });
@@ -1663,6 +1906,16 @@ export const publishDocument = async (config: DaemonConfig, options: PublishDaem
       message: `The daemon returned an invalid published document id for ${DAEMON_PUBLISH_PATH}.`,
     });
   }
+};
+
+export const cleanDaemon = async (config: DaemonConfig, options: StartDaemonOptions) => {
+  const running = await startDetachedDaemon(config, options);
+  const payload = await requestClean(running.descriptor, estimateCleanupTimeout(config));
+  return {
+    descriptor: running.descriptor,
+    reused: running.reused,
+    result: cleanupResultFromPayload(payload),
+  } satisfies CleanedDaemonDocuments;
 };
 
 export const retrieveDocument = async (config: DaemonConfig, options: RetrieveDaemonOptions) => {
@@ -1717,7 +1970,7 @@ export const restartDaemon = async (config: DaemonConfig, options: StartDaemonOp
   const lock = await createLock(paths);
   try {
     await stopWithLock(config);
-    return await startWithLock(config, options, paths, lock);
+    return await startWithLock(config, options, paths, lock, estimateCleanupTimeout(config));
   } finally {
     await lock.release();
   }

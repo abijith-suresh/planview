@@ -100,12 +100,18 @@ the physical-file primitive and must not be used as a published read boundary.
 whether a regular document was removed. Its typed failure reports both target
 and target-lock state for recovery accounting. When a capability is supplied, deletion
 rechecks the finalized inode identity and retains a replacement instead of
-unlinking it. Target deletion is serialized with finalization. `cloneStagedFile`
+unlinking it. Reads publish a private, identity-checked reference while the
+stream is active, and target deletion takes the same id-wide lock before
+checking those references; this protects normal same-user operations across
+store instances. The daemon additionally holds its operation gate across the
+HTTP response so cleanup cannot remove an active read. Target deletion is
+serialized with finalization. `cloneStagedFile`
 and `discardStagedFile` are required store operations: publication never falls
 back to reopening caller input or silently skips owned cleanup. Invalid IDs and
 handles are rejected before any owned path
-is constructed. No daemon, publication URL, cleanup policy, or transport is
-included in this boundary.
+is constructed. No daemon, publication URL, or transport is included in this
+boundary; the private cleanup coordinator composes these primitives without
+exposing them as a public file API.
 
 ## Publication coordination
 
@@ -157,9 +163,12 @@ coordinator never deletes the target under the retain policy); after metadata
 commit and before snapshot cleanup it can leave a valid published pair plus
 duplicate staging; and a crash or thrown error at the metadata boundary can
 leave an unknown pair. Lock metadata/claims and directory
-entries have the platform-specific sync limits described above. These states are
-returned for a later reconciliation slice; this slice does not perform startup
-reconciliation, retention cleanup, daemon/HTTP/CLI work, or public URL printing.
+entries have the platform-specific sync limits described above. The cleanup
+coordinator reconciles these known states conservatively: metadata-gated reads
+make uncommitted files invisible, stale locks are reclaimed only with the same
+liveness/lease proof as publication, and active reads or target locks are
+retained. It applies the fixed 30-day `lastAccessedAt` policy through an
+injected clock and reports, rather than guesses through, filesystem faults.
 Tests labeled concurrent Planview operations cover cooperating store instances
 and normal lock/collision races. Tests labeled out-of-model hostile external
 replacement deliberately simulate a malicious same-user filesystem process; they

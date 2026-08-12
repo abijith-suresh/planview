@@ -11,9 +11,10 @@ import {
   mkdirSync,
   openSync,
   realpathSync,
+  unlinkSync,
   type Stats,
 } from "node:fs";
-import { link, lstat, mkdir, open, rmdir, unlink } from "node:fs/promises";
+import { link, lstat, mkdir, open, readdir, rmdir, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { isAbsolute, join, normalize, parse, relative, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
@@ -47,8 +48,13 @@ const FINALIZATION_LOCK_METADATA_NAME = "owner.json";
 const FINALIZATION_LOCK_METADATA_BYTES = 4 * 1024;
 const FINALIZATION_LOCK_LEASE_MS = 30_000;
 const FINALIZATION_LOCK_RECOVERY_GRACE_MS = 5_000;
+export const DOCUMENT_FILE_RECOVERY_GRACE_MILLISECONDS =
+  FINALIZATION_LOCK_LEASE_MS + FINALIZATION_LOCK_RECOVERY_GRACE_MS;
 const FINALIZATION_LOCK_OWNER_TOKEN_BYTES = 16;
 const FINALIZATION_LOCK_RECOVERY_CLAIM_NAME = ".recovery-claim";
+const READ_REFERENCE_TOKEN_BYTES = 16;
+const READ_REFERENCE_PREFIX = ".read.";
+const READ_REFERENCE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const TARGET_LOCK_WAIT_MS = 32;
 const TARGET_LOCK_RETRY_DELAY_MS = 1;
 const LOCAL_HOSTNAME = hostname();
@@ -78,6 +84,8 @@ export type DocumentFileStoreOptions = {
   readonly documentsDir: string;
   readonly stagingDir: string;
   readonly randomBytes?: (size: number) => Uint8Array;
+  /** Clock used for lock leases and startup recovery. */
+  readonly now?: () => number;
   /** Private race-test seam; production callers should leave this unset. */
   readonly beforeFinalizationLockRecoveryClaim?: (lockPath: string) => Promise<void>;
   /** Private race-test seam for the hard-link identity check. */
@@ -118,6 +126,18 @@ export type DocumentFileTargetCapability = Readonly<{
 
 export type DocumentFileResourceState = "absent" | "retained" | "unknown";
 export type DocumentFileTargetRecoveryPolicy = "delete" | "retain";
+
+export type DocumentFileObservation = Readonly<{
+  readonly id: string;
+  readonly size: number;
+  readonly modifiedAt: number;
+}>;
+
+export type DocumentFileReconciliationResult = Readonly<{
+  readonly stagedFilesRemoved: number;
+  readonly finalizationLocksRemoved: number;
+  readonly retainedEntries: number;
+}>;
 
 export class DocumentFileStorePathError extends Data.TaggedError("DocumentFileStorePathError")<{
   readonly path: string;
@@ -214,6 +234,11 @@ export class DocumentFileReadError extends Data.TaggedError("DocumentFileReadErr
   readonly message: string;
 }> {}
 
+export class DocumentFileReadActiveError extends Data.TaggedError("DocumentFileReadActiveError")<{
+  readonly id: string;
+  readonly message: string;
+}> {}
+
 export class DocumentFileDeleteError extends Data.TaggedError("DocumentFileDeleteError")<{
   readonly id: string;
   readonly targetState: DocumentFileResourceState;
@@ -236,6 +261,14 @@ export interface DocumentFileStore {
     id: string,
     expectedTarget?: DocumentFileTargetCapability
   ) => Promise<boolean>;
+  /** Runs the retention decision while the id-wide target lock is held. */
+  readonly deleteDocumentFileIf: (
+    id: string,
+    shouldDelete: (targetExists: boolean) => boolean | Promise<boolean>
+  ) => Promise<boolean>;
+  readonly listDocumentFiles: () => Promise<readonly DocumentFileObservation[]>;
+  /** Reclaims only stale, provably-owned staging and lock entries. */
+  readonly reconcileDocumentFiles: () => Promise<DocumentFileReconciliationResult>;
   /** Creates a second immutable staged handle without reopening source input. */
   readonly cloneStagedFile: (handle: StagedDocumentFileHandle) => Promise<StagedDocumentFileHandle>;
   /** Safely consumes a staged handle when a coordinator needs compensation. */
@@ -255,6 +288,7 @@ const isFileStoreError = (error: unknown) =>
   error instanceof DocumentFileDiscardError ||
   error instanceof DocumentFileCloneError ||
   error instanceof DocumentFileReadError ||
+  error instanceof DocumentFileReadActiveError ||
   error instanceof DocumentFileDeleteError;
 
 const errorCode = (error: unknown) => {
@@ -787,6 +821,20 @@ type FinalizationLockLease = {
   readonly recoveryClaimIdentity?: FileIdentity;
 };
 
+type ReadReferenceLease = Readonly<{
+  readonly path: string;
+  readonly identity: FileIdentity;
+}>;
+
+type ReadReferenceMetadata = Readonly<{
+  readonly version: 1;
+  readonly owner: Readonly<{
+    readonly pid: number;
+    readonly host: string;
+  }>;
+  readonly acquiredAt: number;
+}>;
+
 const readFinalizationRecoveryClaim = async (claimPath: string) => {
   let claimFile: Awaited<ReturnType<typeof open>> | undefined;
   try {
@@ -917,6 +965,7 @@ const removeFinalizationLockDirectory = async (lockPath: string, lease?: Finaliz
 
 const recoverStaleFinalizationLock = async (
   lockPath: string,
+  now: () => number,
   beforeClaim?: (lockPath: string) => Promise<void>
 ) => {
   const observation = await readFinalizationLockMetadata(lockPath);
@@ -925,7 +974,7 @@ const recoverStaleFinalizationLock = async (
     observation === undefined ||
     metadata === undefined ||
     metadata.owner.host !== LOCAL_HOSTNAME ||
-    metadata.leaseExpiresAt > Date.now() - FINALIZATION_LOCK_RECOVERY_GRACE_MS ||
+    metadata.leaseExpiresAt > now() - FINALIZATION_LOCK_RECOVERY_GRACE_MS ||
     isProcessAlive(metadata.owner.pid)
   ) {
     return undefined;
@@ -941,7 +990,7 @@ const recoverStaleFinalizationLock = async (
     if (existingClaim !== undefined) {
       if (
         existingClaim.owner.host !== LOCAL_HOSTNAME ||
-        existingClaim.leaseExpiresAt > Date.now() - FINALIZATION_LOCK_RECOVERY_GRACE_MS ||
+        existingClaim.leaseExpiresAt > now() - FINALIZATION_LOCK_RECOVERY_GRACE_MS ||
         isProcessAlive(existingClaim.owner.pid)
       ) {
         return undefined;
@@ -993,7 +1042,7 @@ const recoverStaleFinalizationLock = async (
       constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
       PRIVATE_FILE_MODE
     );
-    const claimedAt = Date.now();
+    const claimedAt = now();
     await claimFile.writeFile(
       JSON.stringify({
         version: 1,
@@ -1015,6 +1064,22 @@ const recoverStaleFinalizationLock = async (
     await claimFile?.close().catch(() => undefined);
   }
 
+  const discardClaim = async () => {
+    if (claimIdentity === undefined) {
+      return;
+    }
+    try {
+      const currentClaim = await lstat(claimPath);
+      if (sameFileIdentity(claimIdentity, currentClaim)) {
+        await unlink(claimPath);
+      }
+    } catch (cause) {
+      if (!isNotFound(cause)) {
+        throw cause;
+      }
+    }
+  };
+
   try {
     const current = await lstat(lockPath);
     if (!sameFileIdentity(observation.identity, current)) {
@@ -1022,36 +1087,57 @@ const recoverStaleFinalizationLock = async (
       // replaced after the marker was created, the marker is in the old
       // directory; if it was replaced before creation, this removes our marker
       // from the replacement without touching its owner metadata.
-      if (claimIdentity !== undefined) {
-        try {
-          const currentClaim = await lstat(claimPath);
-          if (sameFileIdentity(claimIdentity, currentClaim)) {
-            await unlink(claimPath);
-          }
-        } catch {
-          // The replacement remains conservatively busy if our marker cannot
-          // be removed without an identity proof.
-        }
-      }
+      await discardClaim();
       return undefined;
     }
+
+    // The first stale observation is only a candidate. A cooperating owner may
+    // have refreshed/replaced its metadata while the recovery claim was being
+    // acquired. Re-read both identities and the lease immediately before
+    // handing the lock to the remover; never let an old directory listing
+    // authorize deletion of a fresh lock.
+    const freshObservation = await readFinalizationLockMetadata(lockPath);
+    const freshMetadata = freshObservation?.metadata;
+    const metadataStillMatches =
+      freshMetadata !== undefined &&
+      freshObservation !== undefined &&
+      sameFileIdentity(observation.identity, freshObservation.identity) &&
+      observation.metadataIdentity !== undefined &&
+      sameFileIdentity(observation.metadataIdentity, freshObservation.metadataIdentity) &&
+      freshMetadata.owner.pid === metadata.owner.pid &&
+      freshMetadata.owner.host === metadata.owner.host &&
+      freshMetadata.owner.token === metadata.owner.token &&
+      freshMetadata.acquiredAt === metadata.acquiredAt &&
+      freshMetadata.leaseExpiresAt === metadata.leaseExpiresAt;
+    if (
+      !metadataStillMatches ||
+      freshMetadata.owner.host !== LOCAL_HOSTNAME ||
+      freshMetadata.leaseExpiresAt > now() - FINALIZATION_LOCK_RECOVERY_GRACE_MS ||
+      isProcessAlive(freshMetadata.owner.pid)
+    ) {
+      await discardClaim();
+      return undefined;
+    }
+
     const currentClaim = await lstat(claimPath);
     return {
       identity: current,
-      metadataIdentity: observation.metadataIdentity,
+      metadataIdentity: freshObservation.metadataIdentity,
       recoveryClaimName: FINALIZATION_LOCK_RECOVERY_CLAIM_NAME,
       recoveryClaimIdentity: currentClaim,
     } satisfies FinalizationLockLease;
   } catch (cause) {
     if (isNotFound(cause)) {
+      await discardClaim().catch(() => undefined);
       return undefined;
     }
+    await discardClaim().catch(() => undefined);
     throw cause;
   }
 };
 
-const createFinalizationLockMetadata = () => {
-  const acquiredAt = Date.now();
+const createFinalizationLockMetadata = (now: () => number) => {
+  const acquiredAt = now();
   return {
     version: 1,
     owner: {
@@ -1066,6 +1152,7 @@ const createFinalizationLockMetadata = () => {
 
 const acquireFinalizationLock = async (
   lockPath: string,
+  now: () => number,
   beforeRecoveryClaim?: (lockPath: string) => Promise<void>
 ) => {
   let createdIdentity: FileIdentity | undefined;
@@ -1077,7 +1164,7 @@ const acquireFinalizationLock = async (
       throw cause;
     }
     try {
-      const recovered = await recoverStaleFinalizationLock(lockPath, beforeRecoveryClaim);
+      const recovered = await recoverStaleFinalizationLock(lockPath, now, beforeRecoveryClaim);
       if (recovered !== undefined) {
         return recovered;
       }
@@ -1089,7 +1176,7 @@ const acquireFinalizationLock = async (
   }
 
   const metadataPath = join(lockPath, FINALIZATION_LOCK_METADATA_NAME);
-  const metadata = createFinalizationLockMetadata();
+  const metadata = createFinalizationLockMetadata(now);
   let metadataFile: Awaited<ReturnType<typeof open>> | undefined;
   let metadataIdentity: FileIdentity | undefined;
   try {
@@ -1123,6 +1210,126 @@ const acquireFinalizationLock = async (
     identity,
     ...(metadataIdentity === undefined ? {} : { metadataIdentity }),
   } satisfies FinalizationLockLease;
+};
+
+const readReferenceName = (id: string, token: string) => `${READ_REFERENCE_PREFIX}${id}.${token}`;
+
+const readReferenceParts = (entry: string, id: string) => {
+  const prefix = `${READ_REFERENCE_PREFIX}${id}.`;
+  if (!entry.startsWith(prefix)) {
+    return undefined;
+  }
+  const token = entry.slice(prefix.length);
+  return READ_REFERENCE_TOKEN_PATTERN.test(token) ? token : undefined;
+};
+
+const parseReadReferenceMetadata = (value: unknown): ReadReferenceMetadata | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const { version, owner: ownerValue, acquiredAt } = value;
+  if (!isRecord(ownerValue)) {
+    return undefined;
+  }
+  const { pid, host } = ownerValue;
+  if (
+    version !== 1 ||
+    typeof pid !== "number" ||
+    !Number.isSafeInteger(pid) ||
+    pid <= 0 ||
+    typeof host !== "string" ||
+    host.length === 0 ||
+    typeof acquiredAt !== "number" ||
+    !Number.isSafeInteger(acquiredAt) ||
+    acquiredAt < 0
+  ) {
+    return undefined;
+  }
+  return {
+    version: 1,
+    owner: { pid, host },
+    acquiredAt,
+  };
+};
+
+const readReadReference = async (path: string) => {
+  let file: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    file = await openWithoutFollowingLinks(path, constants.O_RDONLY, path, false);
+    const identity = await file.stat();
+    const contents = Buffer.alloc(FINALIZATION_LOCK_METADATA_BYTES + 1);
+    const { bytesRead } = await file.read(contents, 0, contents.length, 0);
+    if (bytesRead > FINALIZATION_LOCK_METADATA_BYTES) {
+      return undefined;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(contents.subarray(0, bytesRead).toString("utf8"));
+    } catch {
+      return undefined;
+    }
+    const metadata = parseReadReferenceMetadata(parsed);
+    return metadata === undefined ? undefined : { metadata, identity };
+  } catch (cause) {
+    if (isNotFound(cause)) {
+      return undefined;
+    }
+    throw cause;
+  } finally {
+    await file?.close();
+  }
+};
+
+const createReadReference = async (
+  stagingDir: TrustedDirectory,
+  id: string,
+  now: () => number
+): Promise<ReadReferenceLease> => {
+  for (let attempt = 0; attempt < MAX_STAGED_ALLOCATION_ATTEMPTS; attempt += 1) {
+    const token = cryptoRandomBytes(READ_REFERENCE_TOKEN_BYTES).toString("base64url");
+    const name = readReferenceName(id, token);
+    const path = entryPath(stagingDir, name);
+    let file: Awaited<ReturnType<typeof open>> | undefined;
+    try {
+      file = await open(
+        path,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | NO_FOLLOW,
+        PRIVATE_FILE_MODE
+      );
+      await file.writeFile(
+        JSON.stringify({
+          version: 1,
+          owner: { pid: process.pid, host: LOCAL_HOSTNAME },
+          acquiredAt: now(),
+        }),
+        "utf8"
+      );
+      await file.sync();
+      const identity = await file.stat();
+      // Keep the release path independent of the optional /proc fd. Store
+      // shutdown may close that directory fd before a forced stream close;
+      // the same identity check still prevents unlinking a replacement.
+      return { path: join(stagingDir.path, name), identity };
+    } catch (cause) {
+      if (errorCode(cause) !== "EEXIST") {
+        throw cause;
+      }
+    } finally {
+      await file?.close().catch(() => undefined);
+    }
+  }
+  throw new Error("Could not allocate a unique active-read reference.");
+};
+
+const releaseReadReference = (reference: ReadReferenceLease) => {
+  try {
+    const current = lstatSync(reference.path);
+    if (sameFileIdentity(reference.identity, current)) {
+      unlinkSync(reference.path);
+    }
+  } catch {
+    // A missing reference is already released. Any replacement is retained.
+  }
 };
 
 const entryPath = (directory: TrustedDirectory, name: string) =>
@@ -1167,6 +1374,7 @@ const createStore = ({
   documentsDir,
   stagingDir,
   randomBytes,
+  now = Date.now,
   beforeFinalizationLockRecoveryClaim,
   beforeStagedCloneLink,
   beforeStagedCloneCleanup,
@@ -1180,6 +1388,7 @@ const createStore = ({
   readonly documentsDir: TrustedDirectory;
   readonly stagingDir: TrustedDirectory;
   readonly randomBytes?: (size: number) => Uint8Array;
+  readonly now?: () => number;
   readonly beforeFinalizationLockRecoveryClaim?: (lockPath: string) => Promise<void>;
   readonly beforeStagedCloneLink?: (sourcePath: string) => Promise<void>;
   readonly beforeStagedCloneCleanup?: (clonedPath: string) => Promise<void>;
@@ -1191,6 +1400,7 @@ const createStore = ({
   readonly beforeDocumentTargetDelete?: (targetPath: string) => Promise<void>;
 }) => {
   const stagedIdentities = new Map<string, FileIdentity>();
+  const documentMutexes = new Map<string, Promise<void>>();
   let closeRequested = false;
   let directoriesClosed = false;
   let activeOperations = 0;
@@ -1233,8 +1443,105 @@ const createStore = ({
     verifyTrustedDirectory(stagingDir);
   };
 
+  const withDocumentMutex = async <Value>(id: string, operation: () => Promise<Value>) => {
+    const previous = documentMutexes.get(id);
+    let release: (() => void) | undefined;
+    const current = new Promise<void>((resolvePromise) => {
+      release = resolvePromise;
+    });
+    documentMutexes.set(id, current);
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release?.();
+      if (documentMutexes.get(id) === current) {
+        documentMutexes.delete(id);
+      }
+    }
+  };
+
+  const activeReadReferenceExists = async (id: string) => {
+    const entries = await readdir(entryPath(stagingDir, ""));
+    let removedStaleReference = false;
+    for (const entry of entries) {
+      if (readReferenceParts(entry, id) === undefined) {
+        continue;
+      }
+      const path = entryPath(stagingDir, entry);
+      let current: Stats;
+      try {
+        current = await lstat(path);
+      } catch (cause) {
+        if (isNotFound(cause)) {
+          continue;
+        }
+        throw cause;
+      }
+      const observation = await readReadReference(path);
+      if (
+        observation === undefined ||
+        observation.metadata.owner.host !== LOCAL_HOSTNAME ||
+        isProcessAlive(observation.metadata.owner.pid)
+      ) {
+        // A malformed marker, a reference owned by another host, and a live
+        // same-host owner all fail closed. Only a well-formed reference whose
+        // local owner is definitely dead may be reclaimed.
+        return true;
+      }
+      if (!sameFileIdentity(current, observation.identity)) {
+        return true;
+      }
+      try {
+        const fresh = await lstat(path);
+        if (!sameFileIdentity(observation.identity, fresh)) {
+          return true;
+        }
+        await unlink(path);
+        removedStaleReference = true;
+      } catch (cause) {
+        if (!isNotFound(cause)) {
+          return true;
+        }
+      }
+    }
+    if (removedStaleReference) {
+      await syncDirectory(stagingDir);
+    }
+    return false;
+  };
+
   const stagingPath = (handle: unknown) => entryPath(stagingDir, validateStagedHandle(handle));
   const documentPath = (id: string) => entryPath(documentsDir, `${validateDocumentId(id)}.html`);
+  const targetLockPath = (id: string) => entryPath(stagingDir, `.${id}.target.lock`);
+  const acquireTargetLock = async (id: string) => {
+    const path = targetLockPath(id);
+    const deadline = process.hrtime.bigint() + BigInt(TARGET_LOCK_WAIT_MS) * 1_000_000n;
+    while (true) {
+      try {
+        return await acquireFinalizationLock(path, now, beforeFinalizationLockRecoveryClaim);
+      } catch (cause) {
+        if (!(cause instanceof FinalizationLockBusyError)) {
+          throw cause;
+        }
+        const remaining = deadline - process.hrtime.bigint();
+        if (remaining <= 0n) {
+          throw new DocumentFileTargetBusyError({
+            id,
+            message: `Document target ${id} remained locked by a live peer after ${TARGET_LOCK_WAIT_MS}ms.`,
+          });
+        }
+        const milliseconds = Number((remaining + 999_999n) / 1_000_000n);
+        await new Promise<void>((resolvePromise) =>
+          setTimeout(resolvePromise, Math.min(TARGET_LOCK_RETRY_DELAY_MS, milliseconds))
+        );
+      }
+    }
+  };
+  const releaseTargetLock = async (id: string, lease: FinalizationLockLease) => {
+    await removeFinalizationLockDirectory(targetLockPath(id), lease);
+    await syncDirectory(stagingDir);
+  };
   const discardEntry = async (
     directory: TrustedDirectory,
     name: string,
@@ -1517,7 +1824,11 @@ const createStore = ({
         }
 
         try {
-          lockLease = await acquireFinalizationLock(lockPath, beforeFinalizationLockRecoveryClaim);
+          lockLease = await acquireFinalizationLock(
+            lockPath,
+            now,
+            beforeFinalizationLockRecoveryClaim
+          );
           lockOwned = true;
           finalizationLockState = "retained";
           await syncDirectory(stagingDir);
@@ -1538,6 +1849,7 @@ const createStore = ({
             try {
               targetLockLease = await acquireFinalizationLock(
                 targetLockPath,
+                now,
                 beforeFinalizationLockRecoveryClaim
               );
               targetLockCause = undefined;
@@ -1880,7 +2192,11 @@ const createStore = ({
 
       try {
         try {
-          lockLease = await acquireFinalizationLock(lockPath, beforeFinalizationLockRecoveryClaim);
+          lockLease = await acquireFinalizationLock(
+            lockPath,
+            now,
+            beforeFinalizationLockRecoveryClaim
+          );
           lockOwned = true;
           finalizationLockState = "retained";
           await syncDirectory(stagingDir);
@@ -2071,7 +2387,11 @@ const createStore = ({
         // caller accidentally shares a handle with another finalizer. A busy
         // lock is retained for that owner and is reported as an orphan rather
         // than guessed at or removed.
-        lockLease = await acquireFinalizationLock(lockPath, beforeFinalizationLockRecoveryClaim);
+        lockLease = await acquireFinalizationLock(
+          lockPath,
+          now,
+          beforeFinalizationLockRecoveryClaim
+        );
         lockOwned = true;
         finalizationLockState = "retained";
         await syncDirectory(stagingDir);
@@ -2153,29 +2473,72 @@ const createStore = ({
     try {
       ensureTrustedRoots();
       const documentId = validateDocumentId(id);
-      const path = documentPath(documentId);
-      let file: Awaited<ReturnType<typeof open>> | undefined;
-      try {
-        file = await openWithoutFollowingLinks(path, constants.O_RDONLY, path, false);
-        ensureTrustedRoots();
-        return file.createReadStream({ autoClose: true });
-      } catch (cause) {
-        await file?.close().catch(() => undefined);
-        if (cause instanceof DocumentFileNotRegularError) {
-          throw cause;
+      return await withDocumentMutex(documentId, async () => {
+        const path = documentPath(documentId);
+        let file: Awaited<ReturnType<typeof open>> | undefined;
+        let targetLease: FinalizationLockLease | undefined;
+        let readReference: ReadReferenceLease | undefined;
+        let stream: ReadStream | undefined;
+        try {
+          // The target lock closes the gap between the metadata-gated open and
+          // publishing a cross-instance read reference. A peer deletion either
+          // wins first (and this open fails) or observes the reference after it
+          // releases the same lock.
+          targetLease = await acquireTargetLock(documentId);
+          await syncDirectory(stagingDir);
+          file = await openWithoutFollowingLinks(path, constants.O_RDONLY, path, false);
+          ensureTrustedRoots();
+          readReference = await createReadReference(stagingDir, documentId, now);
+          await syncDirectory(stagingDir);
+          stream = file.createReadStream({ autoClose: true });
+          let released = false;
+          const releaseRead = () => {
+            if (released) {
+              return;
+            }
+            released = true;
+            if (readReference !== undefined) {
+              releaseReadReference(readReference);
+              readReference = undefined;
+            }
+          };
+          stream.once("close", releaseRead);
+          stream.once("error", releaseRead);
+          await releaseTargetLock(documentId, targetLease);
+          targetLease = undefined;
+          return stream;
+        } catch (cause) {
+          if (readReference !== undefined) {
+            releaseReadReference(readReference);
+            readReference = undefined;
+          }
+          stream?.destroy();
+          await file?.close().catch(() => undefined);
+          if (targetLease !== undefined) {
+            await removeFinalizationLockDirectory(targetLockPath(documentId), targetLease).catch(
+              () => undefined
+            );
+          }
+          if (cause instanceof DocumentFileNotRegularError) {
+            throw cause;
+          }
+          throw new DocumentFileReadError({
+            id: documentId,
+            cause,
+            message: `Could not open document file ${documentId}: ${describe(cause)}`,
+          });
         }
-        throw new DocumentFileReadError({
-          id: documentId,
-          cause,
-          message: `Could not open document file ${documentId}: ${describe(cause)}`,
-        });
-      }
+      });
     } finally {
       releaseOperation();
     }
   };
 
-  const deleteDocumentFile = async (id: string, expectedTarget?: DocumentFileTargetCapability) => {
+  const deleteDocumentFileUnlocked = async (
+    id: string,
+    expectedTarget?: DocumentFileTargetCapability,
+    shouldDelete: (targetExists: boolean) => boolean | Promise<boolean> = () => true
+  ) => {
     const releaseOperation = beginOperation();
     try {
       ensureTrustedRoots();
@@ -2193,6 +2556,7 @@ const createStore = ({
         try {
           targetLockLease = await acquireFinalizationLock(
             targetLockPath,
+            now,
             beforeFinalizationLockRecoveryClaim
           );
         } catch (cause) {
@@ -2202,39 +2566,65 @@ const createStore = ({
         targetLockOwned = true;
         targetLockState = "retained";
         await syncDirectory(stagingDir);
-        const stats = await lstat(path);
-        targetState = "retained";
-        if (stats.isSymbolicLink() || !stats.isFile()) {
-          throw regularFileError(path);
-        }
-        if (expectedTarget !== undefined) {
-          if (
-            expectedTarget.id !== documentId ||
-            !sameFileIdentity(expectedTarget.identity, stats)
-          ) {
-            throw new Error("The document target was replaced before identity-safe deletion.");
+        let stats: Stats | undefined;
+        try {
+          stats = await lstat(path);
+        } catch (cause) {
+          if (!isNotFound(cause)) {
+            throw cause;
           }
+          targetState = "absent";
+          if (await activeReadReferenceExists(documentId)) {
+            throw new DocumentFileReadActiveError({
+              id: documentId,
+              message: `Document ${documentId} is being read and cannot be reconciled yet.`,
+            });
+          }
+          await shouldDelete(false);
         }
-        await beforeDocumentTargetDelete?.(path);
-        const targetAfterRace = await lstat(path);
-        if (
-          targetAfterRace.isSymbolicLink() ||
-          !targetAfterRace.isFile() ||
-          !sameFileIdentity(stats, targetAfterRace) ||
-          (expectedTarget !== undefined &&
-            !sameFileIdentity(expectedTarget.identity, targetAfterRace))
-        ) {
-          throw new Error("The document target was replaced before identity-safe deletion.");
-        }
-        const removed = await discardEntry(
-          documentsDir,
-          `${documentId}.html`,
-          expectedTarget?.identity ?? stats
-        );
-        result = removed;
-        targetState = "absent";
-        if (removed) {
-          await syncDirectory(documentsDir);
+        if (stats !== undefined) {
+          targetState = "retained";
+          if (stats.isSymbolicLink() || !stats.isFile()) {
+            throw regularFileError(path);
+          }
+          if (await activeReadReferenceExists(documentId)) {
+            throw new DocumentFileReadActiveError({
+              id: documentId,
+              message: `Document ${documentId} is being read and cannot be deleted yet.`,
+            });
+          }
+          const approved = await shouldDelete(true);
+          if (approved) {
+            if (expectedTarget !== undefined) {
+              if (
+                expectedTarget.id !== documentId ||
+                !sameFileIdentity(expectedTarget.identity, stats)
+              ) {
+                throw new Error("The document target was replaced before identity-safe deletion.");
+              }
+            }
+            await beforeDocumentTargetDelete?.(path);
+            const targetAfterRace = await lstat(path);
+            if (
+              targetAfterRace.isSymbolicLink() ||
+              !targetAfterRace.isFile() ||
+              !sameFileIdentity(stats, targetAfterRace) ||
+              (expectedTarget !== undefined &&
+                !sameFileIdentity(expectedTarget.identity, targetAfterRace))
+            ) {
+              throw new Error("The document target was replaced before identity-safe deletion.");
+            }
+            const removed = await discardEntry(
+              documentsDir,
+              `${documentId}.html`,
+              expectedTarget?.identity ?? stats
+            );
+            result = removed;
+            targetState = "absent";
+            if (removed) {
+              await syncDirectory(documentsDir);
+            }
+          }
         }
       } catch (cause) {
         failure = cause;
@@ -2286,6 +2676,249 @@ const createStore = ({
     }
   };
 
+  const deleteDocumentFile = async (id: string, expectedTarget?: DocumentFileTargetCapability) => {
+    const documentId = validateDocumentId(id);
+    return withDocumentMutex(documentId, () =>
+      deleteDocumentFileUnlocked(documentId, expectedTarget)
+    );
+  };
+
+  const deleteDocumentFileIf = async (
+    id: string,
+    shouldDelete: (targetExists: boolean) => boolean | Promise<boolean>
+  ) => {
+    const documentId = validateDocumentId(id);
+    return withDocumentMutex(documentId, () =>
+      deleteDocumentFileUnlocked(documentId, undefined, shouldDelete)
+    );
+  };
+
+  const listDocumentFiles = async () => {
+    const releaseOperation = beginOperation();
+    try {
+      ensureTrustedRoots();
+      const entries = await readdir(entryPath(documentsDir, ""));
+      const files: DocumentFileObservation[] = [];
+      for (const entry of entries) {
+        if (!entry.endsWith(".html")) {
+          continue;
+        }
+        const candidate = entry.slice(0, -".html".length);
+        let documentId: string;
+        try {
+          documentId = validateDocumentId(candidate);
+        } catch {
+          continue;
+        }
+        const path = entryPath(documentsDir, entry);
+        let stats: Stats;
+        try {
+          stats = await lstat(path);
+        } catch (cause) {
+          if (isNotFound(cause)) {
+            continue;
+          }
+          throw cause;
+        }
+        if (stats.isFile() && !stats.isSymbolicLink()) {
+          files.push({ id: documentId, size: stats.size, modifiedAt: stats.mtimeMs });
+        }
+      }
+      return files.sort((left, right) => left.id.localeCompare(right.id));
+    } finally {
+      releaseOperation();
+    }
+  };
+
+  const isFreshResource = async (path: string) => {
+    try {
+      const stats = await lstat(path);
+      return (
+        stats.isFile() &&
+        !stats.isSymbolicLink() &&
+        stats.mtimeMs > now() - DOCUMENT_FILE_RECOVERY_GRACE_MILLISECONDS
+      );
+    } catch (cause) {
+      if (isNotFound(cause)) {
+        return false;
+      }
+      // A non-regular or uninspectable resource is retained. It must not be
+      // used as evidence that a lock is stale while a publisher may still own
+      // the corresponding pathname.
+      return true;
+    }
+  };
+
+  const reconcileLock = async (lockPath: string, resourcePath?: string) => {
+    // The directory listing is only a candidate set. Recheck the associated
+    // resource immediately before stale-lock recovery so a long reconciliation
+    // pass cannot remove a lock for a publisher that has just created a fresh
+    // target/staged file.
+    if (resourcePath !== undefined && (await isFreshResource(resourcePath))) {
+      return false;
+    }
+    let lease: FinalizationLockLease | undefined;
+    try {
+      lease = await acquireFinalizationLock(lockPath, now, beforeFinalizationLockRecoveryClaim);
+    } catch (cause) {
+      if (cause instanceof FinalizationLockBusyError) {
+        return false;
+      }
+      throw cause;
+    }
+    if (resourcePath !== undefined && (await isFreshResource(resourcePath))) {
+      await removeFinalizationLockDirectory(lockPath, lease);
+      await syncDirectory(stagingDir);
+      return true;
+    }
+    await removeFinalizationLockDirectory(lockPath, lease);
+    await syncDirectory(stagingDir);
+    return true;
+  };
+
+  const reconcileDocumentFiles = async () => {
+    const releaseOperation = beginOperation();
+    try {
+      ensureTrustedRoots();
+      const entries = await readdir(entryPath(stagingDir, ""));
+      let stagedFilesRemoved = 0;
+      let finalizationLocksRemoved = 0;
+      let retainedEntries = 0;
+      const handledLocks = new Set<string>();
+      for (const entry of entries) {
+        if (isValidStagedHandle(entry)) {
+          continue;
+        }
+        if (entry.startsWith(".") && entry.endsWith(".lock")) {
+          const body = entry.slice(1, -".lock".length);
+          if (isValidStagedHandle(body)) {
+            continue;
+          }
+          if (body.endsWith(".target")) {
+            try {
+              validateDocumentId(body.slice(0, -".target".length));
+              continue;
+            } catch {
+              // An unknown lock name is retained and reported below.
+            }
+          }
+        }
+        retainedEntries += 1;
+      }
+
+      for (const entry of entries) {
+        if (!isValidStagedHandle(entry)) {
+          continue;
+        }
+        const path = stagingPath(entry);
+        const lockPath = entryPath(stagingDir, `.${entry}.lock`);
+        let lockExisted = false;
+        try {
+          await lstat(lockPath);
+          lockExisted = true;
+        } catch (cause) {
+          if (!isNotFound(cause)) {
+            retainedEntries += 1;
+            continue;
+          }
+        }
+        let stagedStats: Stats | undefined;
+        try {
+          const stats = await lstat(path);
+          if (stats.isFile() && !stats.isSymbolicLink()) {
+            stagedStats = stats;
+            stagedIdentities.set(entry, stats);
+          }
+        } catch (cause) {
+          if (!isNotFound(cause)) {
+            retainedEntries += 1;
+          }
+        }
+        if (stagedStats !== undefined && (await isFreshResource(path))) {
+          retainedEntries += 1;
+          continue;
+        }
+        try {
+          const removed = await discardStagedFile(entry);
+          if (removed) {
+            stagedFilesRemoved += 1;
+          }
+          handledLocks.add(`.${entry}.lock`);
+          if (
+            lockExisted &&
+            (await lstat(lockPath).catch((cause) => (isNotFound(cause) ? undefined : cause))) ===
+              undefined
+          ) {
+            finalizationLocksRemoved += 1;
+          }
+        } catch {
+          retainedEntries += 1;
+        }
+      }
+
+      for (const entry of entries) {
+        let lockId: string | undefined;
+        let lockPath: string | undefined;
+        if (entry.startsWith(".") && entry.endsWith(".lock")) {
+          const body = entry.slice(1, -".lock".length);
+          if (isValidStagedHandle(body)) {
+            lockId = body;
+            lockPath = entryPath(stagingDir, entry);
+          } else if (body.endsWith(".target")) {
+            const targetId = body.slice(0, -".target".length);
+            try {
+              lockId = validateDocumentId(targetId);
+              lockPath = entryPath(stagingDir, entry);
+            } catch {
+              // Unknown lock names are retained rather than guessed at.
+            }
+          }
+        }
+        if (lockPath === undefined || handledLocks.has(entry)) {
+          continue;
+        }
+        try {
+          if (lockId !== undefined && isValidStagedHandle(lockId)) {
+            const stagedPath = stagingPath(lockId);
+            if (await isFreshResource(stagedPath)) {
+              retainedEntries += 1;
+            } else {
+              const removed = await discardStagedFile(lockId);
+              if (removed) {
+                stagedFilesRemoved += 1;
+              }
+              if (
+                (await lstat(lockPath).catch((cause) =>
+                  isNotFound(cause) ? undefined : cause
+                )) === undefined
+              ) {
+                finalizationLocksRemoved += 1;
+              }
+            }
+          } else if (
+            lockId !== undefined &&
+            (await reconcileLock(lockPath, documentPath(lockId)))
+          ) {
+            finalizationLocksRemoved += 1;
+          } else {
+            retainedEntries += 1;
+          }
+          handledLocks.add(entry);
+        } catch {
+          retainedEntries += 1;
+        }
+      }
+
+      return {
+        stagedFilesRemoved,
+        finalizationLocksRemoved,
+        retainedEntries,
+      } satisfies DocumentFileReconciliationResult;
+    } finally {
+      releaseOperation();
+    }
+  };
+
   return {
     close,
     stageSourceFile,
@@ -2293,6 +2926,9 @@ const createStore = ({
     readDocument,
     readDocumentFile: readDocument,
     deleteDocumentFile,
+    deleteDocumentFileIf,
+    listDocumentFiles,
+    reconcileDocumentFiles,
     cloneStagedFile,
     discardStagedFile,
   };
@@ -2329,6 +2965,7 @@ const initializeStore = (options: DocumentFileStoreOptions) => {
       documentsDir,
       stagingDir,
       ...(options.randomBytes === undefined ? {} : { randomBytes: options.randomBytes }),
+      ...(options.now === undefined ? {} : { now: options.now }),
       ...(options.beforeFinalizationLockRecoveryClaim === undefined
         ? {}
         : { beforeFinalizationLockRecoveryClaim: options.beforeFinalizationLockRecoveryClaim }),
