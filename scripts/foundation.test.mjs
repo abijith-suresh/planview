@@ -178,8 +178,23 @@ test("repository foundation has the expected configuration", () => {
   );
   expectProperty(
     packageJson.scripts,
+    "pack:verified",
+    "npm pack --workspace planview --ignore-scripts",
+    "verified pack script"
+  );
+  expectProperty(
+    packageJson.scripts,
+    "publish:verified",
+    "node scripts/publish-verified.mjs",
+    "verified publish script"
+  );
+  const publishScript = readText("scripts/publish-verified.mjs");
+  assert.match(publishScript, /--ignore-scripts/);
+  assert.match(publishScript, /delete environment\.RELEASE_TOKEN/);
+  expectProperty(
+    packageJson.scripts,
     "release",
-    "npm run release-policy && npm run verify && npm run pack:check && changeset publish",
+    "npm run release-policy && npm run verify && npm run pack:check && npm run pack:verified && npm run publish:verified",
     "release script"
   );
 
@@ -195,6 +210,17 @@ test("repository foundation has the expected configuration", () => {
     "CLI build script"
   );
   expectProperty(cliPackageJson.scripts, "prepack", "npm run build", "CLI prepack script");
+  const cliSource = readText("apps/cli/src/index.ts");
+  assert.match(cliSource, /from "\.\.\/package\.json" with \{ type: "json" \}/);
+  assert.match(cliSource, /export const VERSION = packageVersion;/);
+  assert.doesNotMatch(cliSource, /export const VERSION = ["']/);
+  const cliTsConfig = readJson("apps/cli/tsconfig.json");
+  expectProperty(
+    cliTsConfig.compilerOptions,
+    "resolveJsonModule",
+    true,
+    "CLI JSON module resolution"
+  );
   expectProperty(
     cliPackageJson.scripts,
     "typecheck",

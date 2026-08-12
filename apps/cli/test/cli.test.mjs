@@ -78,7 +78,9 @@ test("--help and -h produce the same deterministic output", () => {
   assert.match(long.stdout, /^Usage: planview <command>/);
 });
 
-test("--version and -v produce the package version", () => {
+test("--version and -v follow the Changesets-managed package version", () => {
+  const lockfile = JSON.parse(readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"));
+  assert.equal(lockfile.packages["apps/cli"].version, packageJson.version);
   const long = execute("--version");
   const short = execute("-v");
 
@@ -411,12 +413,18 @@ test("publish starts or reuses the daemon, serves raw immutable HTML, and record
     assert.equal(retrieved.status, 200);
     assert.equal(retrieved.headers.get("content-type"), "text/html; charset=utf-8");
     assert.equal(await retrieved.text(), original);
-    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
-    const after = database
-      .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
-      .get({ ":id": firstUrl.slice(firstUrl.lastIndexOf("/") + 1) });
-    assert.ok(after);
-    assert.ok(after.lastAccessedAt > before.lastAccessedAt);
+    const after = await waitFor(() => {
+      database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+      try {
+        const result = database
+          .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
+          .get({ ":id": firstUrl.slice(firstUrl.lastIndexOf("/") + 1) });
+        return result?.lastAccessedAt > before.lastAccessedAt ? result : undefined;
+      } finally {
+        database.close();
+        database = undefined;
+      }
+    });
     assert.equal(after.createdAt, before.createdAt);
 
     const missing = await fetch(`http://127.0.0.1:${port}/_____________________`);

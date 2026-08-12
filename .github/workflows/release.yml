@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run all release checks without publishing to npm"
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish planview
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Reject manual publish off main
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == false && github.ref != 'refs/heads/main'
+        run: |
+          echo "A manual publish must run against main; use dry_run=true on another ref."
+          exit 1
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js from repository version file
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+          registry-url: https://registry.npmjs.org
+
+      - name: Install exact npm from package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_manager="$(node --print "require('./package.json').packageManager ?? ''")"
+          if [[ ! "$package_manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json must declare an exact npm packageManager as npm@major.minor.patch" >&2
+            exit 1
+          fi
+          npm install --global "$package_manager"
+
+      - name: Install dependencies with the lockfile
+        run: npm ci --ignore-scripts
+
+      - name: Verify repository
+        run: npm run verify
+
+      - name: Verify public package tarball
+        run: npm run pack:check
+
+      - name: Create verified package tarball
+        run: npm run pack:verified
+
+      - name: Report dry run
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run == true
+        run: echo "Dry run complete; npm publish was skipped."
+
+      - name: Publish the verified package tarball
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false))
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(node --print "require('./apps/cli/package.json').version")"
+          npm publish "planview-${version}.tgz" --ignore-scripts --access public

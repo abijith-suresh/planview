@@ -1,3 +1,4 @@
+import packageJson from "../package.json" with { type: "json" };
 import { realpathSync } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -14,7 +15,15 @@ import {
 } from "@planview/daemon";
 import { Data, Effect } from "effect";
 
-export const VERSION = "0.1.0";
+const SEMVER_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
+
+const packageVersion = packageJson.version;
+if (packageJson.name !== "planview" || !SEMVER_PATTERN.test(packageVersion)) {
+  throw new Error(`Invalid planview package metadata version: ${JSON.stringify(packageVersion)}`);
+}
+
+export const VERSION = packageVersion;
 
 export const HELP = `Usage: planview <command>
 
