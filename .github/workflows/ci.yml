@@ -113,3 +113,9 @@ jobs:
           npm install --global --prefix "$install_dir" --ignore-scripts "$TARBALL"
           "$install_dir/bin/planview" --help
           "$install_dir/bin/planview" --version
+          home_dir="$RUNNER_TEMP/planview-skill-home"
+          test ! -e "$home_dir"
+          HOME="$home_dir" USERPROFILE="$home_dir" "$install_dir/bin/planview" skills install
+          test -f "$home_dir/.agents/skills/planview/SKILL.md"
+          test -f "$home_dir/.agents/skills/create-html/SKILL.md"
+          test -f "$home_dir/.agents/skills/create-html/references/browser-native-patterns.md"

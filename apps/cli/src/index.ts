@@ -19,6 +19,7 @@ import {
   startDetachedDaemon,
   stopDaemon,
 } from "@planview/daemon";
+import { installSkills } from "./skills.js";
 import { Data, Effect } from "effect";
 import packageJson from "../package.json" with { type: "json" };
 
@@ -42,10 +43,16 @@ Commands:
   stop        Gracefully stop the local daemon
   restart     Restart the local daemon
   clean       Remove expired snapshots and reconcile storage
+  skills      Install bundled Agent Skills
 
 Options:
   -h, --help     Show this help message
   -v, --version  Show the version
+
+Skills:
+  planview skills install [--force]
+                 Install bundled skills into ~/.agents/skills; existing skill
+                 directories are refused unless --force is supplied.
 `;
 
 export const formatHelp = () => HELP;
@@ -152,15 +159,30 @@ export class GetCommandError extends Data.TaggedError("GetCommandError")<{
   readonly message: string;
 }> {}
 
+export class SkillsCommandError extends Data.TaggedError("SkillsCommandError")<{
+  readonly cause: unknown;
+  readonly message: string;
+}> {}
+
 export type CliError =
   | UnknownOptionError
   | UnknownCommandError
   | UnexpectedArgumentsError
   | DaemonCommandError
   | PublishCommandError
-  | GetCommandError;
+  | GetCommandError
+  | SkillsCommandError;
 
-const COMMANDS = ["publish", "get", "start", "status", "stop", "restart", "clean"] as const;
+const COMMANDS = [
+  "publish",
+  "get",
+  "start",
+  "status",
+  "stop",
+  "restart",
+  "clean",
+  "skills",
+] as const;
 type Command = (typeof COMMANDS)[number];
 
 const isCommand = (value: string | undefined): value is Command =>
@@ -234,7 +256,24 @@ const runGetCommand = (reference: string, stdout: StdoutWriter) =>
       }),
   });
 
-const runDaemonCommand = (command: Exclude<Command, "publish" | "get">, stdout: StdoutWriter) =>
+const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
+  Effect.tryPromise({
+    try: async () => {
+      const destination = await installSkills({ force });
+      await stdout(`Installed planview and create-html skills in ${destination}.\n`);
+      return 0;
+    },
+    catch: (cause) =>
+      new SkillsCommandError({
+        cause,
+        message: `Could not install Planview skills: ${describe(cause)}`,
+      }),
+  });
+
+const runDaemonCommand = (
+  command: Exclude<Command, "publish" | "get" | "skills">,
+  stdout: StdoutWriter
+) =>
   Effect.tryPromise({
     try: async () => {
       const config = resolveCliDaemonConfig();
@@ -373,6 +412,28 @@ const command = (
     );
   }
 
+  if (argument === "skills") {
+    const [subcommand, ...options] = trailing;
+    if (subcommand !== "install") {
+      return Effect.fail(
+        new UnexpectedArgumentsError({
+          arguments: trailing,
+          message: `Usage: planview skills install [--force]\n`,
+        })
+      );
+    }
+    const unknownOption = options.find((option) => option !== "--force");
+    if (unknownOption !== undefined) {
+      return Effect.fail(
+        new UnknownOptionError({
+          option: unknownOption,
+          message: `Unknown option: ${unknownOption}\n\n${formatHelp()}`,
+        })
+      );
+    }
+    return runSkillsInstallCommand(options.includes("--force"), stdout);
+  }
+
   if (argument === "publish" || argument === "get") {
     if (trailing.length !== 1 || trailing[0] === undefined) {
       const label =
@@ -423,6 +484,7 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
         "DaemonCommandError",
         "PublishCommandError",
         "GetCommandError",
+        "SkillsCommandError",
       ],
       () => Effect.succeed(1)
     )
