@@ -18,19 +18,19 @@ import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import {
   resolveAppDataPaths,
-  validateDocumentId,
   V1_MAX_HTML_SIZE_BYTES,
   V1_PORT,
+  validateDocumentId,
 } from "@planview/core";
 import {
   createDocumentPublicationCoordinator,
-  DocumentPublicationNotFoundError,
-  DocumentPublicationReadError,
-  openDocumentFileStore,
-  openStorage,
   type DocumentFileStore,
   type DocumentPublicationCoordinator,
+  DocumentPublicationNotFoundError,
+  DocumentPublicationReadError,
   type MetadataStore,
+  openDocumentFileStore,
+  openStorage,
 } from "@planview/storage";
 import { Data, Effect } from "effect";
 
@@ -197,6 +197,12 @@ export type PublishedDaemonDocument = Readonly<{
   readonly id: import("@planview/core").DocumentId;
   readonly descriptor: RuntimeDescriptor;
   readonly reused: boolean;
+}>;
+
+export type RetrieveDaemonOptions = Readonly<{
+  readonly daemonScriptPath: string;
+  readonly documentId: import("@planview/core").DocumentId;
+  readonly onChunk: (chunk: Uint8Array) => void | Promise<void>;
 }>;
 
 type DaemonResponse = Readonly<{
@@ -1390,6 +1396,83 @@ const parseResponse = <Value>(answer: DaemonResponse, path: string, statusCode: 
   return parsed as Value;
 };
 
+const streamDocument = (
+  descriptor: RuntimeDescriptor,
+  documentId: import("@planview/core").DocumentId,
+  onChunk: (chunk: Uint8Array) => void | Promise<void>
+) =>
+  new Promise<void>((resolvePromise, rejectPromise) => {
+    let responseObject: import("node:http").IncomingMessage | undefined;
+    let settled = false;
+
+    const abort = (cause: unknown) => {
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      responseObject?.destroy(error);
+      requestObject.destroy(error);
+    };
+    const succeed = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolvePromise();
+    };
+    const fail = (cause: unknown) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      abort(cause);
+      rejectPromise(cause);
+    };
+
+    const requestObject = httpRequest(
+      {
+        host: descriptor.host,
+        port: descriptor.port,
+        method: "GET",
+        path: `/${documentId}`,
+        headers: {
+          [DAEMON_SECRET_HEADER]: descriptor.secret,
+          Authorization: `Bearer ${descriptor.secret}`,
+        },
+        timeout: REQUEST_TIMEOUT_MS,
+      },
+      (res) => {
+        responseObject = res;
+        // Once headers arrive, stdout backpressure is the request's normal
+        // flow-control mechanism. Do not turn a slow consumer into a timeout.
+        requestObject.setTimeout(0);
+        const consume = async () => {
+          if (res.statusCode !== 200) {
+            const chunks: Buffer[] = [];
+            for await (const chunk of res) {
+              chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+            }
+            const body = Buffer.concat(chunks).toString("utf8");
+            throw new DaemonRequestError({
+              path: `/${documentId}`,
+              cause: body,
+              message:
+                res.statusCode === 404
+                  ? `The Planview document ${documentId} was not found.`
+                  : `The daemon returned HTTP ${res.statusCode ?? 0} for /${documentId}.`,
+            });
+          }
+
+          for await (const chunk of res) {
+            await onChunk(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+          }
+        };
+
+        void consume().then(succeed, fail);
+      }
+    );
+    requestObject.on("timeout", () => fail(new Error("The daemon request timed out.")));
+    requestObject.on("error", fail);
+    requestObject.end();
+  });
+
 const requestStatus = async (descriptor: RuntimeDescriptor) => {
   const answer = await request(descriptor, "GET", DAEMON_STATUS_PATH);
   return parseResponse<DaemonStatusPayload>(answer, DAEMON_STATUS_PATH, 200);
@@ -1580,6 +1663,13 @@ export const publishDocument = async (config: DaemonConfig, options: PublishDaem
       message: `The daemon returned an invalid published document id for ${DAEMON_PUBLISH_PATH}.`,
     });
   }
+};
+
+export const retrieveDocument = async (config: DaemonConfig, options: RetrieveDaemonOptions) => {
+  const documentId = validateDocumentId(options.documentId);
+  const running = await startDetachedDaemon(config, { daemonScriptPath: options.daemonScriptPath });
+  await streamDocument(running.descriptor, documentId, options.onChunk);
+  return { descriptor: running.descriptor, reused: running.reused };
 };
 
 const stopWithLock = async (config: DaemonConfig) => {

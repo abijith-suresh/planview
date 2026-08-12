@@ -21,8 +21,10 @@ The daemon is detached, bound only to the fixed `127.0.0.1:4777`, and stores
 its protected runtime descriptor below the persistent Planview app-data
 directory. `publish` validates the `.html`/`.htm` source and inclusive 10 MiB
 limit before starting the daemon, then prints only the resulting localhost URL.
-`status` does not start a daemon; `start` reuses an authenticated daemon it owns
-and never terminates an unknown process listening on the port.
+`get` accepts a document id or exact local Planview URL and writes only the
+stored HTML bytes to stdout; invalid references and missing documents fail on
+stderr. `status` does not start a daemon; `start` reuses an authenticated daemon
+it owns and never terminates an unknown process listening on the port.
 
 On POSIX, the app-data and runtime directories are owned by the current UID and
 protected with `0700`; descriptor and lock files are owned by that UID and

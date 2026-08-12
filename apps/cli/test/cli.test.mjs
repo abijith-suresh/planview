@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
-import { DatabaseSync } from "node:sqlite";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Effect, Exit } from "effect";
-import { test } from "node:test";
-import { formatHelp, main, run } from "../dist/index.js";
+import { formatHelp, main, parseGetReference, run } from "../dist/index.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "../..");
@@ -456,6 +456,266 @@ test("publish starts or reuses the daemon, serves raw immutable HTML, and record
     assert.equal(await firstAgain.text(), original);
   } finally {
     database?.close();
+    executeInFixture("stop");
+    await removeFixture(runtimeRoot);
+  }
+});
+
+test("get accepts ids and exact local URLs but rejects ambiguous references before startup", async () => {
+  const port = 49123;
+  const id = "a".repeat(21);
+  assert.equal(parseGetReference(id, port), id);
+  assert.equal(parseGetReference(`http://localhost:${port}/${id}`, port), id);
+  assert.equal(parseGetReference(`http://127.0.0.1:${port}/${id}`, port), id);
+
+  for (const reference of [
+    "a",
+    `http://localhost:${port}/${id}/`,
+    `http://localhost:${port}/${id}?download=1`,
+    `https://localhost:${port}/${id}`,
+    `http://example.test:${port}/${id}`,
+    `http://localhost:${port + 1}/${id}`,
+  ]) {
+    assert.throws(
+      () => parseGetReference(reference, port),
+      /valid 21-character id or an exact local Planview URL/
+    );
+  }
+
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-validation-test-"));
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: join(runtimeRoot, "data"),
+    PLANVIEW_RUNTIME_DIR: join(runtimeRoot, "data", "runtime"),
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  };
+  try {
+    const result = spawnSync(process.execPath, [cli, "get", `https://localhost:${port}/${id}`], {
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /exact local Planview URL/);
+    assert.equal(existsSync(environment.PLANVIEW_RUNTIME_DIR), false);
+  } finally {
+    await removeFixture(runtimeRoot);
+  }
+});
+
+test("get streams exact bytes across daemon restart and only records successful access", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-test-"));
+  const appDataDir = join(runtimeRoot, "data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: appDataDir,
+    PLANVIEW_RUNTIME_DIR: runtimeDir,
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  };
+  const executeInFixture = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const executeRawInFixture = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], {
+      encoding: null,
+      env: environment,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+  const sourcePath = join(runtimeRoot, "large.html");
+  const original = Buffer.concat([
+    Buffer.from("<!doctype html><html><body>\0"),
+    Buffer.alloc(2 * 1024 * 1024, 0x61),
+    Buffer.from("</body></html>\n"),
+  ]);
+  writeFileSync(sourcePath, original);
+  let database;
+
+  try {
+    const published = executeInFixture("publish", sourcePath);
+    assert.equal(published.status, 0, published.stderr);
+    const url = published.stdout.trim();
+    const id = url.slice(url.lastIndexOf("/") + 1);
+    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    const before = database
+      .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
+      .get({ ":id": id });
+    assert.ok(before);
+    database.close();
+    database = undefined;
+
+    const retrieved = executeRawInFixture("get", id);
+    assert.equal(retrieved.status, 0, retrieved.stderr?.toString());
+    assert.equal(retrieved.stderr.length, 0);
+    assert.deepEqual(retrieved.stdout, original);
+
+    const after = await waitFor(() => {
+      database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+      try {
+        const row = database
+          .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
+          .get({ ":id": id });
+        return row?.lastAccessedAt > before.lastAccessedAt ? row : undefined;
+      } finally {
+        database.close();
+        database = undefined;
+      }
+    });
+    assert.equal(after.createdAt, before.createdAt);
+
+    const restarted = executeInFixture("restart");
+    assert.equal(restarted.status, 0, restarted.stderr);
+    const retrievedByUrl = executeRawInFixture("get", url);
+    assert.equal(retrievedByUrl.status, 0, retrievedByUrl.stderr?.toString());
+    assert.deepEqual(retrievedByUrl.stdout, original);
+
+    const missing = executeRawInFixture("get", "z".repeat(21));
+    assert.equal(missing.status, 1);
+    assert.equal(missing.stdout.length, 0);
+    assert.match(missing.stderr.toString(), /was not found/);
+  } finally {
+    database?.close();
+    executeInFixture("stop");
+    await removeFixture(runtimeRoot);
+  }
+});
+
+test("get honors stdout backpressure and records access after the slow consumer finishes", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-backpressure-test-"));
+  const appDataDir = join(runtimeRoot, "data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: appDataDir,
+    PLANVIEW_RUNTIME_DIR: runtimeDir,
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  };
+  const executeInFixture = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const sourcePath = join(runtimeRoot, "backpressure.html");
+  const original = Buffer.concat([
+    Buffer.from("<!doctype html><body>"),
+    Buffer.alloc(2 * 1024 * 1024, 0x62),
+    Buffer.from("</body>"),
+  ]);
+  writeFileSync(sourcePath, original);
+  let child;
+
+  try {
+    const published = executeInFixture("publish", sourcePath);
+    assert.equal(published.status, 0, published.stderr);
+    const id = published.stdout.trim().split("/").at(-1);
+    assert.ok(id);
+
+    const beforeDatabase = new DatabaseSync(join(appDataDir, "metadata.sqlite"), {
+      timeout: 5000,
+    });
+    const before = beforeDatabase
+      .prepare("SELECT lastAccessedAt FROM documents WHERE id = :id")
+      .get({ ":id": id });
+    beforeDatabase.close();
+    assert.ok(before);
+
+    child = spawn(process.execPath, [cli, "get", id], {
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const output = [];
+    const errors = [];
+    child.stderr.on("data", (chunk) => errors.push(chunk));
+    const consume = (async () => {
+      for await (const chunk of child.stdout) {
+        output.push(chunk);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    })();
+    const result = await Promise.all([consume, waitForExit(child)]).then((values) => values[1]);
+
+    assert.equal(result.code, 0, Buffer.concat(errors).toString("utf8"));
+    assert.deepEqual(Buffer.concat(output), original);
+    const after = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 })
+      .prepare("SELECT lastAccessedAt FROM documents WHERE id = :id")
+      .get({ ":id": id });
+    assert.ok(after);
+    assert.ok(after.lastAccessedAt > before.lastAccessedAt);
+  } finally {
+    if (child?.exitCode === null && child?.signalCode === null) {
+      child.kill("SIGTERM");
+      await waitForExit(child).catch(() => undefined);
+    }
+    executeInFixture("stop");
+    await removeFixture(runtimeRoot);
+  }
+});
+
+test("get aborts the daemon transfer on a closed stdout consumer without recording access", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-get-epipe-test-"));
+  const appDataDir = join(runtimeRoot, "data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: appDataDir,
+    PLANVIEW_RUNTIME_DIR: runtimeDir,
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  };
+  const executeInFixture = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const sourcePath = join(runtimeRoot, "epipe.html");
+  writeFileSync(
+    sourcePath,
+    Buffer.concat([
+      Buffer.from("<!doctype html><body>"),
+      Buffer.alloc(9 * 1024 * 1024, 0x63),
+      Buffer.from("</body></html>"),
+    ])
+  );
+  let child;
+  let database;
+
+  try {
+    const published = executeInFixture("publish", sourcePath);
+    assert.equal(published.status, 0, published.stderr);
+    const id = published.stdout.trim().split("/").at(-1);
+    assert.ok(id);
+    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    const before = database
+      .prepare("SELECT lastAccessedAt FROM documents WHERE id = :id")
+      .get({ ":id": id });
+    assert.ok(before);
+    database.close();
+    database = undefined;
+
+    child = spawn(process.execPath, [cli, "get", id], {
+      env: environment,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout.pause();
+    const errors = [];
+    child.stderr.on("data", (chunk) => errors.push(chunk));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    child.stdout.destroy();
+    const result = await waitForExit(child);
+
+    assert.equal(result.code, 1, Buffer.concat(errors).toString("utf8"));
+    assert.match(Buffer.concat(errors).toString("utf8"), /Could not retrieve/);
+    database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    const after = database
+      .prepare("SELECT lastAccessedAt FROM documents WHERE id = :id")
+      .get({ ":id": id });
+    assert.ok(after);
+    assert.equal(after.lastAccessedAt, before.lastAccessedAt);
+  } finally {
+    database?.close();
+    if (child?.exitCode === null && child?.signalCode === null) {
+      child.kill("SIGTERM");
+      await waitForExit(child).catch(() => undefined);
+    }
     executeInFixture("stop");
     await removeFixture(runtimeRoot);
   }
