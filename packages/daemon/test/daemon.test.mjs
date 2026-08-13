@@ -107,7 +107,7 @@ const freePort = async () => {
   return port;
 };
 
-const startChild = (appDataDir, runtimeDir, port) =>
+const startChild = (appDataDir, runtimeDir, port, environment = {}) =>
   spawn(process.execPath, [entry], {
     env: {
       ...process.env,
@@ -115,6 +115,7 @@ const startChild = (appDataDir, runtimeDir, port) =>
       PLANVIEW_APP_DATA_DIR: appDataDir,
       PLANVIEW_RUNTIME_DIR: runtimeDir,
       PLANVIEW_TEST_DAEMON_PORT: String(port),
+      ...environment,
     },
     stdio: "ignore",
   });
@@ -678,6 +679,215 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
     assert.equal(result.state, "stopped");
     const exit = await waitForExit(child);
     assert.equal(exit.code, 0);
+  } finally {
+    metadataStore?.close();
+    await stopChild(child);
+    await removeFixture(fixture);
+  }
+});
+
+test("shutdown cancels a slow request-originated publication before staging", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-publish-shutdown-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const sourcePath = join(fixture, "slow.html");
+  writeFileSync(sourcePath, "slow publication");
+  const child = startChild(appDataDir, runtimeDir, port, {
+    PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "10000",
+  });
+  let metadataStore;
+  try {
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
+    const publishPromise = fetch(`http://127.0.0.1:${port}/__planview/publish`, {
+      method: "POST",
+      headers: {
+        "x-planview-secret": descriptor.secret,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ sourcePath }),
+    });
+    publishPromise.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const startedAt = Date.now();
+    const result = await daemon.stopDaemon(
+      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    );
+    assert.equal(result.state, "stopped");
+    assert.ok(Date.now() - startedAt < daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 2_000);
+    await publishPromise.catch(() => undefined);
+    await waitForExit(child);
+    metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    assert.equal(metadataStore.getDocumentAggregate().count, 0);
+  } finally {
+    metadataStore?.close();
+    await stopChild(child);
+    await removeFixture(fixture);
+  }
+});
+
+test("closing a publish response cancels the request before it reaches the gate", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-publish-response-close-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const sourcePath = join(fixture, "response-close.html");
+  writeFileSync(sourcePath, "response closed publication");
+  const child = startChild(appDataDir, runtimeDir, port, {
+    PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "10000",
+    PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_ONCE: "1",
+  });
+  let metadataStore;
+  let socket;
+  try {
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
+    const body = JSON.stringify({ sourcePath });
+    socket = createConnection({ host: "127.0.0.1", port });
+    socket.on("error", () => undefined);
+    await new Promise((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("error", reject);
+    });
+    await new Promise((resolve, reject) => {
+      socket.write(
+        `POST /__planview/publish HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n` +
+          `x-planview-secret: ${descriptor.secret}\r\ncontent-type: application/json\r\n` +
+          `content-length: ${Buffer.byteLength(body)}\r\nConnection: keep-alive\r\n\r\n${body}`,
+        (error) => (error ? reject(error) : resolve())
+      );
+    });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    socket.destroy();
+
+    const sourceForSecondPublish = join(fixture, "second.html");
+    writeFileSync(sourceForSecondPublish, "second publication");
+    const second = await within(
+      fetch(`http://127.0.0.1:${port}/__planview/publish`, {
+        method: "POST",
+        headers: {
+          "x-planview-secret": descriptor.secret,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sourcePath: sourceForSecondPublish }),
+      }),
+      3_000
+    );
+    assert.equal(second.status, 201);
+    metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    assert.equal(metadataStore.getDocumentAggregate().count, 1);
+  } finally {
+    socket?.destroy();
+    metadataStore?.close();
+    await stopChild(child);
+    await removeFixture(fixture);
+  }
+});
+
+test("an uncooperative operation is terminated before descriptor recovery", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-uncooperative-shutdown-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const sourcePath = join(fixture, "uncooperative.html");
+  writeFileSync(sourcePath, "uncooperative publication");
+  const child = startChild(appDataDir, runtimeDir, port, {
+    PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "10000",
+    PLANVIEW_TEST_DAEMON_UNCOOPERATIVE_PUBLISH: "1",
+  });
+  let metadataStore;
+  try {
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
+    const publishPromise = fetch(`http://127.0.0.1:${port}/__planview/publish`, {
+      method: "POST",
+      headers: {
+        "x-planview-secret": descriptor.secret,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ sourcePath }),
+    });
+    publishPromise.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const startedAt = Date.now();
+    const result = await daemon.stopDaemon(
+      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    );
+    assert.equal(result.state, "stopped");
+    assert.ok(Date.now() - startedAt < daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 2_000);
+    await publishPromise.catch(() => undefined);
+    const exit = await waitForExit(child);
+    assert.ok(exit.signal === "SIGKILL" || exit.code !== 0);
+    metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    assert.equal(metadataStore.getDocumentAggregate().count, 0);
+  } finally {
+    metadataStore?.close();
+    await stopChild(child);
+    await removeFixture(fixture);
+  }
+});
+
+test("shutdown cancels a large cleanup at a deterministic fault seam", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-clean-cancel-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const documentsDir = join(appDataDir, "documents");
+  const port = await freePort();
+  const documents = V1_CLEANUP_ITEM_BUDGET + 1;
+  const child = startChild(appDataDir, runtimeDir, port, {
+    PLANVIEW_TEST_DAEMON_CLEANUP_PAUSE_MS: "10000",
+  });
+  let metadataStore;
+  try {
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
+    metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    for (let index = 0; index < documents; index += 1) {
+      const documentId = `b${index.toString(36).padStart(20, "0")}`;
+      writeFileSync(join(documentsDir, `${documentId}.html`), "x");
+      metadataStore.insertDocumentMetadata({
+        id: documentId,
+        createdAt: 1,
+        lastAccessedAt: 1,
+        size: 1,
+      });
+    }
+    const cleanPromise = fetch(`http://127.0.0.1:${port}/__planview/clean`, {
+      method: "POST",
+      headers: { "x-planview-secret": descriptor.secret },
+    });
+    cleanPromise.catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const startedAt = Date.now();
+    const result = await daemon.stopDaemon(
+      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    );
+    assert.equal(result.state, "stopped");
+    assert.ok(Date.now() - startedAt < daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 2_000);
+    await cleanPromise.catch(() => undefined);
+    await waitForExit(child);
+    assert.equal(metadataStore.getDocumentAggregate().count, documents);
   } finally {
     metadataStore?.close();
     await stopChild(child);

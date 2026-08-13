@@ -199,6 +199,7 @@ export class DocumentFileStoreClosedError extends Data.TaggedError("DocumentFile
 export class DocumentFileSourceError extends Data.TaggedError("DocumentFileSourceError")<{
   readonly path: string;
   readonly cause: unknown;
+  readonly cleanupCause?: unknown;
   readonly message: string;
 }> {}
 
@@ -291,7 +292,10 @@ export class DocumentFileDeleteError extends Data.TaggedError("DocumentFileDelet
 export interface DocumentFileStore {
   /** Requests closure and resolves after all already-started operations release their leases. */
   readonly close: () => Promise<void>;
-  readonly stageSourceFile: (sourcePath: string) => Promise<StagedDocumentFileHandle>;
+  readonly stageSourceFile: (
+    sourcePath: string,
+    signal?: AbortSignal
+  ) => Promise<StagedDocumentFileHandle>;
   readonly finalizeStagedFile: (
     handle: StagedDocumentFileHandle,
     id: string
@@ -1642,7 +1646,8 @@ const createStore = ({
     return closePromise;
   };
 
-  const stageSourceFile = async (sourcePath: string) => {
+  const stageSourceFile = async (sourcePath: string, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
     const releaseOperation = beginOperation();
     try {
       ensureTrustedRoots();
@@ -1714,6 +1719,7 @@ const createStore = ({
         }
         ensureTrustedRoots();
         await beforeStagedSourceCopy?.(stagingPath(handle));
+        signal?.throwIfAborted();
 
         sourceStream = source.createReadStream({ autoClose: true });
         let copiedBytes = 0;
@@ -1728,10 +1734,15 @@ const createStore = ({
           },
         });
         destinationStream = staged.createWriteStream({ autoClose: true });
-        await pipeline(sourceStream, limiter, destinationStream);
+        if (signal === undefined) {
+          await pipeline(sourceStream, limiter, destinationStream);
+        } else {
+          await pipeline(sourceStream, limiter, destinationStream, { signal });
+        }
         source = undefined;
         staged = undefined;
 
+        signal?.throwIfAborted();
         const pathAfterRead = await lstat(absoluteSourcePath);
         if (
           pathAfterRead.isSymbolicLink() ||
@@ -1791,6 +1802,7 @@ const createStore = ({
           throw new DocumentFileSourceError({
             path: sourcePath,
             cause,
+            cleanupCause,
             message: `Could not stage source document file ${sourcePath}: ${describe(cause)}; cleanup also failed: ${describe(cleanupCause)}`,
           });
         }

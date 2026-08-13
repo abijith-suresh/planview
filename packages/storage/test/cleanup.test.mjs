@@ -325,6 +325,31 @@ test("faults are reported without deleting a candidate", () =>
     );
   }));
 
+test("canceled cleanup returns a resumable cursor without skipping the active row", () =>
+  withEnvironment(async ({ documentFileStore, metadataStore, directory }) => {
+    const documentId = id("n");
+    await publishPhysical({ documentFileStore, metadataStore, directory }, documentId, "resume");
+    const controller = new AbortController();
+    const cleanup = createDocumentCleanupCoordinator({
+      documentFileStore,
+      metadataStore,
+      now: () => DAY * 31 + 1,
+      beforeDocumentCleanup: async () => {
+        controller.abort(new Error("cleanup canceled"));
+      },
+    });
+
+    const canceled = await cleanup.clean(controller.signal);
+    assert.equal(canceled.resumable, true);
+    assert.equal(canceled.removedDocuments, 0);
+    assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
+
+    const resumed = await cleanup.clean();
+    assert.equal(resumed.removedDocuments, 1);
+    assert.equal(metadataStore.getDocumentMetadata(documentId), undefined);
+    assert.deepEqual(await readdir(join(directory, "documents")), []);
+  }));
+
 test("pages document files in exact bytewise order and resume without gaps", () =>
   withEnvironment(async ({ documentFileStore, documentsDir }) => {
     const ids = [id("A"), id("_"), id("-"), id("a"), id("0")];

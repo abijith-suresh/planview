@@ -75,6 +75,30 @@ test("publishes one durable immutable result without changing source input", () 
     }
   ));
 
+test("rechecks cancellation before the metadata publication commit", () =>
+  withEnvironment(
+    async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
+      const source = join(directory, "abort-before-commit.html");
+      await writeFile(source, "abort before commit");
+      const controller = new AbortController();
+      const publication = coordinator(documentFileStore, metadataStore, {
+        generateId: () => firstId,
+        readPublishedSize: async () => {
+          controller.abort(new Error("publication canceled"));
+          return 18;
+        },
+      });
+
+      await assert.rejects(
+        publication.publish(source, controller.signal),
+        (error) => error instanceof DocumentPublicationError
+      );
+      assert.equal(metadataStore.getDocumentMetadata(firstId), undefined);
+      await assert.rejects(readFile(publicationFile(documentsDir, firstId)), { code: "ENOENT" });
+      assert.deepEqual(await readdir(stagingDir), []);
+    }
+  ));
+
 test("metadata-gated reads reject a physically finalized file without a row", () =>
   withEnvironment(async ({ directory, documentFileStore, metadataStore }) => {
     const source = join(directory, "ungated.html");

@@ -44,6 +44,8 @@ export const DAEMON_PORT = V1_PORT;
 export const DAEMON_STARTUP_LEASE_MS = 30_000;
 export const DAEMON_STARTUP_GRACE_MS = 5_000;
 export const DAEMON_SHUTDOWN_TIMEOUT_MS = 5_000;
+/** In-flight mutations get a short drain window before shutdown cancellation. */
+export const DAEMON_SHUTDOWN_OPERATION_GRACE_MS = 4_000;
 export const DAEMON_DESCRIPTOR_VERSION = 1;
 export const DAEMON_DESCRIPTOR_NAME = "daemon.json";
 export const DAEMON_LOCK_NAME = "lifecycle.lock";
@@ -82,6 +84,9 @@ const STARTUP_TIMEOUT_MS = DAEMON_CLEANUP_TIMEOUT_MAX_MS;
 // A shutdown deadline is enforced by the daemon process. This margin lets a
 // lifecycle caller observe descriptor removal when the event loop is delayed.
 const SHUTDOWN_POLL_GRACE_MS = 2_000;
+// Leave a small, explicit window for forced socket closure before the process
+// fallback. Both timers use the same absolute shutdown deadline below.
+const SHUTDOWN_FORCE_CLOSE_MARGIN_MS = 250;
 // Lifecycle calls can legitimately queue behind a slow shutdown/startup. Keep
 // lock acquisition bounded, but long enough for the concurrent lifecycle
 // stress and for several operations to pass through the same lock.
@@ -92,11 +97,15 @@ const LOCAL_HOSTNAME = hostname();
 const TEST_PORT_ENV = "PLANVIEW_TEST_DAEMON_PORT";
 const TEST_ADOPTION_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_ADOPTION_PAUSE_MS";
 const TEST_PUBLISH_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS";
+const TEST_PUBLISH_PAUSE_ONCE_ENV = "PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_ONCE";
+const TEST_UNCOOPERATIVE_PUBLISH_ENV = "PLANVIEW_TEST_DAEMON_UNCOOPERATIVE_PUBLISH";
+const TEST_CLEANUP_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_CLEANUP_PAUSE_MS";
 const LIFECYCLE_TOKEN_ENV = "PLANVIEW_DAEMON_LIFECYCLE_TOKEN";
 const isTestProcess = () => {
   const { NODE_ENV } = process.env;
   return NODE_ENV === "test";
 };
+let testPublishPauseConsumed = false;
 
 export type DaemonPathOptions = Readonly<{
   readonly appDataDir?: string;
@@ -885,38 +894,38 @@ const listen = (server: import("node:http").Server, host: string, port: number) 
     server.listen(port, host);
   });
 
+const forceCloseServer = (server: import("node:http").Server, connections: ReadonlySet<Socket>) => {
+  server.closeIdleConnections();
+  server.closeAllConnections();
+  for (const connection of connections) {
+    connection.destroy();
+  }
+};
+
 const closeServer = (server: import("node:http").Server, connections: ReadonlySet<Socket>) =>
   new Promise<void>((resolvePromise, rejectPromise) => {
     let settled = false;
-    let deadlineTimer: NodeJS.Timeout | undefined;
     const finish = (cause?: Error) => {
       if (settled) {
         return;
       }
       settled = true;
-      if (deadlineTimer !== undefined) {
-        clearTimeout(deadlineTimer);
-      }
       if (cause === undefined) {
         resolvePromise();
       } else {
         rejectPromise(cause);
       }
     };
-    const forceClose = () => {
-      server.closeIdleConnections();
-      server.closeAllConnections();
-      for (const connection of connections) {
-        connection.destroy();
-      }
-      finish();
-    };
 
     if (!server.listening) {
-      forceClose();
+      forceCloseServer(server, connections);
+      finish();
       return;
     }
-    deadlineTimer = setTimeout(forceClose, DAEMON_SHUTDOWN_TIMEOUT_MS);
+    // close() does not make an unref'd keep-alive socket observable to its
+    // callback on every supported Node release. Close idle sockets before
+    // waiting, while active requests still get the normal graceful path.
+    server.closeIdleConnections();
     server.close((cause) => {
       if (cause === undefined || ("code" in cause && cause.code === "ERR_SERVER_NOT_RUNNING")) {
         finish();
@@ -968,43 +977,160 @@ const sameSecret = (left: string | undefined, right: string) => {
   return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 };
 
-const readJsonBody = async (request: import("node:http").IncomingMessage) => {
+const readJsonBody = async (request: import("node:http").IncomingMessage, signal?: AbortSignal) => {
+  signal?.throwIfAborted();
   const chunks: Buffer[] = [];
   let size = 0;
-  for await (const chunk of request) {
-    const bytes = typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk);
-    size += bytes.byteLength;
-    if (size > MAX_PUBLISH_REQUEST_BYTES) {
-      throw new Error("The publish request body is too large.");
+  const onAbort = () => {
+    request.destroy(signal?.reason instanceof Error ? signal.reason : undefined);
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    for await (const chunk of request) {
+      signal?.throwIfAborted();
+      const bytes = typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk);
+      size += bytes.byteLength;
+      if (size > MAX_PUBLISH_REQUEST_BYTES) {
+        throw new Error("The publish request body is too large.");
+      }
+      chunks.push(bytes);
     }
-    chunks.push(bytes);
+    signal?.throwIfAborted();
+    return parseJson(Buffer.concat(chunks).toString("utf8"));
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
   }
-  return parseJson(Buffer.concat(chunks).toString("utf8"));
 };
 
-type OperationGate = <Value>(operation: () => Promise<Value>) => Promise<Value>;
+type OperationGate = {
+  <Value>(
+    operation: (signal: AbortSignal) => Promise<Value>,
+    requestSignal?: AbortSignal
+  ): Promise<Value>;
+  readonly close: (cause?: unknown) => void;
+  readonly abortActive: (cause?: unknown) => void;
+  readonly isIdle: () => boolean;
+  readonly waitForIdle: () => Promise<void>;
+};
+
+type OperationEntry = {
+  readonly controller: AbortController;
+  readonly start: () => void;
+  readonly reject: (cause: unknown) => void;
+  readonly requestSignal?: AbortSignal;
+  readonly onRequestAbort?: () => void;
+};
 
 // Publication and cleanup still share a short mutation gate. It preserves the
 // publication file-to-metadata commit boundary, while reads use independent
-// leases and never wait behind an arbitrary response transfer.
+// leases and never wait behind an arbitrary response transfer. Unlike a bare
+// promise tail, the gate can reject queued work and abort the operation that is
+// currently at the mutation boundary during daemon shutdown.
 const createOperationGate = () => {
-  let tail = Promise.resolve();
+  const queued: OperationEntry[] = [];
+  const idleWaiters = new Set<() => void>();
+  let running: OperationEntry | undefined;
+  let closed = false;
 
-  const run: OperationGate = async (operation) => {
-    const previous = tail;
-    let release: (() => void) | undefined;
-    tail = new Promise<void>((resolvePromise) => {
-      release = resolvePromise;
-    });
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release?.();
+  const notifyIdle = () => {
+    if (running !== undefined || queued.length > 0) {
+      return;
     }
+    for (const resolvePromise of idleWaiters) {
+      resolvePromise();
+    }
+    idleWaiters.clear();
   };
 
-  return run;
+  const pump = () => {
+    if (closed || running !== undefined) {
+      return;
+    }
+    const next = queued.shift();
+    if (next === undefined) {
+      notifyIdle();
+      return;
+    }
+    running = next;
+    next.start();
+  };
+
+  const run = <Value>(
+    operation: (signal: AbortSignal) => Promise<Value>,
+    requestSignal?: AbortSignal
+  ) => {
+    if (closed) {
+      return Promise.reject(new Error("The daemon is shutting down."));
+    }
+    if (requestSignal?.aborted) {
+      return Promise.reject(requestSignal.reason);
+    }
+
+    return new Promise<Value>((resolvePromise, rejectPromise) => {
+      const controller = new AbortController();
+      let entry: OperationEntry;
+      const onRequestAbort = () => {
+        controller.abort(requestSignal?.reason ?? new Error("The operation request was aborted."));
+        const index = queued.indexOf(entry);
+        if (index >= 0) {
+          queued.splice(index, 1);
+          rejectPromise(controller.signal.reason);
+          notifyIdle();
+        }
+      };
+      const start = () => {
+        void Promise.resolve()
+          .then(() => operation(controller.signal))
+          .then(resolvePromise, rejectPromise)
+          .finally(() => {
+            if (requestSignal !== undefined) {
+              requestSignal.removeEventListener("abort", onRequestAbort);
+            }
+            if (running === entry) {
+              running = undefined;
+            }
+            pump();
+            notifyIdle();
+          });
+      };
+      entry = {
+        controller,
+        start,
+        reject: rejectPromise,
+        ...(requestSignal === undefined ? {} : { requestSignal, onRequestAbort }),
+      };
+      queued.push(entry);
+      requestSignal?.addEventListener("abort", onRequestAbort, { once: true });
+      pump();
+    });
+  };
+
+  const close = (cause: unknown = new Error("The daemon is shutting down.")) => {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    for (const entry of queued.splice(0)) {
+      entry.controller.abort(cause);
+      if (entry.requestSignal !== undefined && entry.onRequestAbort !== undefined) {
+        entry.requestSignal.removeEventListener("abort", entry.onRequestAbort);
+      }
+      entry.reject(cause);
+    }
+    notifyIdle();
+  };
+
+  const abortActive = (cause: unknown = new Error("The daemon shutdown deadline elapsed.")) => {
+    running?.controller.abort(cause);
+  };
+
+  const isIdle = () => running === undefined && queued.length === 0;
+  const waitForIdle = () =>
+    isIdle()
+      ? Promise.resolve()
+      : new Promise<void>((resolvePromise) => idleWaiters.add(resolvePromise));
+
+  return Object.assign(run, { close, abortActive, isIdle, waitForIdle }) satisfies OperationGate;
 };
 
 class DocumentReadAdmissionError extends Error {
@@ -1167,7 +1293,8 @@ const handlePublishedDocument = async (
   res: import("node:http").ServerResponse,
   publicationCoordinator: DocumentPublicationCoordinator,
   metadataStore: MetadataStore,
-  permit: DocumentReadPermit
+  permit: DocumentReadPermit,
+  requestSignal?: AbortSignal
 ) => {
   const id = (() => {
     try {
@@ -1211,7 +1338,11 @@ const handlePublishedDocument = async (
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   const controller = new AbortController();
-  const resettableSignal = AbortSignal.any([controller.signal, permit.signal]);
+  const resettableSignal = AbortSignal.any(
+    requestSignal === undefined
+      ? [controller.signal, permit.signal]
+      : [controller.signal, permit.signal, requestSignal]
+  );
   const abort = (cause: unknown) => {
     const error = cause instanceof Error ? cause : new Error(String(cause));
     if (!controller.signal.aborted) {
@@ -1289,11 +1420,13 @@ const handleRequest = async (
   requestShutdown: () => void,
   publicationCoordinator: DocumentPublicationCoordinator,
   metadataStore: MetadataStore,
-  runCleanup: () => Promise<DocumentCleanupResult>,
+  runCleanup: (signal?: AbortSignal) => Promise<DocumentCleanupResult>,
   isReady: () => boolean,
   documentReadAdmission: ReturnType<typeof createDocumentReadAdmission>,
   operationGate: OperationGate,
-  acknowledgeStartup: () => void
+  acknowledgeStartup: () => void,
+  requestSignal?: AbortSignal,
+  isAccepting = () => true
 ) => {
   let url: string;
   try {
@@ -1305,6 +1438,11 @@ const handleRequest = async (
       htmlError(404, "Not found", "That Planview document does not exist."),
       "text/html"
     );
+    return;
+  }
+
+  if (!isAccepting() && url !== DAEMON_SHUTDOWN_PATH && url !== "/internal/shutdown") {
+    response(res, 503, JSON.stringify({ error: "shutting_down" }));
     return;
   }
 
@@ -1332,7 +1470,8 @@ const handleRequest = async (
             res,
             publicationCoordinator,
             metadataStore,
-            permit
+            permit,
+            requestSignal
           );
         } catch (cause) {
           permit?.release();
@@ -1421,7 +1560,7 @@ const handleRequest = async (
   }
   if ((url === DAEMON_CLEAN_PATH || url === "/internal/clean") && request.method === "POST") {
     try {
-      const result = await runCleanup();
+      const result = await runCleanup(requestSignal);
       response(
         res,
         200,
@@ -1434,6 +1573,9 @@ const handleRequest = async (
         })
       );
     } catch (cause) {
+      if (requestSignal?.aborted || res.destroyed) {
+        return;
+      }
       response(res, 500, JSON.stringify({ error: "cleanup_failed", message: describe(cause) }));
     }
     return;
@@ -1441,8 +1583,11 @@ const handleRequest = async (
   if (url === DAEMON_PUBLISH_PATH && request.method === "POST") {
     let payload: unknown;
     try {
-      payload = await readJsonBody(request);
+      payload = await readJsonBody(request, requestSignal);
     } catch (cause) {
+      if (requestSignal?.aborted || res.destroyed) {
+        return;
+      }
       response(res, 400, JSON.stringify({ error: "invalid_request", message: describe(cause) }));
       return;
     }
@@ -1458,15 +1603,30 @@ const handleRequest = async (
     try {
       if (isTestProcess()) {
         const pauseMilliseconds = Number(process.env[TEST_PUBLISH_PAUSE_ENV]);
-        if (Number.isFinite(pauseMilliseconds) && pauseMilliseconds > 0) {
-          await wait(pauseMilliseconds);
+        const pauseOnce = process.env[TEST_PUBLISH_PAUSE_ONCE_ENV] === "1";
+        if (
+          Number.isFinite(pauseMilliseconds) &&
+          pauseMilliseconds > 0 &&
+          (!pauseOnce || !testPublishPauseConsumed)
+        ) {
+          testPublishPauseConsumed = true;
+          await wait(
+            pauseMilliseconds,
+            process.env[TEST_UNCOOPERATIVE_PUBLISH_ENV] === "1" ? undefined : requestSignal
+          );
         }
       }
-      const published = await operationGate(() => publicationCoordinator.publish(sourcePath));
+      const published = await operationGate(
+        (signal) => publicationCoordinator.publish(sourcePath, signal),
+        requestSignal
+      );
       // Keep this response synchronous: 201 means the publication is committed
       // and can be retrieved immediately by its immutable id.
       response(res, 201, JSON.stringify({ id: published.id }));
     } catch (cause) {
+      if (requestSignal?.aborted || res.destroyed) {
+        return;
+      }
       response(res, 422, JSON.stringify({ error: "publish_failed", message: describe(cause) }));
     }
     return;
@@ -1479,7 +1639,7 @@ const createDaemonServer = (
   requestShutdown: () => void,
   publicationCoordinator: DocumentPublicationCoordinator,
   metadataStore: MetadataStore,
-  runCleanup: () => Promise<DocumentCleanupResult>,
+  runCleanup: (signal?: AbortSignal) => Promise<DocumentCleanupResult>,
   isReady: () => boolean,
   documentReadAdmission: ReturnType<typeof createDocumentReadAdmission>,
   operationGate: OperationGate,
@@ -1487,7 +1647,57 @@ const createDaemonServer = (
 ) => {
   const server = import("node:http").then(({ createServer }) => {
     const connections = new Set<Socket>();
+    const requests = new Set<{
+      readonly controller: AbortController;
+      readonly request: import("node:http").IncomingMessage;
+    }>();
+    const requestIdleWaiters = new Set<() => void>();
+    let accepting = true;
+    const notifyRequestsIdle = () => {
+      if (requests.size !== 0) {
+        return;
+      }
+      for (const resolvePromise of requestIdleWaiters) {
+        resolvePromise();
+      }
+      requestIdleWaiters.clear();
+    };
+    const stopAccepting = () => {
+      if (!accepting) {
+        return;
+      }
+      accepting = false;
+      // Do this as the first shutdown action. Otherwise an idle keep-alive
+      // socket can make server.close() wait until the same instant as the
+      // process SIGKILL fallback.
+      httpServer.closeIdleConnections();
+    };
+    const abortRequests = () => {
+      for (const { controller } of requests) {
+        controller.abort(new Error("The daemon shutdown deadline elapsed."));
+      }
+    };
+    const waitForRequests = () =>
+      requests.size === 0
+        ? Promise.resolve()
+        : new Promise<void>((resolvePromise) => requestIdleWaiters.add(resolvePromise));
     const httpServer = createServer((request, res) => {
+      const controller = new AbortController();
+      const activeRequest = { controller, request };
+      requests.add(activeRequest);
+      const abortIfIncomplete = (cause: Error) => {
+        if (!res.writableFinished) {
+          controller.abort(cause);
+        }
+      };
+      const onRequestAborted = () => abortIfIncomplete(new Error("The client disconnected."));
+      const onResponseClosed = () => {
+        // IncomingMessage#aborted does not fire when a peer stops consuming a
+        // response after its request body has already been read.
+        abortIfIncomplete(new Error("The client closed the response."));
+      };
+      request.once("aborted", onRequestAborted);
+      res.once("close", onResponseClosed);
       void handleRequest(
         request,
         res,
@@ -1499,20 +1709,36 @@ const createDaemonServer = (
         isReady,
         documentReadAdmission,
         operationGate,
-        acknowledgeStartup
-      ).catch((cause) => {
-        if (!res.headersSent) {
-          response(res, 500, JSON.stringify({ error: "internal_error" }));
-        } else {
-          res.destroy(cause instanceof Error ? cause : undefined);
-        }
-      });
+        acknowledgeStartup,
+        controller.signal,
+        () => accepting
+      )
+        .catch((cause) => {
+          if (!res.headersSent) {
+            response(res, 500, JSON.stringify({ error: "internal_error" }));
+          } else {
+            res.destroy(cause instanceof Error ? cause : undefined);
+          }
+        })
+        .finally(() => {
+          request.off("aborted", onRequestAborted);
+          res.off("close", onResponseClosed);
+          requests.delete(activeRequest);
+          notifyRequestsIdle();
+        });
     });
     httpServer.on("connection", (connection) => {
       connections.add(connection);
       connection.once("close", () => connections.delete(connection));
     });
-    return { server: httpServer, connections };
+    return {
+      server: httpServer,
+      connections,
+      stopAccepting,
+      forceClose: () => forceCloseServer(httpServer, connections),
+      abortRequests,
+      waitForRequests,
+    };
   });
   return server;
 };
@@ -1545,17 +1771,66 @@ const openDaemon = async (config: DaemonConfig) => {
   let documentFileStore: DocumentFileStore | undefined;
   let metadataStore: MetadataStore | undefined;
   let cleanupTimer: NodeJS.Timeout | undefined;
-  let cleanupInFlight: Promise<void> = Promise.resolve();
   let cleanupDrain: Promise<void> | undefined;
   let startupReady = false;
-  let closing = false;
+  let shutdownInitiated = false;
   let shutdownRequested = false;
   let resolveShutdown: (() => void) | undefined;
+  let stopAccepting = () => {};
+  let forceCloseConnections = () => {};
+  let abortRequests = () => {};
+  let waitForRequests = () => Promise.resolve();
+  let shutdownDeadline: number | undefined;
+  let shutdownAbortTimer: NodeJS.Timeout | undefined;
+  let shutdownForceCloseTimer: NodeJS.Timeout | undefined;
+  let shutdownForceTimer: NodeJS.Timeout | undefined;
+  let shutdownCompleted = false;
   const documentReadAdmission = createDocumentReadAdmission();
   const operationGate = createOperationGate();
+  const terminateUncooperativeProcess = () => {
+    try {
+      // The descriptor remains in place until this process is dead. A later
+      // lifecycle operation can then prove the PID is gone before replacement.
+      process.kill(process.pid, "SIGKILL");
+    } catch {
+      process.exit(1);
+    }
+  };
+  const beginShutdown = () => {
+    if (shutdownInitiated) {
+      return;
+    }
+    shutdownInitiated = true;
+    shutdownDeadline = Date.now() + DAEMON_SHUTDOWN_TIMEOUT_MS;
+    documentReadAdmission.close();
+    operationGate.close();
+    stopAccepting();
+    shutdownAbortTimer = setTimeout(() => {
+      operationGate.abortActive();
+      abortRequests();
+    }, DAEMON_SHUTDOWN_OPERATION_GRACE_MS);
+    shutdownAbortTimer.unref();
+    const forceCloseDelay = Math.max(
+      0,
+      DAEMON_SHUTDOWN_TIMEOUT_MS - SHUTDOWN_FORCE_CLOSE_MARGIN_MS
+    );
+    shutdownForceCloseTimer = setTimeout(() => {
+      forceCloseConnections();
+    }, forceCloseDelay);
+    shutdownForceCloseTimer.unref();
+    shutdownForceTimer = setTimeout(() => {
+      if (!shutdownCompleted) {
+        // The forced socket close has already run. If work or storage still
+        // has not reached its safe boundary, retain the hard process bound.
+        terminateUncooperativeProcess();
+      }
+    }, DAEMON_SHUTDOWN_TIMEOUT_MS);
+    shutdownForceTimer.unref();
+    resolveShutdown?.();
+  };
   const requestShutdown = () => {
     shutdownRequested = true;
-    resolveShutdown?.();
+    beginShutdown();
   };
   try {
     const openedMetadataStore = Effect.runSync(
@@ -1576,19 +1851,29 @@ const openDaemon = async (config: DaemonConfig) => {
     const cleanup = createDocumentCleanupCoordinator({
       documentFileStore: openedDocumentFileStore,
       metadataStore: openedMetadataStore,
+      ...(isTestProcess()
+        ? {
+            beforeDocumentCleanup: async (_id: string, signal?: AbortSignal) => {
+              const pauseMilliseconds = Number(process.env[TEST_CLEANUP_PAUSE_ENV]);
+              if (Number.isFinite(pauseMilliseconds) && pauseMilliseconds > 0) {
+                await wait(pauseMilliseconds, signal);
+              }
+            },
+          }
+        : {}),
     });
-    const runCleanupSlice = () => {
+    const runCleanupSlice = (requestSignal?: AbortSignal) => {
       // Manual and scheduled cleanup share the same mutation gate. Reads do
       // not enter it, so a client that stops consuming a response cannot delay
       // cleanup.
-      return operationGate(() => cleanup.clean());
+      return operationGate((signal) => cleanup.clean(signal), requestSignal);
     };
     const scheduleCleanupDrain = () => {
-      if (cleanupDrain !== undefined || closing) {
+      if (cleanupDrain !== undefined || shutdownInitiated) {
         return;
       }
       const drain = (async () => {
-        while (!closing) {
+        while (!shutdownInitiated) {
           const result = await runCleanupSlice();
           if (!result.resumable) {
             return;
@@ -1600,10 +1885,6 @@ const openDaemon = async (config: DaemonConfig) => {
         }
       })();
       cleanupDrain = drain;
-      cleanupInFlight = Promise.all([cleanupInFlight, drain]).then(
-        () => undefined,
-        () => undefined
-      );
       void drain.then(
         () => {
           if (cleanupDrain === drain) {
@@ -1617,13 +1898,10 @@ const openDaemon = async (config: DaemonConfig) => {
         }
       );
     };
-    const runCleanup = () => {
-      const operation = runCleanupSlice();
-      cleanupInFlight = Promise.all([cleanupInFlight, operation.catch(() => undefined)]).then(
-        () => undefined
-      );
+    const runCleanup = (requestSignal?: AbortSignal) => {
+      const operation = runCleanupSlice(requestSignal);
       return operation.then((result) => {
-        if (result.resumable) {
+        if (result.resumable && !shutdownInitiated) {
           scheduleCleanupDrain();
         }
         return result;
@@ -1650,6 +1928,10 @@ const openDaemon = async (config: DaemonConfig) => {
     );
     server = daemonServer.server;
     connections = daemonServer.connections;
+    stopAccepting = daemonServer.stopAccepting;
+    forceCloseConnections = daemonServer.forceClose;
+    abortRequests = daemonServer.abortRequests;
+    waitForRequests = daemonServer.waitForRequests;
     await listen(server, config.host, config.port);
     if (server === undefined || descriptor === undefined || connections === undefined) {
       throw new Error("The daemon listener was not initialized.");
@@ -1659,6 +1941,9 @@ const openDaemon = async (config: DaemonConfig) => {
     // from a dead child instead of waiting on an invisible process.
     await writeProtectedDescriptor(paths, descriptor);
     await runCleanup();
+    if (shutdownInitiated) {
+      throw new Error("The daemon shutdown began during startup.");
+    }
     startupReady = true;
     await requestReady(descriptor);
     cleanupTimer = setInterval(() => {
@@ -1677,26 +1962,98 @@ const openDaemon = async (config: DaemonConfig) => {
       server: runningServer,
       descriptor: runningDescriptor,
       paths,
-      close: async () => {
-        if (closing) {
-          return;
-        }
-        closing = true;
-        resolveShutdown = undefined;
-        if (cleanupTimer !== undefined) {
-          clearInterval(cleanupTimer);
-          cleanupTimer = undefined;
-        }
-        documentReadAdmission.close();
-        await cleanupInFlight;
-        try {
-          await closeServer(runningServer, runningConnections);
-        } finally {
-          await documentFileStore?.close();
-          metadataStore?.close();
-          await removeDescriptorFor(paths, runningDescriptor);
-        }
-      },
+      close: (() => {
+        let closePromise: Promise<void> | undefined;
+        return () => {
+          if (closePromise !== undefined) {
+            return closePromise;
+          }
+          closePromise = (async () => {
+            beginShutdown();
+            resolveShutdown = undefined;
+            if (cleanupTimer !== undefined) {
+              clearInterval(cleanupTimer);
+              cleanupTimer = undefined;
+            }
+
+            const deadline = shutdownDeadline ?? Date.now() + DAEMON_SHUTDOWN_TIMEOUT_MS;
+            const settleBeforeDeadline = async (promise: Promise<unknown>) => {
+              const remaining = deadline - Date.now();
+              if (remaining <= 0) {
+                return false;
+              }
+              let timer: NodeJS.Timeout | undefined;
+              try {
+                return await Promise.race([
+                  promise.then(
+                    () => true,
+                    () => false
+                  ),
+                  new Promise<boolean>((resolvePromise) => {
+                    timer = setTimeout(() => resolvePromise(false), remaining);
+                  }),
+                ]);
+              } finally {
+                if (timer !== undefined) {
+                  clearTimeout(timer);
+                }
+              }
+            };
+
+            const serverClose = closeServer(runningServer, runningConnections);
+            const workSettled = await settleBeforeDeadline(
+              Promise.all([operationGate.waitForIdle(), waitForRequests()])
+            );
+            if (!workSettled) {
+              operationGate.abortActive();
+              abortRequests();
+              // A native or third-party operation that ignores cancellation
+              // may still mutate storage. Killing the process is the only safe
+              // boundary; removing the descriptor would permit a replacement
+              // daemon to run concurrently with that mutation.
+              terminateUncooperativeProcess();
+              return new Promise<void>(() => {});
+            }
+            if (shutdownAbortTimer !== undefined) {
+              clearTimeout(shutdownAbortTimer);
+              shutdownAbortTimer = undefined;
+            }
+
+            const storageSettled = await settleBeforeDeadline(
+              (async () => {
+                try {
+                  await documentFileStore?.close();
+                } finally {
+                  metadataStore?.close();
+                }
+              })()
+            );
+            if (!storageSettled) {
+              terminateUncooperativeProcess();
+              return new Promise<void>(() => {});
+            }
+
+            const serverSettled = await settleBeforeDeadline(serverClose);
+            if (!serverSettled) {
+              terminateUncooperativeProcess();
+              return new Promise<void>(() => {});
+            }
+            // Descriptor removal is the final lifecycle action. At this point
+            // no request, mutation, storage close, or listener can still run.
+            await removeDescriptorFor(paths, runningDescriptor);
+            shutdownCompleted = true;
+            if (shutdownForceCloseTimer !== undefined) {
+              clearTimeout(shutdownForceCloseTimer);
+              shutdownForceCloseTimer = undefined;
+            }
+            if (shutdownForceTimer !== undefined) {
+              clearTimeout(shutdownForceTimer);
+              shutdownForceTimer = undefined;
+            }
+          })();
+          return closePromise;
+        };
+      })(),
       waitForShutdown: () => {
         if (shutdownRequested) {
           return Promise.resolve();
@@ -1718,6 +2075,18 @@ const openDaemon = async (config: DaemonConfig) => {
       },
     };
   } catch (cause) {
+    if (shutdownAbortTimer !== undefined) {
+      clearTimeout(shutdownAbortTimer);
+      shutdownAbortTimer = undefined;
+    }
+    if (shutdownForceCloseTimer !== undefined) {
+      clearTimeout(shutdownForceCloseTimer);
+      shutdownForceCloseTimer = undefined;
+    }
+    if (shutdownForceTimer !== undefined) {
+      clearTimeout(shutdownForceTimer);
+      shutdownForceTimer = undefined;
+    }
     documentReadAdmission.close();
     await lock.release().catch(() => undefined);
     if (server !== undefined && connections !== undefined) {
@@ -1940,8 +2309,22 @@ const portIsOpen = (host: string, port: number) =>
     socket.setTimeout(REQUEST_TIMEOUT_MS, () => finish(false));
   });
 
-const wait = (milliseconds: number) =>
-  new Promise<void>((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+const wait = (milliseconds: number, signal?: AbortSignal) => {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason);
+  }
+  return new Promise<void>((resolvePromise, rejectPromise) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolvePromise();
+    }, milliseconds);
+    const onAbort = () => {
+      clearTimeout(timer);
+      rejectPromise(signal?.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+};
 
 export const inspectDaemon = async (config: DaemonConfig): Promise<DaemonState> => {
   const paths = resolveDaemonPaths(config);
