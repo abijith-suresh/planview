@@ -666,10 +666,61 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
     );
     const cleanResponse = await cleanResponsePromise;
     assert.equal(cleanResponse.status, 200);
-    assert.equal((await cleanResponse.json()).removedDocuments, documents);
+    const cleanupResult = await cleanResponse.json();
+    assert.equal(cleanupResult.removedDocuments > 0, true);
+    assert.equal(cleanupResult.removedDocuments < documents, true);
+    assert.equal(cleanupResult.resumable, true);
     assert.equal(result.state, "stopped");
     const exit = await waitForExit(child);
     assert.equal(exit.code, 0);
+  } finally {
+    metadataStore?.close();
+    await stopChild(child);
+    await removeFixture(fixture);
+  }
+});
+
+test("automatic cleanup drains resumable work after a bounded manual slice", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-clean-drain-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const documentsDir = join(appDataDir, "documents");
+  const port = await freePort();
+  const child = startChild(appDataDir, runtimeDir, port);
+  let metadataStore;
+  try {
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
+    metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    const documents = 700;
+    for (let index = 0; index < documents; index += 1) {
+      const documentId = `a${index.toString(36).padStart(20, "0")}`;
+      writeFileSync(join(documentsDir, `${documentId}.html`), "x");
+      metadataStore.insertDocumentMetadata({
+        id: documentId,
+        createdAt: 1,
+        lastAccessedAt: 1,
+        size: 1,
+      });
+    }
+    const startedAt = Date.now();
+    const cleanResponse = await fetch(`http://127.0.0.1:${port}/__planview/clean`, {
+      method: "POST",
+      headers: { "x-planview-secret": descriptor.secret },
+    });
+    assert.equal(cleanResponse.status, 200);
+    assert.equal(Date.now() - startedAt < 4_000, true);
+    await waitFor(
+      () => (metadataStore.getDocumentAggregate().count === 0 ? true : undefined),
+      15_000
+    );
+    await daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }));
+    await waitForExit(child);
   } finally {
     metadataStore?.close();
     await stopChild(child);

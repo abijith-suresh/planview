@@ -1545,7 +1545,8 @@ const openDaemon = async (config: DaemonConfig) => {
   let documentFileStore: DocumentFileStore | undefined;
   let metadataStore: MetadataStore | undefined;
   let cleanupTimer: NodeJS.Timeout | undefined;
-  let cleanupInFlight: Promise<unknown> = Promise.resolve();
+  let cleanupInFlight: Promise<void> = Promise.resolve();
+  let cleanupDrain: Promise<void> | undefined;
   let startupReady = false;
   let closing = false;
   let shutdownRequested = false;
@@ -1576,14 +1577,57 @@ const openDaemon = async (config: DaemonConfig) => {
       documentFileStore: openedDocumentFileStore,
       metadataStore: openedMetadataStore,
     });
+    const runCleanupSlice = () => {
+      // Manual and scheduled cleanup share the same mutation gate. Reads do
+      // not enter it, so a client that stops consuming a response cannot delay
+      // cleanup.
+      return operationGate(() => cleanup.clean());
+    };
+    const scheduleCleanupDrain = () => {
+      if (cleanupDrain !== undefined || closing) {
+        return;
+      }
+      const drain = (async () => {
+        while (!closing) {
+          const result = await runCleanupSlice();
+          if (!result.resumable) {
+            return;
+          }
+          // Every slice is bounded; yielding here prevents automatic cleanup
+          // from monopolizing the daemon's event loop while a large store is
+          // being drained.
+          await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+        }
+      })();
+      cleanupDrain = drain;
+      cleanupInFlight = Promise.all([cleanupInFlight, drain]).then(
+        () => undefined,
+        () => undefined
+      );
+      void drain.then(
+        () => {
+          if (cleanupDrain === drain) {
+            cleanupDrain = undefined;
+          }
+        },
+        () => {
+          if (cleanupDrain === drain) {
+            cleanupDrain = undefined;
+          }
+        }
+      );
+    };
     const runCleanup = () => {
-      // Manual and scheduled cleanup share the same tracked promise. Shutdown
-      // must wait for a cleanup request already being served, not only for the
-      // interval callback's last run. Reads do not enter this mutation gate,
-      // so a client that stops consuming a response cannot delay cleanup.
-      const operation = operationGate(() => cleanup.clean());
-      cleanupInFlight = operation.catch(() => undefined);
-      return operation;
+      const operation = runCleanupSlice();
+      cleanupInFlight = Promise.all([cleanupInFlight, operation.catch(() => undefined)]).then(
+        () => undefined
+      );
+      return operation.then((result) => {
+        if (result.resumable) {
+          scheduleCleanupDrain();
+        }
+        return result;
+      });
     };
     descriptor = {
       version: DAEMON_DESCRIPTOR_VERSION,
@@ -2137,6 +2181,7 @@ const cleanupResultFromPayload = (payload: Record<string, unknown>) => {
     "removedFinalizationLocks",
     "reclaimedBytes",
     "retainedEntries",
+    "processedItems",
   ] as const;
   if (
     numericFields.some(
@@ -2207,6 +2252,18 @@ const cleanupResultFromPayload = (payload: Record<string, unknown>) => {
     removedFinalizationLocks: numberValue("removedFinalizationLocks"),
     reclaimedBytes: numberValue("reclaimedBytes"),
     retainedEntries: numberValue("retainedEntries"),
+    processedItems: numberValue("processedItems"),
+    resumable: (() => {
+      const value = recordValue(payload, "resumable");
+      if (typeof value !== "boolean") {
+        throw new DaemonRequestError({
+          path: DAEMON_CLEAN_PATH,
+          cause: payload,
+          message: `The daemon returned an invalid cleanup result for ${DAEMON_CLEAN_PATH}.`,
+        });
+      }
+      return value;
+    })(),
     failures,
   } satisfies DocumentCleanupResult;
 };

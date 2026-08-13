@@ -127,10 +127,28 @@ export type DocumentFileTargetCapability = Readonly<{
 export type DocumentFileResourceState = "absent" | "retained" | "unknown";
 export type DocumentFileTargetRecoveryPolicy = "delete" | "retain";
 
+export type DocumentFileIdentity = Readonly<Pick<Stats, "dev" | "ino" | "birthtimeMs">>;
+
 export type DocumentFileObservation = Readonly<{
   readonly id: string;
   readonly size: number;
   readonly modifiedAt: number;
+  /** The inode identity observed with this page entry. */
+  readonly identity: DocumentFileIdentity;
+}>;
+
+export type DocumentFileScanWatermark = Readonly<{
+  /** The maximum bytewise id admitted to this pass. */
+  readonly throughId: string;
+  /** Creation-time watermark prevents new entries reusing a low id joining the pass. */
+  readonly startedAt: number;
+}>;
+
+export type DocumentFilePage = Readonly<{
+  readonly files: readonly DocumentFileObservation[];
+  readonly hasMore: boolean;
+  readonly nextId?: string;
+  readonly watermark?: DocumentFileScanWatermark;
 }>;
 
 /** A document stream whose active-read marker remains held until release. */
@@ -139,11 +157,27 @@ export type DocumentFileReadLease = Readonly<{
   readonly release: () => void;
 }>;
 
+export type DocumentFileReconciliationCursor = Readonly<{
+  /** The directory watermark is fixed for every page in one pass. */
+  readonly watermark: string;
+  readonly afterName?: string;
+}>;
+
+export type DocumentFileReconciliationBudget = Readonly<{
+  readonly maxItems: number;
+  /** Shared cleanup deadline; false stops before starting another entry. */
+  readonly shouldContinue?: () => boolean;
+  readonly cursor?: DocumentFileReconciliationCursor;
+}>;
+
 export type DocumentFileReconciliationResult = Readonly<{
   readonly stagedFilesRemoved: number;
   readonly readReferencesRemoved: number;
   readonly finalizationLocksRemoved: number;
   readonly retainedEntries: number;
+  readonly processedItems: number;
+  readonly resumable: boolean;
+  readonly cursor?: DocumentFileReconciliationCursor;
 }>;
 
 export class DocumentFileStorePathError extends Data.TaggedError("DocumentFileStorePathError")<{
@@ -272,11 +306,21 @@ export interface DocumentFileStore {
   /** Runs the retention decision while the id-wide target lock is held. */
   readonly deleteDocumentFileIf: (
     id: string,
-    shouldDelete: (targetExists: boolean) => boolean | Promise<boolean>
+    shouldDelete: (targetExists: boolean) => boolean | Promise<boolean>,
+    expectedIdentity?: DocumentFileIdentity
   ) => Promise<boolean>;
+  readonly getDocumentFileObservation: (id: string) => Promise<DocumentFileObservation | undefined>;
   readonly listDocumentFiles: () => Promise<readonly DocumentFileObservation[]>;
+  /** Returns a bounded id-ordered page without materializing file observations past the page. */
+  readonly listDocumentFilesPage: (
+    limit: number,
+    afterId?: string,
+    watermark?: DocumentFileScanWatermark
+  ) => Promise<DocumentFilePage>;
   /** Reclaims only stale, provably-owned staging and lock entries. */
-  readonly reconcileDocumentFiles: () => Promise<DocumentFileReconciliationResult>;
+  readonly reconcileDocumentFiles: (
+    budget?: DocumentFileReconciliationBudget
+  ) => Promise<DocumentFileReconciliationResult>;
   /** Creates a second immutable staged handle without reopening source input. */
   readonly cloneStagedFile: (handle: StagedDocumentFileHandle) => Promise<StagedDocumentFileHandle>;
   /** Safely consumes a staged handle when a coordinator needs compensation. */
@@ -2568,7 +2612,8 @@ const createStore = ({
   const deleteDocumentFileUnlocked = async (
     id: string,
     expectedTarget?: DocumentFileTargetCapability,
-    shouldDelete: (targetExists: boolean) => boolean | Promise<boolean> = () => true
+    shouldDelete: (targetExists: boolean) => boolean | Promise<boolean> = () => true,
+    expectedIdentity?: DocumentFileIdentity
   ) => {
     const releaseOperation = beginOperation();
     try {
@@ -2618,6 +2663,9 @@ const createStore = ({
           if (stats.isSymbolicLink() || !stats.isFile()) {
             throw regularFileError(path);
           }
+          if (expectedIdentity !== undefined && !sameFileIdentity(expectedIdentity, stats)) {
+            throw new Error("The document target was replaced before identity-safe deletion.");
+          }
           if (await activeReadReferenceExists(documentId)) {
             throw new DocumentFileReadActiveError({
               id: documentId,
@@ -2641,14 +2689,16 @@ const createStore = ({
               !targetAfterRace.isFile() ||
               !sameFileIdentity(stats, targetAfterRace) ||
               (expectedTarget !== undefined &&
-                !sameFileIdentity(expectedTarget.identity, targetAfterRace))
+                !sameFileIdentity(expectedTarget.identity, targetAfterRace)) ||
+              (expectedIdentity !== undefined &&
+                !sameFileIdentity(expectedIdentity, targetAfterRace))
             ) {
               throw new Error("The document target was replaced before identity-safe deletion.");
             }
             const removed = await discardEntry(
               documentsDir,
               `${documentId}.html`,
-              expectedTarget?.identity ?? stats
+              expectedTarget?.identity ?? expectedIdentity ?? stats
             );
             result = removed;
             targetState = "absent";
@@ -2716,46 +2766,138 @@ const createStore = ({
 
   const deleteDocumentFileIf = async (
     id: string,
-    shouldDelete: (targetExists: boolean) => boolean | Promise<boolean>
+    shouldDelete: (targetExists: boolean) => boolean | Promise<boolean>,
+    expectedIdentity?: DocumentFileIdentity
   ) => {
     const documentId = validateDocumentId(id);
     return withDocumentMutex(documentId, () =>
-      deleteDocumentFileUnlocked(documentId, undefined, shouldDelete)
+      deleteDocumentFileUnlocked(documentId, undefined, shouldDelete, expectedIdentity)
     );
+  };
+
+  const getDocumentFileObservation = async (id: string) => {
+    const releaseOperation = beginOperation();
+    try {
+      ensureTrustedRoots();
+      const documentId = validateDocumentId(id);
+      let stats: Stats;
+      try {
+        stats = await lstat(documentPath(documentId));
+      } catch (cause) {
+        if (isNotFound(cause)) {
+          return undefined;
+        }
+        throw cause;
+      }
+      if (!stats.isFile() || stats.isSymbolicLink()) {
+        return undefined;
+      }
+      return {
+        id: documentId,
+        size: stats.size,
+        modifiedAt: stats.mtimeMs,
+        identity: {
+          dev: stats.dev,
+          ino: stats.ino,
+          birthtimeMs: stats.birthtimeMs,
+        },
+      } satisfies DocumentFileObservation;
+    } finally {
+      releaseOperation();
+    }
+  };
+
+  const compareNames = (left: string, right: string) =>
+    Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+
+  const documentEntryIds = async (afterId?: string, throughId?: string) => {
+    const entries = await readdir(entryPath(documentsDir, ""));
+    return entries
+      .flatMap((entry) => {
+        if (!entry.endsWith(".html")) {
+          return [];
+        }
+        try {
+          return [validateDocumentId(entry.slice(0, -".html".length))];
+        } catch {
+          return [];
+        }
+      })
+      .filter(
+        (id) =>
+          (afterId === undefined || compareNames(id, afterId) > 0) &&
+          (throughId === undefined || compareNames(id, throughId) <= 0)
+      )
+      .sort(compareNames);
   };
 
   const listDocumentFiles = async () => {
     const releaseOperation = beginOperation();
     try {
       ensureTrustedRoots();
-      const entries = await readdir(entryPath(documentsDir, ""));
+      const ids = await documentEntryIds();
       const files: DocumentFileObservation[] = [];
-      for (const entry of entries) {
-        if (!entry.endsWith(".html")) {
-          continue;
-        }
-        const candidate = entry.slice(0, -".html".length);
-        let documentId: string;
-        try {
-          documentId = validateDocumentId(candidate);
-        } catch {
-          continue;
-        }
-        const path = entryPath(documentsDir, entry);
-        let stats: Stats;
-        try {
-          stats = await lstat(path);
-        } catch (cause) {
-          if (isNotFound(cause)) {
-            continue;
-          }
-          throw cause;
-        }
-        if (stats.isFile() && !stats.isSymbolicLink()) {
-          files.push({ id: documentId, size: stats.size, modifiedAt: stats.mtimeMs });
+      for (const documentId of ids) {
+        const observation = await getDocumentFileObservation(documentId);
+        if (observation !== undefined) {
+          files.push(observation);
         }
       }
-      return files.sort((left, right) => left.id.localeCompare(right.id));
+      return files;
+    } finally {
+      releaseOperation();
+    }
+  };
+
+  const listDocumentFilesPage = async (
+    limit: number,
+    afterId?: string,
+    watermark?: DocumentFileScanWatermark
+  ) => {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit >= Number.MAX_SAFE_INTEGER) {
+      throw new RangeError("Document file page limit must be a positive safe integer.");
+    }
+    const releaseOperation = beginOperation();
+    try {
+      ensureTrustedRoots();
+      const cursor = afterId === undefined ? undefined : validateDocumentId(afterId);
+      const scanStartedAt = Date.now();
+      const scanWatermark =
+        watermark === undefined
+          ? undefined
+          : {
+              throughId: validateDocumentId(watermark.throughId),
+              startedAt: watermark.startedAt,
+            };
+      if (
+        scanWatermark !== undefined &&
+        (!Number.isSafeInteger(scanWatermark.startedAt) || scanWatermark.startedAt < 0)
+      ) {
+        throw new RangeError("Document file scan watermark must contain a valid timestamp.");
+      }
+      const ids = await documentEntryIds(cursor, scanWatermark?.throughId);
+      const pageIds = ids.slice(0, limit);
+      const files: DocumentFileObservation[] = [];
+      for (const documentId of pageIds) {
+        const observation = await getDocumentFileObservation(documentId);
+        if (
+          observation !== undefined &&
+          observation.identity.birthtimeMs <= (scanWatermark?.startedAt ?? scanStartedAt)
+        ) {
+          files.push(observation);
+        }
+      }
+      const nextId = pageIds.at(-1);
+      const lastId = ids.at(-1);
+      const pageWatermark =
+        scanWatermark ??
+        (lastId === undefined ? undefined : { throughId: lastId, startedAt: scanStartedAt });
+      return {
+        files,
+        hasMore: ids.length > limit,
+        ...(nextId === undefined ? {} : { nextId }),
+        ...(pageWatermark === undefined ? {} : { watermark: pageWatermark }),
+      } satisfies DocumentFilePage;
     } finally {
       releaseOperation();
     }
@@ -2807,7 +2949,7 @@ const createStore = ({
     return true;
   };
 
-  const reconcileDocumentFiles = async () => {
+  const reconcileDocumentFilesUnbounded = async () => {
     const releaseOperation = beginOperation();
     try {
       ensureTrustedRoots();
@@ -2992,6 +3134,197 @@ const createStore = ({
         readReferencesRemoved,
         finalizationLocksRemoved,
         retainedEntries,
+        processedItems: entries.length,
+        resumable: false,
+      } satisfies DocumentFileReconciliationResult;
+    } finally {
+      releaseOperation();
+    }
+  };
+
+  const reconcileDocumentFiles = async (budget?: DocumentFileReconciliationBudget) => {
+    if (budget === undefined) {
+      return reconcileDocumentFilesUnbounded();
+    }
+    if (!Number.isSafeInteger(budget.maxItems) || budget.maxItems < 1) {
+      throw new RangeError("Document reconciliation item budget must be a positive safe integer.");
+    }
+    const releaseOperation = beginOperation();
+    try {
+      ensureTrustedRoots();
+      const listed = (await readdir(entryPath(stagingDir, ""))).sort(compareNames);
+      const watermark = budget.cursor?.watermark ?? listed.at(-1);
+      if (watermark === undefined) {
+        return {
+          stagedFilesRemoved: 0,
+          readReferencesRemoved: 0,
+          finalizationLocksRemoved: 0,
+          retainedEntries: 0,
+          processedItems: 0,
+          resumable: false,
+        } satisfies DocumentFileReconciliationResult;
+      }
+      const entries = listed.filter(
+        (entry) =>
+          compareNames(entry, watermark) <= 0 &&
+          (budget.cursor?.afterName === undefined ||
+            compareNames(entry, budget.cursor.afterName) > 0)
+      );
+      let stagedFilesRemoved = 0;
+      let readReferencesRemoved = 0;
+      let finalizationLocksRemoved = 0;
+      let retainedEntries = 0;
+      let processedItems = 0;
+      let afterName = budget.cursor?.afterName;
+
+      for (const entry of entries) {
+        if (processedItems >= budget.maxItems || budget.shouldContinue?.() === false) {
+          return {
+            stagedFilesRemoved,
+            readReferencesRemoved,
+            finalizationLocksRemoved,
+            retainedEntries,
+            processedItems,
+            resumable: true,
+            cursor: { watermark, ...(afterName === undefined ? {} : { afterName }) },
+          } satisfies DocumentFileReconciliationResult;
+        }
+        processedItems += 1;
+        afterName = entry;
+        try {
+          if (readReferenceEntry(entry) !== undefined) {
+            const path = entryPath(stagingDir, entry);
+            const observation = await readReadReference(path);
+            if (
+              observation === undefined ||
+              observation.metadata.owner.host !== LOCAL_HOSTNAME ||
+              isProcessAlive(observation.metadata.owner.pid)
+            ) {
+              retainedEntries += 1;
+              continue;
+            }
+            const fresh = await readReadReference(path);
+            if (
+              fresh === undefined ||
+              !sameFileIdentity(observation.identity, fresh.identity) ||
+              fresh.metadata.owner.host !== LOCAL_HOSTNAME ||
+              fresh.metadata.owner.pid !== observation.metadata.owner.pid ||
+              fresh.metadata.acquiredAt !== observation.metadata.acquiredAt ||
+              isProcessAlive(fresh.metadata.owner.pid)
+            ) {
+              retainedEntries += 1;
+              continue;
+            }
+            if (await discardEntry(stagingDir, entry, fresh.identity)) {
+              readReferencesRemoved += 1;
+              await syncDirectory(stagingDir);
+            }
+            continue;
+          }
+
+          if (isValidStagedHandle(entry)) {
+            const path = stagingPath(entry);
+            try {
+              const stagedStats = await lstat(path);
+              if (stagedStats.isFile() && !stagedStats.isSymbolicLink()) {
+                stagedIdentities.set(entry, stagedStats);
+              }
+            } catch (cause) {
+              if (!isNotFound(cause)) {
+                throw cause;
+              }
+            }
+            if (await isFreshResource(path)) {
+              retainedEntries += 1;
+              continue;
+            }
+            const lockPath = entryPath(stagingDir, `.${entry}.lock`);
+            const lockExisted = await lstat(lockPath).then(
+              () => true,
+              (cause) => {
+                if (isNotFound(cause)) {
+                  return false;
+                }
+                throw cause;
+              }
+            );
+            if (await discardStagedFile(entry)) {
+              stagedFilesRemoved += 1;
+            }
+            if (
+              lockExisted &&
+              (await lstat(lockPath).catch((cause) => (isNotFound(cause) ? undefined : cause))) ===
+                undefined
+            ) {
+              finalizationLocksRemoved += 1;
+            }
+            continue;
+          }
+
+          if (entry.startsWith(".") && entry.endsWith(".lock")) {
+            const body = entry.slice(1, -".lock".length);
+            const lockPath = entryPath(stagingDir, entry);
+            if (isValidStagedHandle(body)) {
+              const stagedPath = stagingPath(body);
+              try {
+                const stagedStats = await lstat(stagedPath);
+                if (stagedStats.isFile() && !stagedStats.isSymbolicLink()) {
+                  stagedIdentities.set(body, stagedStats);
+                }
+              } catch (cause) {
+                if (!isNotFound(cause)) {
+                  throw cause;
+                }
+              }
+              if (await isFreshResource(stagedPath)) {
+                retainedEntries += 1;
+                continue;
+              }
+              const removed = await discardStagedFile(body);
+              if (removed) {
+                stagedFilesRemoved += 1;
+              }
+              if (
+                (await lstat(lockPath).catch((cause) =>
+                  isNotFound(cause) ? undefined : cause
+                )) === undefined
+              ) {
+                finalizationLocksRemoved += 1;
+              }
+              continue;
+            }
+            if (body.endsWith(".target")) {
+              const targetId = body.slice(0, -".target".length);
+              try {
+                const documentId = validateDocumentId(targetId);
+                const removed = await reconcileLock(lockPath, documentPath(documentId));
+                if (removed) {
+                  finalizationLocksRemoved += 1;
+                } else {
+                  retainedEntries += 1;
+                }
+                continue;
+              } catch (cause) {
+                if (isNotFound(cause)) {
+                  continue;
+                }
+                throw cause;
+              }
+            }
+          }
+          retainedEntries += 1;
+        } catch {
+          retainedEntries += 1;
+        }
+      }
+
+      return {
+        stagedFilesRemoved,
+        readReferencesRemoved,
+        finalizationLocksRemoved,
+        retainedEntries,
+        processedItems,
+        resumable: false,
       } satisfies DocumentFileReconciliationResult;
     } finally {
       releaseOperation();
@@ -3006,7 +3339,9 @@ const createStore = ({
     readDocumentFile: readDocument,
     deleteDocumentFile,
     deleteDocumentFileIf,
+    getDocumentFileObservation,
     listDocumentFiles,
+    listDocumentFilesPage,
     reconcileDocumentFiles,
     cloneStagedFile,
     discardStagedFile,

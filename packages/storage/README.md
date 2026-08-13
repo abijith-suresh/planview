@@ -170,7 +170,12 @@ coordinator reconciles these known states conservatively: metadata-gated reads
 make uncommitted files invisible, stale locks are reclaimed only with the same
 liveness/lease proof as publication, dead local read markers are reconciled, and
 active reads or target locks are retained. It applies the fixed 30-day `lastAccessedAt` policy through an
-injected clock and reports, rather than guesses through, filesystem faults.
+injected clock and reports, rather than guesses through, filesystem faults. Retention candidates use a
+`lastAccessedAt, id` SQLite index and bounded tuple-cursor pages; cleanup has fixed item/time budgets and
+returns `resumable` when the next invocation must continue. Metadata and document reconciliation advance
+through bounded id pages instead of building a full metadata catalog. The cleanup benchmark runs full
+cleanup for 1,000 and 10,000 rows and reports wall time, batches, reclaimed bytes, and before/peak/after
+RSS and heap memory with `npm run benchmark:cleanup --workspace @planview/storage`.
 Tests labeled concurrent Planview operations cover cooperating store instances
 and normal lock/collision races. Tests labeled out-of-model hostile external
 replacement deliberately simulate a malicious same-user filesystem process; they
@@ -181,7 +186,9 @@ containment guarantee.
 
 `openStorage(path)` remains the typed Effect boundary for the private SQLite
 metadata store. It opens SQLite through Node 24's built-in `node:sqlite` module
-and applies the versioned schema using `PRAGMA user_version`. The v1 table contains
-only `id`, `createdAt`, `lastAccessedAt`, and `size`. Metadata mutations use
-SQLite transactions; query failures remain native SQLite errors rather than being wrapped
-one by one.
+and applies the versioned schema using `PRAGMA user_version`. The v2 documents table
+still contains only `id`, `createdAt`, `lastAccessedAt`, and `size`; a small
+`document_generations` side table supplies an immutable conditional-deletion token for
+cleanup, including ABA-safe delete/reinsert races. The `(lastAccessedAt, id)` index is
+created transactionally while upgrading v1. Metadata mutations use SQLite transactions;
+query failures remain native SQLite errors rather than being wrapped one by one.

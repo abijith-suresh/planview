@@ -9,6 +9,7 @@ import {
   createMetadataGatedDocumentReader,
   openDocumentFileStore,
   openStorage,
+  V1_CLEANUP_ITEM_BUDGET,
   V1_ORPHAN_RECONCILIATION_GRACE_MILLISECONDS,
 } from "../dist/index.js";
 
@@ -167,11 +168,23 @@ test("cleanup handles roughly 500 expired documents and reports physical bytes",
       metadataStore,
       now: () => DAY * 31 + 1,
     });
-    const result = await cleanup.clean();
-    assert.equal(result.removedDocuments, documents);
-    assert.equal(result.removedDocumentFiles, documents);
-    assert.equal(result.removedMetadataRows, documents);
-    assert.equal(result.reclaimedBytes, documents);
+    const totals = {
+      removedDocuments: 0,
+      removedDocumentFiles: 0,
+      removedMetadataRows: 0,
+      reclaimedBytes: 0,
+    };
+    let result;
+    do {
+      result = await cleanup.clean();
+      for (const field of Object.keys(totals)) {
+        totals[field] += result[field];
+      }
+    } while (result.resumable);
+    assert.equal(totals.removedDocuments, documents);
+    assert.equal(totals.removedDocumentFiles, documents);
+    assert.equal(totals.removedMetadataRows, documents);
+    assert.equal(totals.reclaimedBytes, documents);
   }));
 
 test("startup reconciliation removes orphan files, missing rows, mismatches, and staged snapshots", () =>
@@ -304,9 +317,125 @@ test("faults are reported without deleting a candidate", () =>
     });
     const result = await cleanup.clean();
     assert.equal(result.failures.length, 1);
+    assert.equal(result.resumable, false);
     assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
     assert.equal(
       (await readFile(join(directory, "documents", `${documentId}.html`))).toString(),
       "fault"
     );
+  }));
+
+test("pages document files in exact bytewise order and resume without gaps", () =>
+  withEnvironment(async ({ documentFileStore, documentsDir }) => {
+    const ids = [id("A"), id("_"), id("-"), id("a"), id("0")];
+    await Promise.all(
+      ids.map((documentId) => writeFile(join(documentsDir, `${documentId}.html`), "x"))
+    );
+    const expected = [...ids].sort((left, right) =>
+      Buffer.compare(Buffer.from(left), Buffer.from(right))
+    );
+    const observed = [];
+    let page = await documentFileStore.listDocumentFilesPage(2);
+    const watermark = page.watermark;
+    observed.push(...page.files.map((file) => file.id));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const insertedId = id("1");
+    await writeFile(join(documentsDir, `${insertedId}.html`), "new");
+    let after = page.nextId;
+    do {
+      page = await documentFileStore.listDocumentFilesPage(2, after, watermark);
+      observed.push(...page.files.map((file) => file.id));
+      after = page.nextId;
+    } while (page.hasMore);
+    assert.deepEqual(observed, expected);
+  }));
+
+test("keeps reconciliation inside the cleanup item budget", () =>
+  withEnvironment(async ({ documentFileStore, stagingDir }) => {
+    const entries = V1_CLEANUP_ITEM_BUDGET + 96;
+    for (let index = 0; index < entries; index += 1) {
+      const handle = `${index.toString(36).padStart(42, "0")}a`;
+      const stagedPath = join(stagingDir, handle);
+      await writeFile(stagedPath, "stale");
+      await utimes(stagedPath, new Date(1), new Date(1));
+    }
+    const cleanup = createDocumentCleanupCoordinator({
+      documentFileStore,
+      metadataStore: {
+        getDocumentMetadataScanWatermark: () => 0,
+        listDocumentMetadataCandidates: () => ({ rows: [], hasMore: false }),
+        listDocumentMetadataPage: () => ({ rows: [], hasMore: false }),
+      },
+      now: () => Date.now() + DAY,
+    });
+    const first = await cleanup.clean();
+    assert.equal(first.processedItems <= V1_CLEANUP_ITEM_BUDGET, true);
+    assert.equal(first.resumable, true);
+    let result = first;
+    while (result.resumable) {
+      result = await cleanup.clean();
+    }
+    assert.deepEqual(await readdir(stagingDir), []);
+  }));
+
+test("does not delete an ABA-replaced metadata row", () =>
+  withEnvironment(async ({ documentFileStore, metadataStore, directory }) => {
+    const documentId = id("q");
+    await publishPhysical({ documentFileStore, metadataStore, directory }, documentId, "aba");
+    let replaced = false;
+    const cleanup = createDocumentCleanupCoordinator({
+      documentFileStore,
+      metadataStore,
+      now: () => DAY * 31 + 1,
+      beforeDocumentCleanup: async (candidate) => {
+        if (!replaced) {
+          replaced = true;
+          assert.equal(metadataStore.deleteDocument(candidate), true);
+          metadataStore.insertDocumentMetadata({
+            id: candidate,
+            createdAt: 1,
+            lastAccessedAt: 1,
+            size: 3,
+          });
+        }
+      },
+    });
+    const first = await cleanup.clean();
+    assert.equal(first.removedDocuments, 0);
+    assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
+    assert.equal(
+      (await readFile(join(directory, "documents", `${documentId}.html`))).toString(),
+      "aba"
+    );
+    assert.equal((await cleanup.clean()).removedDocuments, 1);
+  }));
+
+test("defers rows inserted during a cleanup pass to the next watermark", () =>
+  withEnvironment(async ({ documentFileStore, metadataStore, directory }) => {
+    const originalId = id("s");
+    const insertedId = id("t");
+    await publishPhysical({ documentFileStore, metadataStore, directory }, originalId, "old");
+    let inserted = false;
+    const cleanup = createDocumentCleanupCoordinator({
+      documentFileStore,
+      metadataStore,
+      now: () => DAY * 31 + 1,
+      beforeDocumentCleanup: async () => {
+        if (inserted) {
+          return;
+        }
+        inserted = true;
+        await writeFile(join(directory, "documents", `${insertedId}.html`), "new");
+        metadataStore.insertDocumentMetadata({
+          id: insertedId,
+          createdAt: 1,
+          lastAccessedAt: 1,
+          size: 3,
+        });
+      },
+    });
+    await cleanup.clean();
+    assert.notEqual(metadataStore.getDocumentMetadata(insertedId), undefined);
+    assert.equal((await cleanup.clean()).removedDocuments, 1);
+    assert.equal(metadataStore.getDocumentMetadata(insertedId), undefined);
   }));
