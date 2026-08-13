@@ -53,9 +53,9 @@ export type DocumentCleanupCoordinatorOptions = Readonly<{
   readonly now?: () => number;
   readonly retentionDays?: number;
   /** Private deterministic fault seam for cleanup tests. */
-  readonly beforeDocumentCleanup?: (id: string) => Promise<void>;
+  readonly beforeDocumentCleanup?: (id: string, signal?: AbortSignal) => Promise<void>;
   /** Private deterministic fault seam for reconciliation tests. */
-  readonly beforeReconciliation?: () => Promise<void>;
+  readonly beforeReconciliation?: (signal?: AbortSignal) => Promise<void>;
 }>;
 
 export class DocumentCleanupError extends Data.TaggedError("DocumentCleanupError")<{
@@ -116,7 +116,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
   let metadataWatermark: number | undefined;
   let fileWatermark: DocumentFileScanWatermark | undefined;
 
-  const run = async () => {
+  const run = async (signal?: AbortSignal) => {
     const currentTime = validNow(now());
     const cutoff = Math.max(0, currentTime - retention * DAY_MS);
     const startedAt = performance.now();
@@ -143,325 +143,365 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
         cause,
         message: `Could not inspect Planview cleanup state: ${describe(cause)}`,
       });
-
-    await beforeReconciliation?.();
-    try {
-      metadataWatermark ??= metadataStore.getDocumentMetadataScanWatermark();
-    } catch (cause) {
-      throw inspectionError(cause);
-    }
-
-    try {
-      const remaining = V1_CLEANUP_ITEM_BUDGET - processedItems;
-      if (remaining < 1 || !canProcess()) {
-        budgetExhausted = true;
-      } else {
-        const staging: DocumentFileReconciliationResult =
-          await documentFileStore.reconcileDocumentFiles({
-            maxItems: remaining,
-            shouldContinue: canProcess,
-            ...(reconciliationCursor === undefined ? {} : { cursor: reconciliationCursor }),
-          });
-        processedItems += staging.processedItems;
-        removedStagedFiles += staging.stagedFilesRemoved;
-        removedReadReferences += staging.readReferencesRemoved;
-        removedFinalizationLocks += staging.finalizationLocksRemoved;
-        retainedEntries += staging.retainedEntries;
-        reconciliationCursor = staging.resumable ? staging.cursor : undefined;
-        budgetExhausted = staging.resumable;
+    const makeResult = (forceResumable = false) => {
+      const resumable =
+        forceResumable ||
+        budgetExhausted ||
+        candidateCursor !== undefined ||
+        metadataCursor !== undefined ||
+        fileCursor !== undefined ||
+        fileWatermark !== undefined ||
+        reconciliationCursor !== undefined;
+      if (!resumable) {
+        // A completed pass must take a fresh watermark next time. Keeping an
+        // old rowid watermark would permanently hide rows inserted after this pass.
+        metadataWatermark = undefined;
+        fileWatermark = undefined;
       }
-    } catch (cause) {
-      failures.push(failureFor("staging", cause));
-      retainedEntries += 1;
-    }
+      return Object.freeze({
+        now: currentTime,
+        cutoff,
+        removedDocuments,
+        removedDocumentFiles,
+        removedMetadataRows,
+        removedStagedFiles,
+        removedReadReferences,
+        removedFinalizationLocks,
+        reclaimedBytes,
+        retainedEntries,
+        processedItems,
+        resumable,
+        failures: Object.freeze(failures),
+      });
+    };
 
-    const protectedFileIds = new Set<string>();
-
-    // The access-order index makes this the hot path: only a bounded page of
-    // stale rows is ever materialized, and the tuple cursor survives a call
-    // that reaches either fixed budget.
-    while (!budgetExhausted) {
-      if (!canProcess()) {
-        budgetExhausted = true;
-        break;
+    try {
+      signal?.throwIfAborted();
+      await beforeReconciliation?.(signal);
+      signal?.throwIfAborted();
+      try {
+        metadataWatermark ??= metadataStore.getDocumentMetadataScanWatermark();
+      } catch (cause) {
+        throw inspectionError(cause);
       }
-      const page = (() => {
-        try {
-          return metadataStore.listDocumentMetadataCandidates(
-            cutoff,
-            Math.min(CLEANUP_PAGE_SIZE, V1_CLEANUP_ITEM_BUDGET - processedItems),
-            candidateCursor,
-            metadataWatermark
-          );
-        } catch (cause) {
-          throw inspectionError(cause);
+
+      try {
+        const remaining = V1_CLEANUP_ITEM_BUDGET - processedItems;
+        if (remaining < 1 || !canProcess()) {
+          budgetExhausted = true;
+        } else {
+          const staging: DocumentFileReconciliationResult =
+            await documentFileStore.reconcileDocumentFiles({
+              maxItems: remaining,
+              shouldContinue: () => canProcess() && signal?.aborted !== true,
+              ...(reconciliationCursor === undefined ? {} : { cursor: reconciliationCursor }),
+            });
+          processedItems += staging.processedItems;
+          removedStagedFiles += staging.stagedFilesRemoved;
+          removedReadReferences += staging.readReferencesRemoved;
+          removedFinalizationLocks += staging.finalizationLocksRemoved;
+          retainedEntries += staging.retainedEntries;
+          reconciliationCursor = staging.resumable ? staging.cursor : undefined;
+          budgetExhausted = staging.resumable;
         }
-      })();
-      if (page.rows.length === 0) {
-        candidateCursor = undefined;
-        break;
+      } catch (cause) {
+        signal?.throwIfAborted();
+        failures.push(failureFor("staging", cause));
+        retainedEntries += 1;
       }
 
-      let stoppedInPage = false;
-      for (const row of page.rows) {
+      const protectedFileIds = new Set<string>();
+
+      // The access-order index makes this the hot path: only a bounded page of
+      // stale rows is ever materialized, and the tuple cursor survives a call
+      // that reaches either fixed budget.
+      while (!budgetExhausted) {
         if (!canProcess()) {
           budgetExhausted = true;
-          stoppedInPage = true;
           break;
         }
-        candidateCursor = accessCursorFor(row);
-        protectedFileIds.add(row.id);
-        takeItem();
-        if (row.lastAccessedAt >= cutoff) {
-          continue;
+        const page = (() => {
+          try {
+            return metadataStore.listDocumentMetadataCandidates(
+              cutoff,
+              Math.min(CLEANUP_PAGE_SIZE, V1_CLEANUP_ITEM_BUDGET - processedItems),
+              candidateCursor,
+              metadataWatermark
+            );
+          } catch (cause) {
+            throw inspectionError(cause);
+          }
+        })();
+        if (page.rows.length === 0) {
+          candidateCursor = undefined;
+          break;
         }
 
-        try {
-          await beforeDocumentCleanup?.(row.id);
-          const file = await documentFileStore.getDocumentFileObservation(row.id);
-          let deletedMetadata: DocumentMetadata | undefined;
-          let removedMetadataRow = false;
-          const removedFile = await documentFileStore.deleteDocumentFileIf(
-            row.id,
-            (targetExists) => {
-              if (!targetExists) {
-                removedMetadataRow = metadataStore.deleteDocumentIfMatches(row);
-                return false;
+        let stoppedInPage = false;
+        for (const row of page.rows) {
+          signal?.throwIfAborted();
+          if (!canProcess()) {
+            budgetExhausted = true;
+            stoppedInPage = true;
+            break;
+          }
+          const previousCandidateCursor = candidateCursor;
+          candidateCursor = accessCursorFor(row);
+          protectedFileIds.add(row.id);
+          takeItem();
+          if (row.lastAccessedAt >= cutoff) {
+            continue;
+          }
+
+          try {
+            await beforeDocumentCleanup?.(row.id, signal);
+            signal?.throwIfAborted();
+            const file = await documentFileStore.getDocumentFileObservation(row.id);
+            let deletedMetadata: DocumentMetadata | undefined;
+            let removedMetadataRow = false;
+            const removedFile = await documentFileStore.deleteDocumentFileIf(
+              row.id,
+              (targetExists) => {
+                if (!targetExists) {
+                  removedMetadataRow = metadataStore.deleteDocumentIfMatches(row);
+                  return false;
+                }
+                // The target was absent during the observation. A newly
+                // published replacement must not be deleted by this old row.
+                if (file === undefined) {
+                  return false;
+                }
+                deletedMetadata = metadataStore.deleteDocumentIfLastAccessedBefore(row, cutoff);
+                return deletedMetadata !== undefined;
+              },
+              file?.identity
+            );
+            // Deletion and its metadata decision are one storage operation. Do
+            // not abort in the middle of it; cancellation is observed only once
+            // the pair has reached a safe boundary.
+            signal?.throwIfAborted();
+            if (deletedMetadata !== undefined || removedMetadataRow) {
+              removedDocuments += 1;
+              removedMetadataRows += 1;
+              if (removedFile) {
+                removedDocumentFiles += 1;
+                reclaimedBytes += bytesFor(file);
               }
-              // The target was absent during the observation. A newly
-              // published replacement must not be deleted by this old row.
-              if (file === undefined) {
+            }
+          } catch (cause) {
+            if (signal?.aborted) {
+              candidateCursor = previousCandidateCursor;
+            }
+            signal?.throwIfAborted();
+            failures.push(failureFor("document-file", cause, row.id));
+            retainedEntries += 1;
+          }
+        }
+        if (stoppedInPage) {
+          break;
+        }
+        if (!page.hasMore) {
+          candidateCursor = undefined;
+          break;
+        }
+      }
+
+      // Reconciliation uses bounded id pages rather than a full metadata map.
+      // It catches fresh metadata rows whose file disappeared and mismatched
+      // pairs, while stale retention remains driven by the indexed query above.
+      while (!budgetExhausted) {
+        if (!canProcess()) {
+          budgetExhausted = true;
+          break;
+        }
+        const page = (() => {
+          try {
+            return metadataStore.listDocumentMetadataPage(
+              Math.min(CLEANUP_PAGE_SIZE, V1_CLEANUP_ITEM_BUDGET - processedItems),
+              metadataCursor,
+              metadataWatermark
+            );
+          } catch (cause) {
+            throw inspectionError(cause);
+          }
+        })();
+        if (page.rows.length === 0) {
+          metadataCursor = undefined;
+          break;
+        }
+
+        let stoppedInPage = false;
+        for (const row of page.rows) {
+          signal?.throwIfAborted();
+          if (!canProcess()) {
+            budgetExhausted = true;
+            stoppedInPage = true;
+            break;
+          }
+          const previousMetadataCursor = metadataCursor;
+          metadataCursor = row.id;
+          protectedFileIds.add(row.id);
+          takeItem();
+          try {
+            const file = await documentFileStore.getDocumentFileObservation(row.id);
+            if (file === undefined) {
+              let removed = false;
+              await documentFileStore.deleteDocumentFileIf(row.id, (targetExists) => {
+                if (targetExists) {
+                  return false;
+                }
+                removed = metadataStore.deleteDocumentIfMatches(row);
                 return false;
+              });
+              if (removed) {
+                removedMetadataRows += 1;
               }
-              deletedMetadata = metadataStore.deleteDocumentIfLastAccessedBefore(row, cutoff);
-              return deletedMetadata !== undefined;
-            },
-            file?.identity
-          );
-          if (deletedMetadata !== undefined || removedMetadataRow) {
-            removedDocuments += 1;
-            removedMetadataRows += 1;
-            if (removedFile) {
+              continue;
+            }
+            if (row.size === file.size) {
+              continue;
+            }
+
+            let removed = false;
+            await documentFileStore.deleteDocumentFileIf(
+              row.id,
+              (targetExists) => {
+                if (!targetExists) {
+                  return false;
+                }
+                removed = metadataStore.deleteDocumentIfMatches(row);
+                return removed;
+              },
+              file.identity
+            );
+            if (removed) {
+              removedMetadataRows += 1;
               removedDocumentFiles += 1;
               reclaimedBytes += bytesFor(file);
             }
-          }
-        } catch (cause) {
-          failures.push(failureFor("document-file", cause, row.id));
-          retainedEntries += 1;
-        }
-      }
-      if (stoppedInPage) {
-        break;
-      }
-      if (!page.hasMore) {
-        candidateCursor = undefined;
-        break;
-      }
-    }
-
-    // Reconciliation uses bounded id pages rather than a full metadata map.
-    // It catches fresh metadata rows whose file disappeared and mismatched
-    // pairs, while stale retention remains driven by the indexed query above.
-    while (!budgetExhausted) {
-      if (!canProcess()) {
-        budgetExhausted = true;
-        break;
-      }
-      const page = (() => {
-        try {
-          return metadataStore.listDocumentMetadataPage(
-            Math.min(CLEANUP_PAGE_SIZE, V1_CLEANUP_ITEM_BUDGET - processedItems),
-            metadataCursor,
-            metadataWatermark
-          );
-        } catch (cause) {
-          throw inspectionError(cause);
-        }
-      })();
-      if (page.rows.length === 0) {
-        metadataCursor = undefined;
-        break;
-      }
-
-      let stoppedInPage = false;
-      for (const row of page.rows) {
-        if (!canProcess()) {
-          budgetExhausted = true;
-          stoppedInPage = true;
-          break;
-        }
-        metadataCursor = row.id;
-        protectedFileIds.add(row.id);
-        takeItem();
-        try {
-          const file = await documentFileStore.getDocumentFileObservation(row.id);
-          if (file === undefined) {
-            let removed = false;
-            await documentFileStore.deleteDocumentFileIf(row.id, (targetExists) => {
-              if (targetExists) {
-                return false;
-              }
-              removed = metadataStore.deleteDocumentIfMatches(row);
-              return false;
-            });
-            if (removed) {
-              removedMetadataRows += 1;
+          } catch (cause) {
+            if (signal?.aborted) {
+              metadataCursor = previousMetadataCursor;
             }
-            continue;
-          }
-          if (row.size === file.size) {
-            continue;
-          }
-
-          let removed = false;
-          await documentFileStore.deleteDocumentFileIf(
-            row.id,
-            (targetExists) => {
-              if (!targetExists) {
-                return false;
-              }
-              removed = metadataStore.deleteDocumentIfMatches(row);
-              return removed;
-            },
-            file.identity
-          );
-          if (removed) {
-            removedMetadataRows += 1;
-            removedDocumentFiles += 1;
-            reclaimedBytes += bytesFor(file);
-          }
-        } catch (cause) {
-          failures.push(failureFor("metadata", cause, row.id));
-          retainedEntries += 1;
-        }
-      }
-      if (stoppedInPage) {
-        break;
-      }
-      if (!page.hasMore) {
-        metadataCursor = undefined;
-        break;
-      }
-    }
-
-    // Physical orphan reconciliation also advances by an id cursor. A
-    // missing metadata lookup is re-proven while the target lock is held,
-    // retaining the same publication and active-read safety boundary.
-    while (!budgetExhausted) {
-      if (!canProcess()) {
-        budgetExhausted = true;
-        break;
-      }
-      const page = await (async () => {
-        try {
-          return await documentFileStore.listDocumentFilesPage(
-            Math.min(CLEANUP_PAGE_SIZE, V1_CLEANUP_ITEM_BUDGET - processedItems),
-            fileCursor,
-            fileWatermark
-          );
-        } catch (cause) {
-          throw inspectionError(cause);
-        }
-      })();
-      fileWatermark ??= page.watermark;
-      if (page.files.length === 0 && !page.hasMore) {
-        fileCursor = undefined;
-        fileWatermark = undefined;
-        break;
-      }
-
-      let stoppedInPage = false;
-      for (const file of page.files) {
-        if (!canProcess()) {
-          budgetExhausted = true;
-          stoppedInPage = true;
-          break;
-        }
-        fileCursor = file.id;
-        takeItem();
-        try {
-          if (protectedFileIds.has(file.id)) {
-            if (metadataStore.getDocumentMetadata(file.id) === undefined) {
-              retainedEntries += 1;
-            }
-            continue;
-          }
-          if (metadataStore.getDocumentMetadata(file.id) !== undefined) {
-            continue;
-          }
-          if (!isOldEnoughOrphan(file, currentTime)) {
+            signal?.throwIfAborted();
+            failures.push(failureFor("metadata", cause, row.id));
             retainedEntries += 1;
-            continue;
           }
-          const removed = await documentFileStore.deleteDocumentFileIf(
-            file.id,
-            (targetExists) => {
-              if (!targetExists) {
-                return false;
-              }
-              if (metadataStore.getDocumentMetadata(file.id) !== undefined) {
-                return false;
-              }
-              return true;
-            },
-            file.identity
-          );
-          if (removed) {
-            removedDocumentFiles += 1;
-            reclaimedBytes += file.size;
-          }
-        } catch (cause) {
-          failures.push(failureFor("document-file", cause, file.id));
-          retainedEntries += 1;
+        }
+        if (stoppedInPage) {
+          break;
+        }
+        if (!page.hasMore) {
+          metadataCursor = undefined;
+          break;
         }
       }
-      if (stoppedInPage) {
-        break;
-      }
-      if (!page.hasMore) {
-        fileCursor = undefined;
-        fileWatermark = undefined;
-        break;
-      }
-      // If a directory race caused a page to contain no regular files, use
-      // the name boundary examined by the store rather than looping forever.
-      fileCursor = page.nextId ?? fileCursor;
-    }
 
-    const resumable =
-      budgetExhausted ||
-      candidateCursor !== undefined ||
-      metadataCursor !== undefined ||
-      fileCursor !== undefined ||
-      fileWatermark !== undefined ||
-      reconciliationCursor !== undefined;
-    if (!resumable) {
-      // A completed pass must take a fresh watermark next time. Keeping an old
-      // rowid watermark would permanently hide rows inserted after this pass.
-      metadataWatermark = undefined;
-      fileWatermark = undefined;
+      // Physical orphan reconciliation also advances by an id cursor. A
+      // missing metadata lookup is re-proven while the target lock is held,
+      // retaining the same publication and active-read safety boundary.
+      while (!budgetExhausted) {
+        if (!canProcess()) {
+          budgetExhausted = true;
+          break;
+        }
+        const page = await (async () => {
+          try {
+            return await documentFileStore.listDocumentFilesPage(
+              Math.min(CLEANUP_PAGE_SIZE, V1_CLEANUP_ITEM_BUDGET - processedItems),
+              fileCursor,
+              fileWatermark
+            );
+          } catch (cause) {
+            throw inspectionError(cause);
+          }
+        })();
+        fileWatermark ??= page.watermark;
+        if (page.files.length === 0 && !page.hasMore) {
+          fileCursor = undefined;
+          fileWatermark = undefined;
+          break;
+        }
+
+        let stoppedInPage = false;
+        for (const file of page.files) {
+          signal?.throwIfAborted();
+          if (!canProcess()) {
+            budgetExhausted = true;
+            stoppedInPage = true;
+            break;
+          }
+          const previousFileCursor = fileCursor;
+          fileCursor = file.id;
+          takeItem();
+          try {
+            if (protectedFileIds.has(file.id)) {
+              if (metadataStore.getDocumentMetadata(file.id) === undefined) {
+                retainedEntries += 1;
+              }
+              continue;
+            }
+            if (metadataStore.getDocumentMetadata(file.id) !== undefined) {
+              continue;
+            }
+            if (!isOldEnoughOrphan(file, currentTime)) {
+              retainedEntries += 1;
+              continue;
+            }
+            const removed = await documentFileStore.deleteDocumentFileIf(
+              file.id,
+              (targetExists) => {
+                if (!targetExists) {
+                  return false;
+                }
+                if (metadataStore.getDocumentMetadata(file.id) !== undefined) {
+                  return false;
+                }
+                return true;
+              },
+              file.identity
+            );
+            if (removed) {
+              removedDocumentFiles += 1;
+              reclaimedBytes += file.size;
+            }
+          } catch (cause) {
+            if (signal?.aborted) {
+              fileCursor = previousFileCursor;
+            }
+            signal?.throwIfAborted();
+            failures.push(failureFor("document-file", cause, file.id));
+            retainedEntries += 1;
+          }
+        }
+        if (stoppedInPage) {
+          break;
+        }
+        if (!page.hasMore) {
+          fileCursor = undefined;
+          fileWatermark = undefined;
+          break;
+        }
+        // If a directory race caused a page to contain no regular files, use
+        // the name boundary examined by the store rather than looping forever.
+        fileCursor = page.nextId ?? fileCursor;
+      }
+
+      return makeResult();
+    } catch (cause) {
+      if (signal?.aborted) {
+        // A cancellation is a bounded pause, not a completed pass. The active
+        // row cursor is restored by its phase before cancellation escapes, so
+        // the next call rechecks that row instead of skipping it.
+        return makeResult(true);
+      }
+      throw cause;
     }
-    return Object.freeze({
-      now: currentTime,
-      cutoff,
-      removedDocuments,
-      removedDocumentFiles,
-      removedMetadataRows,
-      removedStagedFiles,
-      removedReadReferences,
-      removedFinalizationLocks,
-      reclaimedBytes,
-      retainedEntries,
-      processedItems,
-      resumable,
-      failures: Object.freeze(failures),
-    });
   };
 
-  const clean = () => {
+  const clean = (signal?: AbortSignal) => {
     if (running === undefined) {
-      running = run().finally(() => {
+      running = run(signal).finally(() => {
         running = undefined;
       });
     }

@@ -19,6 +19,7 @@ import {
   DocumentFileNotRegularError,
   type DocumentFileReadLease,
   type DocumentFileResourceState,
+  DocumentFileSourceError,
   type DocumentFileStore,
   DocumentFileStoreClosedError,
   DocumentFileStoreOpenError,
@@ -115,7 +116,8 @@ export type DocumentPublicationCoordinatorOptions = {
   /** A bounded, streaming size seam also makes read failures directly testable. */
   readonly readPublishedSize?: (
     id: DocumentId,
-    documentFileStore: DocumentFileStore
+    documentFileStore: DocumentFileStore,
+    signal?: AbortSignal
   ) => Promise<number>;
 };
 
@@ -131,8 +133,14 @@ export interface MetadataGatedDocumentReader {
 }
 
 export interface DocumentPublicationCoordinator extends MetadataGatedDocumentReader {
-  readonly publish: (sourcePath: string) => Promise<DocumentPublicationResult>;
-  readonly publishDocument: (sourcePath: string) => Promise<DocumentPublicationResult>;
+  readonly publish: (
+    sourcePath: string,
+    signal?: AbortSignal
+  ) => Promise<DocumentPublicationResult>;
+  readonly publishDocument: (
+    sourcePath: string,
+    signal?: AbortSignal
+  ) => Promise<DocumentPublicationResult>;
 }
 
 const DEFAULT_MAX_ATTEMPTS = 8;
@@ -205,10 +213,18 @@ const defaultIsMetadataUniquenessCollision = (error: unknown) => {
   );
 };
 
-const defaultReadPublishedSize = async (id: DocumentId, documentFileStore: DocumentFileStore) => {
+const defaultReadPublishedSize = async (
+  id: DocumentId,
+  documentFileStore: DocumentFileStore,
+  signal?: AbortSignal
+) => {
+  signal?.throwIfAborted();
   const stream = await documentFileStore.readDocumentFile(id);
+  const onAbort = () => stream.destroy(signal?.reason);
+  signal?.addEventListener("abort", onAbort, { once: true });
   let size = 0;
   try {
+    signal?.throwIfAborted();
     for await (const chunk of stream) {
       const chunkSize =
         typeof chunk === "string"
@@ -225,6 +241,7 @@ const defaultReadPublishedSize = async (id: DocumentId, documentFileStore: Docum
       }
     }
   } finally {
+    signal?.removeEventListener("abort", onAbort);
     stream.destroy();
   }
   return validateSourceFileSize(size);
@@ -240,7 +257,8 @@ const stageFailureHasNoUnidentifiedArtifact = (cause: unknown) =>
   cause instanceof DocumentFileNotRegularError ||
   cause instanceof DocumentFileStoreClosedError ||
   cause instanceof DocumentFileStoreOpenError ||
-  cause instanceof DocumentFileStorePathError;
+  cause instanceof DocumentFileStorePathError ||
+  (cause instanceof DocumentFileSourceError && cause.cleanupCause === undefined);
 
 const cleanupCauseFor = (errors: readonly unknown[]) => {
   if (errors.length === 0) {
@@ -354,7 +372,8 @@ export const createDocumentPublicationCoordinator = (
       randomBytes === undefined ? generateDocumentId() : generateDocumentId({ randomBytes }));
   const reader = createMetadataGatedDocumentReader({ documentFileStore, metadataStore });
 
-  const publish = async (sourcePath: string) => {
+  const publish = async (sourcePath: string, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
     // This map is intentionally created per call. A coordinator can be reused
     // and concurrent calls must never compensate one another's handles.
     const ownedHandles = new Map<string, OwnedHandleState>();
@@ -658,7 +677,8 @@ export const createDocumentPublicationCoordinator = (
 
     try {
       try {
-        snapshotHandle = await documentFileStore.stageSourceFile(sourcePath);
+        signal?.throwIfAborted();
+        snapshotHandle = await documentFileStore.stageSourceFile(sourcePath, signal);
         rememberHandle(snapshotHandle);
       } catch (cause) {
         // A generic adapter failure has no typed boundary telling us whether
@@ -673,6 +693,7 @@ export const createDocumentPublicationCoordinator = (
 
       let lastRetryCause: unknown = new Error("All publication ids were occupied.");
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        signal?.throwIfAborted();
         let id: DocumentId;
         try {
           id = validateDocumentId(nextId());
@@ -698,6 +719,7 @@ export const createDocumentPublicationCoordinator = (
 
         let attemptHandle: StagedDocumentFileHandle;
         try {
+          signal?.throwIfAborted();
           attemptHandle = await documentFileStore.cloneStagedFile(snapshotHandle);
           if (attemptHandle === snapshotHandle) {
             throw new Error("The staged-file clone must return an independent handle.");
@@ -745,6 +767,11 @@ export const createDocumentPublicationCoordinator = (
         let targetCapability: DocumentFileTargetCapability | undefined;
         let targetRecoveryPolicy: DocumentFileTargetRecoveryPolicy = "delete";
         try {
+          // Once finalization starts, let the storage coordinator complete its
+          // atomic file boundary. Cancellation is safe before this point, but
+          // interrupting it after the hard-link would require guessing which
+          // side of the publication boundary won.
+          signal?.throwIfAborted();
           targetCapability = await documentFileStore.finalizeStagedFile(attemptHandle, id);
           targetState = "retained";
           targetLockStates.delete(id);
@@ -822,7 +849,8 @@ export const createDocumentPublicationCoordinator = (
 
         let size: number;
         try {
-          size = await readPublishedSize(id, documentFileStore);
+          size = await readPublishedSize(id, documentFileStore, signal);
+          signal?.throwIfAborted();
         } catch (cause) {
           await compensate(id, {
             targetState: "retained",
@@ -853,6 +881,11 @@ export const createDocumentPublicationCoordinator = (
         }
 
         try {
+          // The file is durable, but the metadata row is the visibility
+          // boundary. Recheck cancellation immediately before committing it;
+          // an abort observed after this point cannot safely retract a commit
+          // without an ownership token.
+          signal?.throwIfAborted();
           metadataStore.insertDocumentMetadata(metadata);
         } catch (cause) {
           let uniquenessCollision = false;
