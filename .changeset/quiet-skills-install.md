@@ -1,5 +1,5 @@
 ---
-"planview": patch
+"@abijith-suresh/planview": patch
 ---
 
 Add bundled `planview` and `create-html` Agent Skills with a safe

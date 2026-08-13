@@ -135,6 +135,7 @@ export type DocumentFileObservation = Readonly<{
 
 export type DocumentFileReconciliationResult = Readonly<{
   readonly stagedFilesRemoved: number;
+  readonly readReferencesRemoved: number;
   readonly finalizationLocksRemoved: number;
   readonly retainedEntries: number;
 }>;
@@ -1214,13 +1215,25 @@ const acquireFinalizationLock = async (
 
 const readReferenceName = (id: string, token: string) => `${READ_REFERENCE_PREFIX}${id}.${token}`;
 
-const readReferenceParts = (entry: string, id: string) => {
-  const prefix = `${READ_REFERENCE_PREFIX}${id}.`;
-  if (!entry.startsWith(prefix)) {
+const readReferenceEntry = (entry: string) => {
+  if (!entry.startsWith(READ_REFERENCE_PREFIX)) {
     return undefined;
   }
-  const token = entry.slice(prefix.length);
-  return READ_REFERENCE_TOKEN_PATTERN.test(token) ? token : undefined;
+  const remainder = entry.slice(READ_REFERENCE_PREFIX.length);
+  const separator = remainder.lastIndexOf(".");
+  if (separator <= 0) {
+    return undefined;
+  }
+  const id = remainder.slice(0, separator);
+  const token = remainder.slice(separator + 1);
+  return /^[A-Za-z0-9_-]{21}$/.test(id) && READ_REFERENCE_TOKEN_PATTERN.test(token)
+    ? { id, token }
+    : undefined;
+};
+
+const readReferenceParts = (entry: string, id: string) => {
+  const reference = readReferenceEntry(entry);
+  return reference?.id === id ? reference.token : undefined;
 };
 
 const parseReadReferenceMetadata = (value: unknown): ReadReferenceMetadata | undefined => {
@@ -2782,11 +2795,15 @@ const createStore = ({
       ensureTrustedRoots();
       const entries = await readdir(entryPath(stagingDir, ""));
       let stagedFilesRemoved = 0;
+      let readReferencesRemoved = 0;
       let finalizationLocksRemoved = 0;
       let retainedEntries = 0;
       const handledLocks = new Set<string>();
       for (const entry of entries) {
         if (isValidStagedHandle(entry)) {
+          continue;
+        }
+        if (readReferenceEntry(entry) !== undefined) {
           continue;
         }
         if (entry.startsWith(".") && entry.endsWith(".lock")) {
@@ -2804,6 +2821,49 @@ const createStore = ({
           }
         }
         retainedEntries += 1;
+      }
+
+      let removedReadReference = false;
+      for (const entry of entries) {
+        if (readReferenceEntry(entry) === undefined) {
+          continue;
+        }
+        const path = entryPath(stagingDir, entry);
+        try {
+          const observation = await readReadReference(path);
+          if (
+            observation === undefined ||
+            observation.metadata.owner.host !== LOCAL_HOSTNAME ||
+            isProcessAlive(observation.metadata.owner.pid)
+          ) {
+            // Malformed markers, foreign owners, and live local owners are
+            // retained. Only a marker whose local owner is definitely dead
+            // can be reclaimed after a crashed read.
+            retainedEntries += 1;
+            continue;
+          }
+          const fresh = await readReadReference(path);
+          if (
+            fresh === undefined ||
+            !sameFileIdentity(observation.identity, fresh.identity) ||
+            fresh.metadata.owner.host !== LOCAL_HOSTNAME ||
+            fresh.metadata.owner.pid !== observation.metadata.owner.pid ||
+            fresh.metadata.acquiredAt !== observation.metadata.acquiredAt ||
+            isProcessAlive(fresh.metadata.owner.pid)
+          ) {
+            retainedEntries += 1;
+            continue;
+          }
+          if (await discardEntry(stagingDir, entry, fresh.identity)) {
+            readReferencesRemoved += 1;
+            removedReadReference = true;
+          }
+        } catch {
+          retainedEntries += 1;
+        }
+      }
+      if (removedReadReference) {
+        await syncDirectory(stagingDir);
       }
 
       for (const entry of entries) {
@@ -2911,6 +2971,7 @@ const createStore = ({
 
       return {
         stagedFilesRemoved,
+        readReferencesRemoved,
         finalizationLocksRemoved,
         retainedEntries,
       } satisfies DocumentFileReconciliationResult;

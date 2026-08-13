@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -141,6 +142,30 @@ test("public configuration fixes 4777, while test injection is explicit and cont
     );
   } finally {
     rmSync(fixture, { force: true, recursive: true });
+  }
+});
+
+test("a detached child failure is observed and the starter releases its lifecycle lock", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-start-failure-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const config = daemon.resolveDaemonConfigForTest({
+    appDataDir,
+    runtimeDir,
+    port: await freePort(),
+  });
+
+  try {
+    await assert.rejects(
+      daemon.startDetachedDaemon(config, {
+        daemonScriptPath: join(fixture, "missing-daemon-entry.js"),
+      }),
+      (error) =>
+        error?._tag === "DaemonRequestError" && /failed before readiness/.test(error.message)
+    );
+    assert.equal(existsSync(join(runtimeDir, daemon.DAEMON_LOCK_NAME)), false);
+  } finally {
+    await removeFixture(fixture);
   }
 });
 

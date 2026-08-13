@@ -27,7 +27,7 @@ const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 
 const packageVersion = packageJson.version;
-if (packageJson.name !== "planview" || !SEMVER_PATTERN.test(packageVersion)) {
+if (packageJson.name !== "@abijith-suresh/planview" || !SEMVER_PATTERN.test(packageVersion)) {
   throw new Error(`Invalid planview package metadata version: ${JSON.stringify(packageVersion)}`);
 }
 
@@ -164,6 +164,11 @@ export class SkillsCommandError extends Data.TaggedError("SkillsCommandError")<{
   readonly message: string;
 }> {}
 
+export class OutputCommandError extends Data.TaggedError("OutputCommandError")<{
+  readonly cause: unknown;
+  readonly message: string;
+}> {}
+
 export type CliError =
   | UnknownOptionError
   | UnknownCommandError
@@ -171,7 +176,8 @@ export type CliError =
   | DaemonCommandError
   | PublishCommandError
   | GetCommandError
-  | SkillsCommandError;
+  | SkillsCommandError
+  | OutputCommandError;
 
 const COMMANDS = [
   "publish",
@@ -309,10 +315,11 @@ const runDaemonCommand = (
           result.result.removedDocumentFiles === 0 &&
           result.result.removedMetadataRows === 0 &&
           result.result.removedStagedFiles === 0 &&
+          result.result.removedReadReferences === 0 &&
           result.result.removedFinalizationLocks === 0 &&
           result.result.retainedEntries === 0
             ? "Planview cleanup found no expired or inconsistent snapshots."
-            : `Planview cleanup removed ${result.result.removedDocuments} expired snapshot${result.result.removedDocuments === 1 ? "" : "s"}, reconciled ${result.result.removedMetadataRows} metadata row${result.result.removedMetadataRows === 1 ? "" : "s"} and ${result.result.removedDocumentFiles} document file${result.result.removedDocumentFiles === 1 ? "" : "s"}, reclaimed ${result.result.reclaimedBytes} bytes, and removed ${result.result.removedStagedFiles} staged file${result.result.removedStagedFiles === 1 ? "" : "s"} and ${result.result.removedFinalizationLocks} finalization lock${result.result.removedFinalizationLocks === 1 ? "" : "s"}.`;
+            : `Planview cleanup removed ${result.result.removedDocuments} expired snapshot${result.result.removedDocuments === 1 ? "" : "s"}, reconciled ${result.result.removedMetadataRows} metadata row${result.result.removedMetadataRows === 1 ? "" : "s"} and ${result.result.removedDocumentFiles} document file${result.result.removedDocumentFiles === 1 ? "" : "s"}, reclaimed ${result.result.reclaimedBytes} bytes, and removed ${result.result.removedStagedFiles} staged file${result.result.removedStagedFiles === 1 ? "" : "s"}, ${result.result.removedReadReferences} crashed-read marker${result.result.removedReadReferences === 1 ? "" : "s"}, and ${result.result.removedFinalizationLocks} finalization lock${result.result.removedFinalizationLocks === 1 ? "" : "s"}.`;
         const retained = result.result.retainedEntries;
         await stdout(
           `${summary}${retained === 0 ? "" : ` ${retained} state${retained === 1 ? "" : "s"} retained for retry.`}\n`
@@ -361,7 +368,7 @@ const parseDocumentReference = (reference: string, port: number) => {
 };
 
 export const parseGetReference = (reference: string, port = V1_PORT) =>
-  parseDocumentReference(reference, port);
+  String(parseDocumentReference(reference, port));
 
 const command = (
   args: readonly string[],
@@ -371,9 +378,16 @@ const command = (
 
   if (argument === undefined) {
     const output = formatHelp();
-    return Effect.sync(() => {
-      stdout(output);
-      return 0;
+    return Effect.tryPromise({
+      try: async () => {
+        await stdout(output);
+        return 0;
+      },
+      catch: (cause) =>
+        new OutputCommandError({
+          cause,
+          message: `Could not write command output: ${describe(cause)}`,
+        }),
     });
   }
 
@@ -389,9 +403,16 @@ const command = (
     }
 
     const output = argument === "--version" || argument === "-v" ? formatVersion() : formatHelp();
-    return Effect.sync(() => {
-      stdout(output);
-      return 0;
+    return Effect.tryPromise({
+      try: async () => {
+        await stdout(output);
+        return 0;
+      },
+      catch: (cause) =>
+        new OutputCommandError({
+          cause,
+          message: `Could not write command output: ${describe(cause)}`,
+        }),
     });
   }
 
@@ -485,6 +506,7 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
         "PublishCommandError",
         "GetCommandError",
         "SkillsCommandError",
+        "OutputCommandError",
       ],
       () => Effect.succeed(1)
     )
@@ -492,7 +514,7 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
 
 export const main = (args = process.argv.slice(2), stdout = writeStdout, stderr = writeStderr) => {
   const program = boundary(run(args, stdout, stderr));
-  return isCommand(args[0]) ? Effect.runPromise(program) : Effect.runSync(program);
+  return Effect.runPromise(program);
 };
 
 const isMain = (() => {

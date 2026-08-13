@@ -197,6 +197,26 @@ test("startup reconciliation removes orphan files, missing rows, mismatches, and
     }
   ));
 
+test("reconciles read markers left by a crashed local reader", () =>
+  withEnvironment(async ({ documentFileStore, stagingDir }) => {
+    const documentId = id("r");
+    const token = "a".repeat(22);
+    const marker = join(stagingDir, `.read.${documentId}.${token}`);
+    await writeFile(
+      marker,
+      JSON.stringify({
+        version: 1,
+        owner: { pid: 99_999_999, host: hostname() },
+        acquiredAt: DAY,
+      })
+    );
+
+    const result = await documentFileStore.reconcileDocumentFiles();
+    assert.equal(result.readReferencesRemoved, 1);
+    assert.equal(result.retainedEntries, 0);
+    assert.deepEqual(await readdir(stagingDir), []);
+  }));
+
 test("rechecks fresh and stale lock state and reports only removed locks", () =>
   withEnvironment(async ({ documentFileStore, stagingDir }) => {
     const now = DAY;

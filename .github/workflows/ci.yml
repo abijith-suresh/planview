@@ -15,6 +15,67 @@ permissions:
   contents: read
 
 jobs:
+  workflow-lint:
+    name: GitHub Actions workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Run actionlint
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+
+  changeset-presence:
+    name: Require a CLI patch Changeset
+    if: >-
+      github.event_name == 'pull_request' &&
+      !(
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.head.ref == 'changeset-release/main'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the complete pull request history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Node.js from repository version file
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install exact npm from package metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          package_manager="$(node --print "require('./package.json').packageManager ?? ''")"
+          if [[ ! "$package_manager" =~ ^npm@[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "package.json must declare an exact npm packageManager as npm@major.minor.patch" >&2
+            exit 1
+          fi
+          npm install --global "$package_manager"
+
+      - name: Install Changesets parser without lifecycle scripts
+        run: npm ci --ignore-scripts
+
+      - name: Check releasable CLI paths
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run changeset:check
+
   npm-quality:
     name: npm quality (Node 24)
     runs-on: ubuntu-latest
@@ -92,7 +153,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm pack --workspace planview --pack-destination "$RUNNER_TEMP" --json > "$RUNNER_TEMP/pack.json"
+          npm pack --workspace @abijith-suresh/planview --pack-destination "$RUNNER_TEMP" --json > "$RUNNER_TEMP/pack.json"
           tarball="$(node --input-type=module -e '
             import { readFileSync } from "node:fs";
             const packages = JSON.parse(readFileSync(process.argv[1], "utf8"));

@@ -120,6 +120,10 @@ const assertHomepage = (output, expectedBase) => {
   const html = readFileSync(homepage, "utf8");
   assert.ok(html.includes("Planview"));
   assert.ok(html.includes("immutable localhost URL"));
+  assert.ok(html.includes("loopback-only localhost address"));
+  assert.ok(html.includes("30-day last-access policy"));
+  assert.equal(html.includes("share on your network"), false);
+  assert.equal(html.includes("permanent address"), false);
   assertSiteBasics(html);
   assertStylesheetAndInternalLinks(html, output, expectedBase);
   assertSkipLinkStyles(output);

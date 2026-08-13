@@ -49,6 +49,7 @@ export const DAEMON_DESCRIPTOR_NAME = "daemon.json";
 export const DAEMON_LOCK_NAME = "lifecycle.lock";
 export const DAEMON_SECRET_HEADER = "x-planview-secret";
 export const DAEMON_READY_PATH = "/__planview/ready";
+const DAEMON_STARTUP_ACK_PATH = "/__planview/startup-ack";
 export const DAEMON_STATUS_PATH = "/__planview/status";
 export const DAEMON_SHUTDOWN_PATH = "/__planview/shutdown";
 export const DAEMON_PUBLISH_PATH = "/__planview/publish";
@@ -241,7 +242,6 @@ const publishRequestTimeout = (sourceSizeBytes: number | undefined) => {
 type LifecycleLock = Readonly<{
   readonly token: string;
   readonly release: () => Promise<void>;
-  readonly handoff: () => void;
 }>;
 
 const describe = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
@@ -674,7 +674,15 @@ const isRecoverableLock = (observation: LockObservation, existing: unknown) => {
 };
 
 const releaseLock = (lockPath: string, token: string) => async () => {
-  const observation = await readObservation(lockPath, 16 * 1024);
+  let observation: FileObservation | undefined;
+  try {
+    observation = await readObservation(lockPath, 16 * 1024);
+  } catch (cause) {
+    if (isNotFound(cause)) {
+      return;
+    }
+    throw cause;
+  }
   if (observation === undefined) {
     return;
   }
@@ -709,20 +717,12 @@ const createLock = async (
       await file.writeFile(JSON.stringify(descriptor), "utf8");
       await file.sync();
       await file.close();
-      let handedOff = false;
       return {
         token,
-        release: async () => {
-          // Once a detached daemon has been spawned, the daemon owns the
-          // pathname. The starter must not race its adoption by unlinking the
-          // lock after a crash or a startup timeout.
-          if (!handedOff) {
-            await releaseLock(lockPath, token)();
-          }
-        },
-        handoff: () => {
-          handedOff = true;
-        },
+        // The token identity makes this cleanup safe after adoption: once the
+        // daemon transfers the lock, this token no longer matches and the
+        // starter cannot unlink the daemon's lock.
+        release: releaseLock(lockPath, token),
       } satisfies LifecycleLock;
     } catch (cause) {
       const createdLock = file !== undefined;
@@ -822,7 +822,6 @@ const adoptLock = async (paths: DaemonPaths, token: string) => {
   return {
     token: adoptedToken,
     release: releaseLock(paths.lockPath, adoptedToken),
-    handoff: () => undefined,
   } satisfies LifecycleLock;
 };
 
@@ -1003,6 +1002,7 @@ const createOperationGate = () => {
 
 const PRIVATE_MANAGEMENT_PATHS = new Set([
   DAEMON_READY_PATH,
+  DAEMON_STARTUP_ACK_PATH,
   DAEMON_STATUS_PATH,
   DAEMON_SHUTDOWN_PATH,
   DAEMON_PUBLISH_PATH,
@@ -1086,7 +1086,8 @@ const handleRequest = async (
   metadataStore: MetadataStore,
   runCleanup: () => Promise<DocumentCleanupResult>,
   isReady: () => boolean,
-  operationGate: OperationGate
+  operationGate: OperationGate,
+  acknowledgeStartup: () => void
 ) => {
   let url: string;
   try {
@@ -1158,6 +1159,11 @@ const handleRequest = async (
       return;
     }
     response(res, 200, JSON.stringify({ ready: true, ...statusPayload(descriptor) }));
+    return;
+  }
+  if (url === DAEMON_STARTUP_ACK_PATH && request.method === "POST") {
+    response(res, 202, JSON.stringify({ acknowledged: true }));
+    acknowledgeStartup();
     return;
   }
   if ((url === DAEMON_STATUS_PATH || url === "/internal/status") && request.method === "GET") {
@@ -1235,7 +1241,8 @@ const createDaemonServer = (
   metadataStore: MetadataStore,
   runCleanup: () => Promise<DocumentCleanupResult>,
   isReady: () => boolean,
-  operationGate: OperationGate
+  operationGate: OperationGate,
+  acknowledgeStartup: () => void
 ) => {
   const server = import("node:http").then(({ createServer }) => {
     const connections = new Set<Socket>();
@@ -1249,7 +1256,8 @@ const createDaemonServer = (
         metadataStore,
         runCleanup,
         isReady,
-        operationGate
+        operationGate,
+        acknowledgeStartup
       ).catch((cause) => {
         if (!res.headersSent) {
           response(res, 500, JSON.stringify({ error: "internal_error" }));
@@ -1274,6 +1282,13 @@ const openDaemon = async (config: DaemonConfig) => {
   await ensureRuntimeContained(paths);
 
   const delegatedToken = process.env[LIFECYCLE_TOKEN_ENV];
+  let acknowledgeStartup = () => {};
+  const startupAcknowledgement =
+    delegatedToken === undefined
+      ? Promise.resolve()
+      : new Promise<void>((resolvePromise) => {
+          acknowledgeStartup = resolvePromise;
+        });
   const lock =
     delegatedToken === undefined ? await createLock(paths) : await adoptLock(paths, delegatedToken);
   if (delegatedToken !== undefined && isTestProcess()) {
@@ -1341,7 +1356,8 @@ const openDaemon = async (config: DaemonConfig) => {
       metadataStore,
       runCleanup,
       () => startupReady,
-      operationGate
+      operationGate,
+      acknowledgeStartup
     );
     server = daemonServer.server;
     connections = daemonServer.connections;
@@ -1360,6 +1376,10 @@ const openDaemon = async (config: DaemonConfig) => {
       void runCleanup().catch(() => undefined);
     }, DAEMON_CLEANUP_INTERVAL_MS);
     cleanupTimer.unref();
+    // A detached starter must observe readiness before another lifecycle
+    // operation can stop this child. If the starter crashes, the bounded
+    // fallback releases the lock without stranding future operations.
+    await Promise.race([startupAcknowledgement, wait(DAEMON_STARTUP_GRACE_MS)]);
     await lock.release();
     const runningServer = server;
     const runningConnections = connections;
@@ -1603,6 +1623,11 @@ const requestReady = async (descriptor: RuntimeDescriptor) => {
   return parseResponse<Record<string, unknown>>(answer, DAEMON_READY_PATH, 200);
 };
 
+const acknowledgeDaemonStartup = async (descriptor: RuntimeDescriptor) => {
+  const answer = await request(descriptor, "POST", DAEMON_STARTUP_ACK_PATH);
+  return parseResponse<Record<string, unknown>>(answer, DAEMON_STARTUP_ACK_PATH, 202);
+};
+
 const requestClean = async (descriptor: RuntimeDescriptor, timeoutMs: number) => {
   const answer = await request(descriptor, "POST", DAEMON_CLEAN_PATH, undefined, timeoutMs);
   return parseResponse<Record<string, unknown>>(answer, DAEMON_CLEAN_PATH, 200);
@@ -1683,41 +1708,96 @@ const estimateCleanupTimeout = (config: DaemonConfig) => {
   }
 };
 
-const waitForReady = async (config: DaemonConfig, timeoutMs = STARTUP_TIMEOUT_MS) => {
+const waitForReady = async (
+  config: DaemonConfig,
+  timeoutMs = STARTUP_TIMEOUT_MS,
+  child?: import("node:child_process").ChildProcess
+) => {
   const paths = resolveDaemonPaths(config);
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const descriptor = await readDaemonDescriptor(paths);
-    if (descriptor !== undefined) {
-      assertDescriptorEndpoint(config, descriptor, paths.descriptorPath);
-      try {
-        const ready = await requestReady(descriptor);
-        const readyHost = isRecord(ready) ? recordValue(ready, "host") : undefined;
-        const readyPort = isRecord(ready) ? recordValue(ready, "port") : undefined;
-        if (typeof readyHost !== "string" || typeof readyPort !== "number") {
-          throw new DaemonRequestError({
-            path: DAEMON_READY_PATH,
-            cause: ready,
-            message: `The daemon returned an invalid endpoint for ${DAEMON_READY_PATH}.`,
-          });
-        }
-        assertDescriptorEndpoint(config, { host: readyHost, port: readyPort }, DAEMON_READY_PATH);
-        return { state: "running", descriptor, reused: false };
-      } catch (cause) {
-        if (cause instanceof DaemonDescriptorEndpointMismatchError) {
-          throw cause;
-        }
-        // The listener can be accepting connections a few milliseconds before
-        // the readiness response is observable. Keep polling within the bound.
-      }
+  let readinessObserved = false;
+  let startupFailure: DaemonRequestError | undefined;
+  let rejectChildFailure: ((error: DaemonRequestError) => void) | undefined;
+  const childFailure =
+    child === undefined
+      ? undefined
+      : new Promise<never>((_, reject) => {
+          rejectChildFailure = reject;
+        });
+  const failForChild = (cause: unknown) => {
+    if (readinessObserved || startupFailure !== undefined) {
+      return;
     }
-    // A descriptor may disappear after this child becomes ready when a
-    // concurrent lifecycle operation immediately performs its own restart.
-    // Continue to the bounded deadline and observe the next descriptor rather
-    // than misclassifying that normal handoff as this startup's failure. Do not
-    // probe the port here: an in-flight startup owns it and a second probe must
-    // never classify it as an unknown process.
-    await wait(STARTUP_POLL_MS);
+    startupFailure = new DaemonRequestError({
+      path: DAEMON_READY_PATH,
+      cause,
+      message: `The detached Planview daemon failed before readiness: ${describe(cause)}`,
+    });
+    rejectChildFailure?.(startupFailure);
+  };
+  const onChildError = (cause: Error) => failForChild(cause);
+  const onChildExit = (code: number | null, signal: NodeJS.Signals | null) =>
+    failForChild(
+      new Error(
+        signal === null
+          ? `The detached daemon exited with code ${code ?? 0}.`
+          : `The detached daemon exited after signal ${signal}.`
+      )
+    );
+  const raceWithChild = <Value>(operation: Promise<Value>) => {
+    if (childFailure === undefined) {
+      return operation;
+    }
+    return Promise.race([operation, childFailure]);
+  };
+
+  child?.once("error", onChildError);
+  child?.once("exit", onChildExit);
+  if (child !== undefined && (child.exitCode !== null || child.signalCode !== null)) {
+    onChildExit(child.exitCode, child.signalCode);
+  }
+  try {
+    while (Date.now() < deadline) {
+      const descriptor = await raceWithChild(readDaemonDescriptor(paths));
+      if (descriptor !== undefined) {
+        assertDescriptorEndpoint(config, descriptor, paths.descriptorPath);
+        try {
+          const ready = await raceWithChild(requestReady(descriptor));
+          const readyHost = isRecord(ready) ? recordValue(ready, "host") : undefined;
+          const readyPort = isRecord(ready) ? recordValue(ready, "port") : undefined;
+          if (typeof readyHost !== "string" || typeof readyPort !== "number") {
+            throw new DaemonRequestError({
+              path: DAEMON_READY_PATH,
+              cause: ready,
+              message: `The daemon returned an invalid endpoint for ${DAEMON_READY_PATH}.`,
+            });
+          }
+          assertDescriptorEndpoint(config, { host: readyHost, port: readyPort }, DAEMON_READY_PATH);
+          await raceWithChild(acknowledgeDaemonStartup(descriptor));
+          readinessObserved = true;
+          return { state: "running", descriptor, reused: false };
+        } catch (cause) {
+          if (startupFailure !== undefined) {
+            throw startupFailure;
+          }
+          if (cause instanceof DaemonDescriptorEndpointMismatchError) {
+            throw cause;
+          }
+          // The listener can be accepting connections a few milliseconds before
+          // the readiness response is observable. Keep polling within the bound.
+        }
+      }
+      // A descriptor may disappear after this child becomes ready when a
+      // concurrent lifecycle operation immediately performs its own restart.
+      // Continue to the bounded deadline and observe the next descriptor rather
+      // than misclassifying that normal handoff as this startup's failure. Do not
+      // probe the port here: an in-flight startup owns it and a second probe must
+      // never classify it as an unknown process.
+      await raceWithChild(wait(STARTUP_POLL_MS));
+    }
+  } finally {
+    child?.off("error", onChildError);
+    child?.off("exit", onChildExit);
   }
   throw new DaemonRequestError({
     path: DAEMON_READY_PATH,
@@ -1776,12 +1856,8 @@ const startWithLock = async (
         : {}),
     },
   });
-  // The child now owns the lock. Mark that handoff before waiting for
-  // readiness; the parent must never unlink the lock while adoption is in
-  // progress or after the daemon has recorded its ownership.
-  lock.handoff();
   child.unref();
-  return waitForReady(config, startupTimeoutMs);
+  return waitForReady(config, startupTimeoutMs, child);
 };
 
 export const startDetachedDaemon = async (config: DaemonConfig, options: StartDaemonOptions) => {
@@ -1810,6 +1886,7 @@ const cleanupResultFromPayload = (payload: Record<string, unknown>) => {
     "removedDocumentFiles",
     "removedMetadataRows",
     "removedStagedFiles",
+    "removedReadReferences",
     "removedFinalizationLocks",
     "reclaimedBytes",
     "retainedEntries",
@@ -1879,6 +1956,7 @@ const cleanupResultFromPayload = (payload: Record<string, unknown>) => {
     removedDocumentFiles: numberValue("removedDocumentFiles"),
     removedMetadataRows: numberValue("removedMetadataRows"),
     removedStagedFiles: numberValue("removedStagedFiles"),
+    removedReadReferences: numberValue("removedReadReferences"),
     removedFinalizationLocks: numberValue("removedFinalizationLocks"),
     reclaimedBytes: numberValue("reclaimedBytes"),
     retainedEntries: numberValue("retainedEntries"),

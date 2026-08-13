@@ -160,7 +160,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     packageJson.scripts,
     "test",
-    "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs && npm run test --workspaces --if-present",
+    "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs scripts/changeset-presence.test.mjs scripts/publish-verified.test.mjs scripts/version-packages.test.mjs scripts/release-workflow.test.mjs scripts/actionlint.test.mjs && npm run test --workspaces --if-present",
     "test script"
   );
   expectProperty(
@@ -173,13 +173,13 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     packageJson.scripts,
     "version-packages",
-    "npm run release-policy && changeset version",
+    "npm run release-policy && changeset version && npm install --package-lock-only --ignore-scripts",
     "version-packages script"
   );
   expectProperty(
     packageJson.scripts,
     "pack:verified",
-    "npm pack --workspace planview --ignore-scripts",
+    "npm pack --workspace @abijith-suresh/planview --ignore-scripts",
     "verified pack script"
   );
   expectProperty(
@@ -190,17 +190,31 @@ test("repository foundation has the expected configuration", () => {
   );
   const publishScript = readText("scripts/publish-verified.mjs");
   assert.match(publishScript, /--ignore-scripts/);
+  const releaseWorkflow = readText(".github/workflows/release.yml");
+  assert.match(releaseWorkflow, /changesets\/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d/);
+  assert.match(releaseWorkflow, /version: npm run version-packages/);
+  assert.match(releaseWorkflow, /npm ci --ignore-scripts/);
+  assert.match(releaseWorkflow, /secrets\.RELEASE_TOKEN/);
+  assert.match(releaseWorkflow, /changeset-release\/main/);
+  assert.doesNotMatch(releaseWorkflow, /refs\/tags\/v/);
   assert.match(publishScript, /delete environment\.RELEASE_TOKEN/);
-  expectProperty(
-    packageJson.scripts,
-    "release",
-    "npm run release-policy && npm run verify && npm run pack:check && npm run pack:verified && npm run publish:verified",
-    "release script"
-  );
+  assert.match(publishScript, /--ignore-scripts/);
+  assert.match(publishScript, /PLANVIEW_NPM_PUBLISH/);
+  expectProperty(packageJson.scripts, "release", "node scripts/release.mjs", "release script");
 
   const cliPackageJson = readJson("apps/cli/package.json");
-  expectEqual(cliPackageJson.name, "planview", "CLI package name");
+  expectEqual(cliPackageJson.name, "@abijith-suresh/planview", "CLI package name");
   expectEqual(cliPackageJson.type, "module", "CLI package module type");
+  assert.equal(
+    cliPackageJson.devDependencies?.["@planview/core"],
+    undefined,
+    "the public package must not declare private core"
+  );
+  assert.equal(
+    cliPackageJson.devDependencies?.["@planview/daemon"],
+    undefined,
+    "the public package must not declare private daemon"
+  );
   expectProperty(cliPackageJson.bin, "planview", "./dist/index.js", "CLI bin mapping");
   expectEqual(cliPackageJson.files, ["dist", "skills", "README.md"], "CLI publish files");
   expectProperty(
@@ -371,6 +385,24 @@ test("repository foundation has the expected configuration", () => {
     "typescript",
     packageJson.devDependencies.typescript,
     "package-lock root TypeScript dependency"
+  );
+
+  const cliLockPackage = lockfile.packages["apps/cli"];
+  expectProperty(cliLockPackage, "name", cliPackageJson.name, "package-lock CLI package name");
+  expectProperty(
+    cliLockPackage,
+    "version",
+    cliPackageJson.version,
+    "package-lock CLI package version"
+  );
+  assert.ok(
+    lockfile.packages["node_modules/@abijith-suresh/planview"],
+    "package-lock should select the scoped public workspace"
+  );
+  assert.equal(
+    lockfile.packages["node_modules/planview"],
+    undefined,
+    "package-lock should not select an unscoped public workspace"
   );
 
   const coreLockPackage = lockfile.packages["packages/core"];

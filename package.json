@@ -20,14 +20,15 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
-    "pack:check": "npm pack --dry-run --workspace planview",
-    "pack:verified": "npm pack --workspace planview --ignore-scripts",
+    "pack:check": "npm pack --dry-run --workspace @abijith-suresh/planview",
+    "pack:verified": "npm pack --workspace @abijith-suresh/planview --ignore-scripts",
     "publish:verified": "node scripts/publish-verified.mjs",
-    "release": "npm run release-policy && npm run verify && npm run pack:check && npm run pack:verified && npm run publish:verified",
-    "test": "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs && npm run test --workspaces --if-present",
+    "release": "node scripts/release.mjs",
+    "changeset:check": "node scripts/changeset-presence.mjs",
+    "test": "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs scripts/changeset-presence.test.mjs scripts/publish-verified.test.mjs scripts/version-packages.test.mjs scripts/release-workflow.test.mjs scripts/actionlint.test.mjs && npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify": "npm run check && npm run build",
-    "version-packages": "npm run release-policy && changeset version"
+    "version-packages": "npm run release-policy && changeset version && npm install --package-lock-only --ignore-scripts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
