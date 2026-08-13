@@ -15,15 +15,15 @@ import { rm } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { Effect } from "effect";
+import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { validateDocumentId } from "@planview/core";
 import {
   createDocumentPublicationCoordinator,
   openDocumentFileStore,
   openStorage,
 } from "@planview/storage";
-import { test } from "node:test";
-import { fileURLToPath } from "node:url";
+import { Effect } from "effect";
 
 const packageRoot = new URL("..", import.meta.url);
 const entry = fileURLToPath(new URL("./dist/entry.js", packageRoot));
@@ -73,6 +73,9 @@ const waitForExit = (child, timeout = 10_000) =>
   });
 
 const stopChild = async (child) => {
+  if (child === undefined) {
+    return;
+  }
   if (child.exitCode !== null || child.signalCode !== null) {
     return;
   }
@@ -114,6 +117,70 @@ const startChild = (appDataDir, runtimeDir, port) =>
     },
     stdio: "ignore",
   });
+
+const seedPublishedDocument = async (appDataDir, fixture, documentId, contents) => {
+  const sourcePath = join(fixture, `${documentId}.source.html`);
+  const documentsDir = join(appDataDir, "documents");
+  const stagingDir = join(appDataDir, "staging");
+  mkdirSync(appDataDir, { recursive: true, mode: 0o700 });
+  writeFileSync(sourcePath, contents);
+  const metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+  const documentFileStore = Effect.runSync(openDocumentFileStore({ documentsDir, stagingDir }));
+  try {
+    const publication = createDocumentPublicationCoordinator({
+      documentFileStore,
+      metadataStore,
+      generateId: () => documentId,
+    });
+    await publication.publish(sourcePath);
+  } finally {
+    await documentFileStore.close();
+    metadataStore.close();
+  }
+  return sourcePath;
+};
+
+const openStalledDocument = async (port, documentId) => {
+  const socket = createConnection({ host: "127.0.0.1", port });
+  await new Promise((resolve, reject) => {
+    socket.once("error", reject);
+    socket.once("connect", resolve);
+  });
+  await new Promise((resolve, reject) => {
+    let received = Buffer.alloc(0);
+    const onData = (chunk) => {
+      received = Buffer.concat([received, chunk]);
+      if (received.includes(Buffer.from("\r\n\r\n"))) {
+        socket.off("error", reject);
+        socket.pause();
+        resolve();
+      }
+    };
+    socket.on("data", onData);
+    socket.once("error", reject);
+    socket.write(
+      `GET /${documentId} HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nConnection: keep-alive\r\n\r\n`
+    );
+  });
+  return socket;
+};
+
+const within = async (promise, milliseconds) => {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`operation exceeded ${milliseconds}ms`)),
+          milliseconds
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 const descriptorAt = (runtimeDir) => {
   try {
@@ -468,6 +535,95 @@ test("concurrent starts, stops, and restarts share one lifecycle lock", async ()
     assert.ok(descriptorAt(runtimeDir));
   } finally {
     await daemon.stopDaemon(config).catch(() => undefined);
+    await removeFixture(fixture);
+  }
+});
+
+test("a stalled raw-socket read does not block publish or clean", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-read-concurrency-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const documentId = validateDocumentId("c".repeat(21));
+  let socket;
+  let child;
+  try {
+    await seedPublishedDocument(
+      appDataDir,
+      fixture,
+      documentId,
+      Buffer.alloc(10 * 1024 * 1024, "x")
+    );
+    child = startChild(appDataDir, runtimeDir, port);
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
+    socket = await openStalledDocument(port, documentId);
+    const publishSource = join(fixture, "unrelated.html");
+    writeFileSync(publishSource, "unrelated publish");
+    const publishResponse = await within(
+      fetch(`http://127.0.0.1:${port}/__planview/publish`, {
+        method: "POST",
+        headers: {
+          "x-planview-secret": descriptor.secret,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sourcePath: publishSource }),
+      }),
+      2_000
+    );
+    assert.equal(publishResponse.status, 201);
+    const cleanResponse = await within(
+      fetch(`http://127.0.0.1:${port}/__planview/clean`, {
+        method: "POST",
+        headers: { "x-planview-secret": descriptor.secret },
+      }),
+      2_000
+    );
+    assert.equal(cleanResponse.status, 200);
+    await stopChild(child);
+    child = undefined;
+  } finally {
+    socket?.destroy();
+    await stopChild(child);
+    await removeFixture(fixture);
+  }
+});
+
+test("shutdown aborts a stalled document read before closing storage", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-read-shutdown-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const documentId = validateDocumentId("d".repeat(21));
+  let socket;
+  let child;
+  try {
+    await seedPublishedDocument(appDataDir, fixture, documentId, "shutdown read");
+    child = startChild(appDataDir, runtimeDir, port);
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
+    socket = await openStalledDocument(port, documentId);
+    const startedAt = Date.now();
+    const result = await daemon.stopDaemon(
+      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    );
+    assert.equal(result.state, "stopped");
+    assert.ok(Date.now() - startedAt < daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 2_000);
+    await waitForExit(child);
+    child = undefined;
+  } finally {
+    socket?.destroy();
+    await stopChild(child);
     await removeFixture(fixture);
   }
 });

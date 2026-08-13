@@ -59,6 +59,14 @@ const DAEMON_LOCK_VERSION = 1;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const REQUEST_TIMEOUT_MS = 1_000;
+/** Slow consumers are allowed to backpressure, but not to remain completely idle forever. */
+export const DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS = 30_000;
+/** An absolute bound prevents a peer from retaining a read lease indefinitely. */
+export const DAEMON_DOCUMENT_READ_MAX_DURATION_MS = 10 * 60_000;
+export const DAEMON_DOCUMENT_READ_QUEUE_TIMEOUT_MS = 30_000;
+/** Read admission is bounded so stalled clients cannot grow an unbounded queue. */
+export const DAEMON_MAX_ACTIVE_DOCUMENT_READS = 64;
+export const DAEMON_MAX_QUEUED_DOCUMENT_READS = 128;
 export const DAEMON_CLEANUP_TIMEOUT_MIN_MS = 10_000;
 export const DAEMON_CLEANUP_TIMEOUT_MAX_MS = 60_000;
 const CLEANUP_DOCUMENT_BUDGET_MS = 20;
@@ -976,10 +984,9 @@ const readJsonBody = async (request: import("node:http").IncomingMessage) => {
 
 type OperationGate = <Value>(operation: () => Promise<Value>) => Promise<Value>;
 
-// Publication, cleanup, and the metadata-gated read are different durability
-// domains. A process-local gate closes the remaining interleaving window: a
-// cleanup never removes a target while a read has validated its row, and a
-// startup/periodic pass never races a publication's file-to-row commit.
+// Publication and cleanup still share a short mutation gate. It preserves the
+// publication file-to-metadata commit boundary, while reads use independent
+// leases and never wait behind an arbitrary response transfer.
 const createOperationGate = () => {
   let tail = Promise.resolve();
 
@@ -999,6 +1006,140 @@ const createOperationGate = () => {
 
   return run;
 };
+
+class DocumentReadAdmissionError extends Error {
+  readonly code: "capacity" | "closed" | "timeout";
+
+  constructor(code: "capacity" | "closed" | "timeout") {
+    super(
+      code === "capacity"
+        ? "The daemon has reached its bounded document-read capacity."
+        : code === "timeout"
+          ? "The daemon document-read queue deadline elapsed."
+          : "The daemon is shutting down."
+    );
+    this.name = "DocumentReadAdmissionError";
+    this.code = code;
+  }
+}
+
+const createDocumentReadAdmission = () => {
+  const active = new Set<{
+    readonly controller: AbortController;
+    released: boolean;
+  }>();
+  const queued: Array<{
+    readonly resolve: (permit: DocumentReadPermit) => void;
+    readonly reject: (cause: unknown) => void;
+    readonly signal?: AbortSignal;
+    readonly onAbort?: () => void;
+    readonly timer: NodeJS.Timeout;
+  }> = [];
+  let closing = false;
+
+  const removeQueued = (entry: (typeof queued)[number]) => {
+    const index = queued.indexOf(entry);
+    if (index < 0) {
+      return false;
+    }
+    queued.splice(index, 1);
+    clearTimeout(entry.timer);
+    if (entry.signal !== undefined && entry.onAbort !== undefined) {
+      entry.signal.removeEventListener("abort", entry.onAbort);
+    }
+    return true;
+  };
+
+  const makePermit = () => {
+    const state = { controller: new AbortController(), released: false };
+    active.add(state);
+    return {
+      signal: state.controller.signal,
+      release: () => {
+        if (state.released) {
+          return;
+        }
+        state.released = true;
+        active.delete(state);
+        drain();
+      },
+    } satisfies DocumentReadPermit;
+  };
+
+  const drain = () => {
+    while (!closing && active.size < DAEMON_MAX_ACTIVE_DOCUMENT_READS) {
+      const next = queued.shift();
+      if (next === undefined) {
+        return;
+      }
+      clearTimeout(next.timer);
+      if (next.signal !== undefined && next.onAbort !== undefined) {
+        next.signal.removeEventListener("abort", next.onAbort);
+      }
+      next.resolve(makePermit());
+    }
+  };
+
+  const acquire = (signal?: AbortSignal) => {
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason);
+    }
+    if (closing) {
+      return Promise.reject(new DocumentReadAdmissionError("closed"));
+    }
+    if (active.size < DAEMON_MAX_ACTIVE_DOCUMENT_READS) {
+      return Promise.resolve(makePermit());
+    }
+    if (queued.length >= DAEMON_MAX_QUEUED_DOCUMENT_READS) {
+      return Promise.reject(new DocumentReadAdmissionError("capacity"));
+    }
+    return new Promise<DocumentReadPermit>((resolvePromise, rejectPromise) => {
+      let entry: (typeof queued)[number];
+      const onAbort = () => {
+        if (removeQueued(entry)) {
+          rejectPromise(signal?.reason);
+        }
+      };
+      const timer = setTimeout(() => {
+        if (removeQueued(entry)) {
+          rejectPromise(new DocumentReadAdmissionError("timeout"));
+        }
+      }, DAEMON_DOCUMENT_READ_QUEUE_TIMEOUT_MS);
+      entry = {
+        resolve: resolvePromise,
+        reject: rejectPromise,
+        ...(signal === undefined ? {} : { signal, onAbort }),
+        timer,
+      };
+      queued.push(entry);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+  };
+
+  const close = () => {
+    if (closing) {
+      return;
+    }
+    closing = true;
+    for (const queuedRead of queued.splice(0)) {
+      clearTimeout(queuedRead.timer);
+      if (queuedRead.signal !== undefined && queuedRead.onAbort !== undefined) {
+        queuedRead.signal.removeEventListener("abort", queuedRead.onAbort);
+      }
+      queuedRead.reject(new DocumentReadAdmissionError("closed"));
+    }
+    for (const state of active) {
+      state.controller.abort(new Error("The daemon is shutting down."));
+    }
+  };
+
+  return { acquire, close };
+};
+
+type DocumentReadPermit = Readonly<{
+  readonly signal: AbortSignal;
+  readonly release: () => void;
+}>;
 
 const PRIVATE_MANAGEMENT_PATHS = new Set([
   DAEMON_READY_PATH,
@@ -1025,7 +1166,8 @@ const handlePublishedDocument = async (
   documentId: string,
   res: import("node:http").ServerResponse,
   publicationCoordinator: DocumentPublicationCoordinator,
-  metadataStore: MetadataStore
+  metadataStore: MetadataStore,
+  permit: DocumentReadPermit
 ) => {
   const id = (() => {
     try {
@@ -1041,10 +1183,11 @@ const handlePublishedDocument = async (
       htmlError(404, "Not found", "That Planview document does not exist."),
       "text/html"
     );
+    permit.release();
     return;
   }
 
-  const document = await publicationCoordinator.readPublishedDocument(id).catch((cause) => {
+  const document = await publicationCoordinator.readPublishedDocumentLease(id).catch((cause) => {
     if (
       cause instanceof DocumentPublicationNotFoundError ||
       cause instanceof DocumentPublicationReadError
@@ -1060,20 +1203,82 @@ const handlePublishedDocument = async (
       htmlError(404, "Not found", "That Planview document does not exist."),
       "text/html"
     );
+    permit.release();
     return;
   }
 
   res.statusCode = 200;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-  await pipeline(document, res);
-  // The access timestamp is deliberately recorded only once the immutable file
-  // stream and the HTTP response have completed successfully.
+  const controller = new AbortController();
+  const resettableSignal = AbortSignal.any([controller.signal, permit.signal]);
+  const abort = (cause: unknown) => {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    if (!controller.signal.aborted) {
+      controller.abort(error);
+    }
+    document.stream.destroy(error);
+    if (!res.destroyed && !res.writableFinished) {
+      res.destroy(error);
+    }
+  };
+  let idleTimer: NodeJS.Timeout | undefined;
+  let absoluteTimer: NodeJS.Timeout | undefined;
+  const resetIdleTimer = () => {
+    if (idleTimer !== undefined) {
+      clearTimeout(idleTimer);
+    }
+    idleTimer = setTimeout(
+      () => abort(new Error("The document download became idle.")),
+      DAEMON_DOCUMENT_READ_IDLE_TIMEOUT_MS
+    );
+    idleTimer.unref();
+  };
+  const onResponseClose = () => {
+    if (!res.writableFinished) {
+      abort(new Error("The document download client disconnected."));
+    }
+  };
+  const onPermitAbort = () =>
+    abort(permit.signal.reason ?? new Error("The daemon is shutting down."));
+  let completed = false;
+  document.stream.on("data", resetIdleTimer);
+  res.on("drain", resetIdleTimer);
+  res.once("close", onResponseClose);
+  permit.signal.addEventListener("abort", onPermitAbort, { once: true });
+  resetIdleTimer();
+  absoluteTimer = setTimeout(
+    () => abort(new Error("The document download deadline elapsed.")),
+    DAEMON_DOCUMENT_READ_MAX_DURATION_MS
+  );
+  absoluteTimer.unref();
   try {
-    metadataStore.recordDocumentAccess(id);
-  } catch {
-    // The document was already delivered. There is no safe second response once
-    // the body has finished, so leave the daemon available for the next request.
+    await pipeline(document.stream, res, { signal: resettableSignal });
+    completed = true;
+    // The access timestamp is deliberately recorded only once the immutable file
+    // stream and the HTTP response have completed successfully.
+    try {
+      metadataStore.recordDocumentAccess(id);
+    } catch {
+      // The document was already delivered. There is no safe second response once
+      // the body has finished, so leave the daemon available for the next request.
+    }
+  } finally {
+    if (idleTimer !== undefined) {
+      clearTimeout(idleTimer);
+    }
+    if (absoluteTimer !== undefined) {
+      clearTimeout(absoluteTimer);
+    }
+    document.stream.off("data", resetIdleTimer);
+    res.off("drain", resetIdleTimer);
+    res.off("close", onResponseClose);
+    permit.signal.removeEventListener("abort", onPermitAbort);
+    document.release();
+    permit.release();
+    if (!completed) {
+      abort(new Error("The document download did not complete."));
+    }
   }
 };
 
@@ -1086,6 +1291,7 @@ const handleRequest = async (
   metadataStore: MetadataStore,
   runCleanup: () => Promise<DocumentCleanupResult>,
   isReady: () => boolean,
+  documentReadAdmission: ReturnType<typeof createDocumentReadAdmission>,
   operationGate: OperationGate,
   acknowledgeStartup: () => void
 ) => {
@@ -1114,9 +1320,43 @@ const handleRequest = async (
           response(res, 503, JSON.stringify({ error: "not_ready" }));
           return;
         }
-        await operationGate(() =>
-          handlePublishedDocument(documentId, res, publicationCoordinator, metadataStore)
-        );
+        let permit: DocumentReadPermit | undefined;
+        try {
+          const requestAbort = new AbortController();
+          const abortRequest = () => requestAbort.abort(new Error("The client disconnected."));
+          request.once("aborted", abortRequest);
+          permit = await documentReadAdmission.acquire(requestAbort.signal);
+          request.off("aborted", abortRequest);
+          await handlePublishedDocument(
+            documentId,
+            res,
+            publicationCoordinator,
+            metadataStore,
+            permit
+          );
+        } catch (cause) {
+          permit?.release();
+          if (!res.destroyed && !res.headersSent) {
+            const status =
+              cause instanceof DocumentReadAdmissionError
+                ? 503
+                : request.aborted || request.destroyed
+                  ? 499
+                  : undefined;
+            if (status !== undefined) {
+              response(
+                res,
+                status,
+                JSON.stringify({
+                  error: status === 503 ? "read_capacity" : "read_aborted",
+                  message: describe(cause),
+                })
+              );
+            } else {
+              throw cause;
+            }
+          }
+        }
       } else {
         response(
           res,
@@ -1241,6 +1481,7 @@ const createDaemonServer = (
   metadataStore: MetadataStore,
   runCleanup: () => Promise<DocumentCleanupResult>,
   isReady: () => boolean,
+  documentReadAdmission: ReturnType<typeof createDocumentReadAdmission>,
   operationGate: OperationGate,
   acknowledgeStartup: () => void
 ) => {
@@ -1256,6 +1497,7 @@ const createDaemonServer = (
         metadataStore,
         runCleanup,
         isReady,
+        documentReadAdmission,
         operationGate,
         acknowledgeStartup
       ).catch((cause) => {
@@ -1308,6 +1550,8 @@ const openDaemon = async (config: DaemonConfig) => {
   let closing = false;
   let shutdownRequested = false;
   let resolveShutdown: (() => void) | undefined;
+  const documentReadAdmission = createDocumentReadAdmission();
+  const operationGate = createOperationGate();
   const requestShutdown = () => {
     shutdownRequested = true;
     resolveShutdown?.();
@@ -1332,11 +1576,11 @@ const openDaemon = async (config: DaemonConfig) => {
       documentFileStore: openedDocumentFileStore,
       metadataStore: openedMetadataStore,
     });
-    const operationGate = createOperationGate();
     const runCleanup = () => {
       // Manual and scheduled cleanup share the same tracked promise. Shutdown
       // must wait for a cleanup request already being served, not only for the
-      // interval callback's last run.
+      // interval callback's last run. Reads do not enter this mutation gate,
+      // so a client that stops consuming a response cannot delay cleanup.
       const operation = operationGate(() => cleanup.clean());
       cleanupInFlight = operation.catch(() => undefined);
       return operation;
@@ -1356,6 +1600,7 @@ const openDaemon = async (config: DaemonConfig) => {
       metadataStore,
       runCleanup,
       () => startupReady,
+      documentReadAdmission,
       operationGate,
       acknowledgeStartup
     );
@@ -1398,6 +1643,7 @@ const openDaemon = async (config: DaemonConfig) => {
           clearInterval(cleanupTimer);
           cleanupTimer = undefined;
         }
+        documentReadAdmission.close();
         await cleanupInFlight;
         try {
           await closeServer(runningServer, runningConnections);
@@ -1428,6 +1674,7 @@ const openDaemon = async (config: DaemonConfig) => {
       },
     };
   } catch (cause) {
+    documentReadAdmission.close();
     await lock.release().catch(() => undefined);
     if (server !== undefined && connections !== undefined) {
       await closeServer(server, connections).catch(() => undefined);

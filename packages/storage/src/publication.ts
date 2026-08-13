@@ -1,11 +1,11 @@
 import type { ReadStream } from "node:fs";
 import {
-  InvalidSourceFileSizeError,
-  SourceFileTooLargeError,
-  UnsupportedSourceExtensionError,
   type DocumentId,
   type DocumentIdRandomBytes,
   generateDocumentId,
+  InvalidSourceFileSizeError,
+  SourceFileTooLargeError,
+  UnsupportedSourceExtensionError,
   validateDocumentId,
   validateSourceFileSize,
 } from "@planview/core";
@@ -17,12 +17,13 @@ import {
   DocumentFileDiscardError,
   DocumentFileFinalizeError,
   DocumentFileNotRegularError,
+  type DocumentFileReadLease,
+  type DocumentFileResourceState,
+  type DocumentFileStore,
   DocumentFileStoreClosedError,
   DocumentFileStoreOpenError,
   DocumentFileStorePathError,
   DocumentFileTargetBusyError,
-  type DocumentFileResourceState,
-  type DocumentFileStore,
   type DocumentFileTargetCapability,
   type DocumentFileTargetRecoveryPolicy,
   type StagedDocumentFileHandle,
@@ -125,6 +126,8 @@ export type MetadataGatedDocumentReaderOptions = Readonly<{
 
 export interface MetadataGatedDocumentReader {
   readonly readPublishedDocument: (id: DocumentId) => Promise<ReadStream>;
+  /** Holds active-read protection until a post-transfer action is complete. */
+  readonly readPublishedDocumentLease: (id: DocumentId) => Promise<DocumentFileReadLease>;
 }
 
 export interface DocumentPublicationCoordinator extends MetadataGatedDocumentReader {
@@ -252,7 +255,7 @@ export const createMetadataGatedDocumentReader = (
   options: MetadataGatedDocumentReaderOptions
 ): MetadataGatedDocumentReader => {
   const { documentFileStore, metadataStore } = options;
-  const readPublishedDocument = async (id: DocumentId) => {
+  const readPublishedDocumentLease = async (id: DocumentId) => {
     let documentId: DocumentId;
     try {
       documentId = validateDocumentId(id);
@@ -282,7 +285,7 @@ export const createMetadataGatedDocumentReader = (
     }
 
     try {
-      return await documentFileStore.readDocumentFile(documentId);
+      return await documentFileStore.readDocumentLease(documentId);
     } catch (cause) {
       throw new DocumentPublicationReadError({
         id: documentId,
@@ -292,7 +295,14 @@ export const createMetadataGatedDocumentReader = (
     }
   };
 
-  return { readPublishedDocument };
+  const readPublishedDocument = async (id: DocumentId) => {
+    const lease = await readPublishedDocumentLease(id);
+    lease.stream.once("close", lease.release);
+    lease.stream.once("error", lease.release);
+    return lease.stream;
+  };
+
+  return { readPublishedDocument, readPublishedDocumentLease };
 };
 
 const makePublicationError = ({
@@ -950,6 +960,7 @@ export const createDocumentPublicationCoordinator = (
     publish,
     publishDocument: publish,
     readPublishedDocument: reader.readPublishedDocument,
+    readPublishedDocumentLease: reader.readPublishedDocumentLease,
   };
 };
 
