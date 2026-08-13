@@ -44,6 +44,15 @@ const metadata = (id, createdAt, size, lastAccessedAt = createdAt) => ({
   size,
 });
 
+const generationCount = (databasePath) => {
+  const database = new DatabaseSync(databasePath);
+  try {
+    return database.prepare("SELECT COUNT(*) AS count FROM document_generations").get().count;
+  } finally {
+    database.close();
+  }
+};
+
 const inspectSchema = (databasePath) => {
   const database = new DatabaseSync(databasePath);
   try {
@@ -109,7 +118,7 @@ test("migrates an existing version-zero database transactionally", () =>
     const storage = Effect.runSync(openStorage(databasePath));
     try {
       assert.deepEqual(inspectSchema(databasePath), {
-        version: 1,
+        version: CURRENT_SCHEMA_VERSION,
         columns: ["id", "createdAt", "lastAccessedAt", "size"],
       });
     } finally {
@@ -137,7 +146,7 @@ test("serializes concurrent v0 openers and lets both observe the committed migra
       blocker.exec("COMMIT");
       await Promise.all(openers.map(({ worker }) => waitForWorkerMessage(worker, "opened")));
       assert.deepEqual(inspectSchema(databasePath), {
-        version: 1,
+        version: CURRENT_SCHEMA_VERSION,
         columns: ["id", "createdAt", "lastAccessedAt", "size"],
       });
       openers.forEach(({ worker }) => {
@@ -212,8 +221,93 @@ test("rejects a claimed v1 database with a trigger that could bypass monotonic a
     );
   }));
 
+test("uses the access-order index for bounded 1k candidate and reconciliation pages", async () =>
+  withTempDirectory("planview-storage-pages-", async (directory) => {
+    const databasePath = join(directory, "metadata.sqlite");
+    createDatabase(
+      databasePath,
+      `
+        CREATE TABLE documents (
+          id TEXT PRIMARY KEY NOT NULL
+            CHECK (typeof(id) = 'text' AND length(trim(id)) > 0),
+          createdAt INTEGER NOT NULL
+            CHECK (typeof(createdAt) = 'integer' AND createdAt >= 0),
+          lastAccessedAt INTEGER NOT NULL
+            CHECK (typeof(lastAccessedAt) = 'integer' AND lastAccessedAt >= createdAt),
+          size INTEGER NOT NULL
+            CHECK (typeof(size) = 'integer' AND size >= 0)
+        ) STRICT
+      `
+    );
+    const seed = new DatabaseSync(databasePath);
+    try {
+      const insert = seed.prepare(
+        "INSERT INTO documents (id, createdAt, lastAccessedAt, size) VALUES (:id, 1, 1, 1)"
+      );
+      seed.exec("BEGIN");
+      for (let index = 0; index < 1_000; index += 1) {
+        insert.run({ ":id": `candidate-${index.toString().padStart(4, "0")}` });
+      }
+      seed.exec("COMMIT");
+    } finally {
+      seed.close();
+    }
+
+    const storage = Effect.runSync(openStorage(databasePath));
+    try {
+      const database = new DatabaseSync(databasePath);
+      try {
+        const indexes = database
+          .prepare("PRAGMA index_list(documents)")
+          .all()
+          .map((row) => row.name);
+        assert.equal(indexes.includes("documents_last_accessed_at_idx"), true);
+      } finally {
+        database.close();
+      }
+
+      const first = storage.listDocumentMetadataCandidates(2, 128);
+      assert.equal(first.rows.length, 128);
+      assert.equal(first.hasMore, true);
+      const lastFirst = first.rows.at(-1);
+      const second = storage.listDocumentMetadataCandidates(2, 128, {
+        lastAccessedAt: lastFirst.lastAccessedAt,
+        id: lastFirst.id,
+      });
+      assert.equal(second.rows.length, 128);
+      assert.equal(second.rows[0].id > lastFirst.id, true);
+
+      const reconciliationPage = storage.listDocumentMetadataPage(128);
+      assert.equal(reconciliationPage.rows.length, 128);
+      assert.equal(reconciliationPage.hasMore, true);
+    } finally {
+      storage.close();
+    }
+  }));
+
+test("metadata cursors use SQLite bytewise order and a rowid watermark", () =>
+  withStorage(({ storage }) => {
+    const ids = ["A", "_", "-", "a", "0"].map((character) => character.repeat(21));
+    ids.forEach((id) => {
+      storage.insertDocumentMetadata(metadata(id, 1, 1));
+    });
+    const expected = [...ids].sort((left, right) =>
+      Buffer.compare(Buffer.from(left), Buffer.from(right))
+    );
+    const observed = [];
+    const watermark = storage.getDocumentMetadataScanWatermark();
+    let cursor;
+    let page;
+    do {
+      page = storage.listDocumentMetadataPage(2, cursor, watermark);
+      observed.push(...page.rows.map((row) => row.id));
+      cursor = page.rows.at(-1)?.id;
+    } while (page.hasMore);
+    assert.deepEqual(observed, expected);
+  }));
+
 test("supports immutable insert, lookup, access recording, aggregate, and delete", () => {
-  return withStorage(({ storage }) => {
+  return withStorage(({ databasePath, storage }) => {
     const original = metadata("doc-1", 1_700_000_000_000, 120, 1_700_000_000_100);
     storage.insertDocumentMetadata(original);
 
@@ -232,10 +326,33 @@ test("supports immutable insert, lookup, access recording, aggregate, and delete
     assert.deepEqual(storage.getDocumentAggregate(), { count: 1, size: 120 });
     assert.equal(storage.deleteDocument("doc-1"), true);
     assert.equal(storage.getDocumentMetadata("doc-1"), undefined);
+    assert.equal(generationCount(databasePath), 0);
     assert.deepEqual(storage.getDocumentAggregate(), { count: 0, size: 0 });
     assert.equal(storage.deleteDocument("doc-1"), false);
   });
 });
+
+test("deletes only the generation belonging to the deleted document", () =>
+  withStorage(({ databasePath, storage }) => {
+    storage.insertDocumentMetadata(metadata("reusable", 1, 1));
+    const original = storage.listDocumentMetadataCandidates(2, 1).rows[0];
+    assert.equal(storage.deleteDocumentIfMatches(original), true);
+    assert.equal(generationCount(databasePath), 0);
+
+    storage.insertDocumentMetadata(metadata("reusable", 2, 2));
+    const replacement = storage.listDocumentMetadataCandidates(3, 1).rows[0];
+    assert.notEqual(replacement.generation, original.generation);
+    assert.equal(storage.deleteDocumentIfMatches(original), false);
+    assert.equal(generationCount(databasePath), 1);
+    assert.deepEqual(storage.getDocumentMetadata("reusable"), {
+      id: "reusable",
+      createdAt: 2,
+      lastAccessedAt: 2,
+      size: 2,
+    });
+    assert.equal(storage.deleteDocumentIfMatches(replacement), true);
+    assert.equal(generationCount(databasePath), 0);
+  }));
 
 test("persists metadata across close and reopen", () =>
   withTempDirectory("planview-storage-persistence-", (directory) => {
