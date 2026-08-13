@@ -22,6 +22,7 @@ import {
   createDocumentPublicationCoordinator,
   openDocumentFileStore,
   openStorage,
+  V1_CLEANUP_ITEM_BUDGET,
 } from "@planview/storage";
 import { Effect } from "effect";
 
@@ -645,7 +646,8 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
       return ready.status === 200 ? true : undefined;
     });
     metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
-    const documents = 200;
+    // One bounded cleanup slice must leave work for shutdown to overlap.
+    const documents = V1_CLEANUP_ITEM_BUDGET + 1;
     for (let index = 0; index < documents; index += 1) {
       const documentId = `a${index.toString(36).padStart(20, "0")}`;
       writeFileSync(join(documentsDir, `${documentId}.html`), "x");
@@ -660,7 +662,10 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
       method: "POST",
       headers: { "x-planview-secret": descriptor.secret },
     });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await waitFor(() => {
+      const remaining = metadataStore.getDocumentAggregate().count;
+      return remaining > 0 && remaining < documents ? remaining : undefined;
+    });
     const result = await daemon.stopDaemon(
       daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
     );
