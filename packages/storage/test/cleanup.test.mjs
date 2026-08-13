@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -7,9 +7,9 @@ import { Effect } from "effect";
 import {
   createDocumentCleanupCoordinator,
   createMetadataGatedDocumentReader,
-  V1_ORPHAN_RECONCILIATION_GRACE_MILLISECONDS,
   openDocumentFileStore,
   openStorage,
+  V1_ORPHAN_RECONCILIATION_GRACE_MILLISECONDS,
 } from "../dist/index.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -91,6 +91,27 @@ test("does not remove an active read and removes it after the stream closes", as
     const removed = await cleanup.clean();
     assert.equal(removed.removedDocuments, 1);
     assert.equal(metadataStore.getDocumentMetadata(documentId), undefined);
+  }));
+
+test("a read lease remains active after full transfer until its post-transfer work releases it", async () =>
+  withEnvironment(async ({ documentFileStore, metadataStore, directory }) => {
+    const documentId = id("l");
+    await publishPhysical({ documentFileStore, metadataStore, directory }, documentId, "leased");
+    const lease = await documentFileStore.readDocumentLease(documentId);
+    assert.equal((await lease.stream.toArray()).toString(), "leased");
+
+    const cleanup = createDocumentCleanupCoordinator({
+      documentFileStore,
+      metadataStore,
+      now: () => DAY * 31 + 1,
+    });
+    const retained = await cleanup.clean();
+    assert.equal(retained.removedDocuments, 0);
+    assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
+
+    lease.release();
+    const removed = await cleanup.clean();
+    assert.equal(removed.removedDocuments, 1);
   }));
 
 test("cross-store active reads remain protected by a filesystem reference", async () =>

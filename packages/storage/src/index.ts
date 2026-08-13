@@ -3,19 +3,28 @@ import { DatabaseSync } from "node:sqlite";
 import { Data, Effect } from "effect";
 
 export {
+  createCleanupCoordinator,
+  createDocumentCleanupCoordinator,
+  type DocumentCleanupCoordinatorOptions,
+  DocumentCleanupError,
+  type DocumentCleanupFailure,
+  type DocumentCleanupResult,
+  V1_ORPHAN_RECONCILIATION_GRACE_MILLISECONDS,
+  V1_RETENTION_MILLISECONDS,
+} from "./cleanup.js";
+export {
+  DOCUMENT_FILE_RECOVERY_GRACE_MILLISECONDS,
   DocumentFileAlreadyExistsError,
   DocumentFileCloneError,
   DocumentFileDeleteError,
   DocumentFileDiscardError,
-  DocumentFileReadActiveError,
-  type DocumentFileObservation,
-  type DocumentFileReconciliationResult,
-  DOCUMENT_FILE_RECOVERY_GRACE_MILLISECONDS,
   DocumentFileFinalizeError,
-  type DocumentFileTargetCapability,
-  type DocumentFileTargetRecoveryPolicy,
   DocumentFileNotRegularError,
+  type DocumentFileObservation,
+  DocumentFileReadActiveError,
   DocumentFileReadError,
+  type DocumentFileReadLease,
+  type DocumentFileReconciliationResult,
   type DocumentFileResourceState,
   DocumentFileSourceError,
   type DocumentFileStore,
@@ -24,20 +33,12 @@ export {
   type DocumentFileStoreOptions,
   DocumentFileStorePathError,
   DocumentFileTargetBusyError,
+  type DocumentFileTargetCapability,
+  type DocumentFileTargetRecoveryPolicy,
   InvalidStagedDocumentFileHandleError,
   openDocumentFileStore,
   type StagedDocumentFileHandle,
 } from "./document-files.js";
-export {
-  createCleanupCoordinator,
-  createDocumentCleanupCoordinator,
-  DocumentCleanupError,
-  type DocumentCleanupFailure,
-  type DocumentCleanupCoordinatorOptions,
-  type DocumentCleanupResult,
-  V1_ORPHAN_RECONCILIATION_GRACE_MILLISECONDS,
-  V1_RETENTION_MILLISECONDS,
-} from "./cleanup.js";
 export {
   createDocumentPublicationCoordinator,
   createMetadataGatedDocumentReader,

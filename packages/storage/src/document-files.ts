@@ -11,8 +11,8 @@ import {
   mkdirSync,
   openSync,
   realpathSync,
-  unlinkSync,
   type Stats,
+  unlinkSync,
 } from "node:fs";
 import { link, lstat, mkdir, open, readdir, rmdir, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
@@ -131,6 +131,12 @@ export type DocumentFileObservation = Readonly<{
   readonly id: string;
   readonly size: number;
   readonly modifiedAt: number;
+}>;
+
+/** A document stream whose active-read marker remains held until release. */
+export type DocumentFileReadLease = Readonly<{
+  readonly stream: ReadStream;
+  readonly release: () => void;
 }>;
 
 export type DocumentFileReconciliationResult = Readonly<{
@@ -257,6 +263,7 @@ export interface DocumentFileStore {
     id: string
   ) => Promise<DocumentFileTargetCapability>;
   readonly readDocument: (id: string) => Promise<ReadStream>;
+  readonly readDocumentLease: (id: string) => Promise<DocumentFileReadLease>;
   readonly readDocumentFile: (id: string) => Promise<ReadStream>;
   readonly deleteDocumentFile: (
     id: string,
@@ -2481,7 +2488,7 @@ const createStore = ({
     }
   };
 
-  const readDocument = async (id: string) => {
+  const readDocumentLease = async (id: string) => {
     const releaseOperation = beginOperation();
     try {
       ensureTrustedRoots();
@@ -2515,11 +2522,15 @@ const createStore = ({
               readReference = undefined;
             }
           };
-          stream.once("close", releaseRead);
-          stream.once("error", releaseRead);
           await releaseTargetLock(documentId, targetLease);
           targetLease = undefined;
-          return stream;
+          return {
+            stream,
+            // The ordinary read API releases from stream close/error. Callers
+            // that need to perform a post-transfer action can hold this lease
+            // until that action is complete.
+            release: releaseRead,
+          } satisfies DocumentFileReadLease;
         } catch (cause) {
           if (readReference !== undefined) {
             releaseReadReference(readReference);
@@ -2545,6 +2556,13 @@ const createStore = ({
     } finally {
       releaseOperation();
     }
+  };
+
+  const readDocument = async (id: string) => {
+    const lease = await readDocumentLease(id);
+    lease.stream.once("close", lease.release);
+    lease.stream.once("error", lease.release);
+    return lease.stream;
   };
 
   const deleteDocumentFileUnlocked = async (
@@ -2992,6 +3010,7 @@ const createStore = ({
     reconcileDocumentFiles,
     cloneStagedFile,
     discardStagedFile,
+    readDocumentLease,
   };
 };
 
