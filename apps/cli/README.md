@@ -1,25 +1,25 @@
 # Planview CLI
 
-The public `planview` command-line package. It publishes immutable HTML
-snapshots through the private localhost daemon:
+The public `@abijith-suresh/planview` command-line package. It publishes immutable,
+30-day-last-access-retained HTML snapshots through the private localhost daemon:
 
 ```sh
-npx planview publish ./report.html
+npx @abijith-suresh/planview publish ./report.html
 # http://localhost:4777/<id>
 ```
 
 The daemon can also be managed directly:
 
 ```sh
-npx planview start
-npx planview status
-npx planview stop
-npx planview restart
-npx planview clean
+npx @abijith-suresh/planview start
+npx @abijith-suresh/planview status
+npx @abijith-suresh/planview stop
+npx @abijith-suresh/planview restart
+npx @abijith-suresh/planview clean
 ```
 
 The daemon is detached, bound only to the fixed `127.0.0.1:4777`, and stores
-its protected runtime descriptor below the persistent Planview app-data
+its protected runtime descriptor below the durable Planview app-data
 directory. `publish` validates the `.html`/`.htm` source and inclusive 10 MiB
 limit before starting the daemon, then prints only the resulting localhost URL.
 `get` accepts a document id or exact local Planview URL and writes only the
@@ -71,4 +71,5 @@ requests, not hostile-local-user filesystem isolation on Windows.
 
 The private daemon workspace is bundled into the CLI's `dist` artifact during
 build and pack. The published package includes the Agent Skills under `skills/`
-and therefore has no runtime dependency on a private `@planview/*` workspace.
+and therefore has no manifest or TypeScript-declaration dependency on a private
+`@planview/*` workspace.

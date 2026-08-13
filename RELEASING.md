@@ -1,41 +1,53 @@
 # Releasing
 
-The public npm package is `planview`, built from `apps/cli`. Releases use
-Changesets and remain patch-only before `1.0.0`.
+The public npm package is `@abijith-suresh/planview`, built from `apps/cli`. Its
+CLI binary remains `planview`. Releases use Changesets and remain patch-only
+before `1.0.0`.
 
 1. Confirm the pending changesets with `npm run changeset:status`.
 2. Run `npm run verify` and `npm run pack:check`. Verification includes the
-   release-policy check, which rejects pre-1.0.0 minor or major `planview`
-   changesets while allowing patch changesets and unrelated/private entries.
-3. Run `npm run version-packages` to apply the release plan and update
-   changelogs. This command runs the release-policy check again before
-   changing versions. Review the generated changes before committing them.
-4. Commit the version and changelog updates, then run `npm run release`. The
-   release command repeats the policy check before verification, packing, and
-   publishing.
+   release-policy check, which rejects pre-1.0.0 minor or major
+   `@abijith-suresh/planview` Changesets while allowing patch Changesets and
+   unrelated/private entries.
+3. Run `npm run version-packages` to apply the release plan, update
+   changelogs, and refresh `package-lock.json` without running lifecycle scripts.
+   This command runs the release-policy check again before changing versions.
+   Review the generated changes before committing them.
+4. The Changesets Action commits the generated version and changelog updates to
+   `changeset-release/main` and opens or updates the release PR. Review that PR;
+   its normal CI runs before merging. The merge push runs the same verified
+   release command and is the only automated publish trigger.
 
 `release` verifies the workspace, checks the package tarball, creates a verified
-prebuilt tarball, and publishes that tarball with lifecycle scripts disabled.
-Publishing requires npm authentication and must be done from the intended
-release branch.
+prebuilt tarball, and invokes the guarded publisher with lifecycle scripts
+disabled. Publishing is explicitly disabled by default; enabling it requires an
+explicit registry, `NPM_TOKEN` or `NODE_AUTH_TOKEN`, and
+`PLANVIEW_NPM_PUBLISH=enabled`.
 
 ## GitHub Actions release
 
-`.github/workflows/release.yml` runs on pushes to `main` (including merged pull
-requests). It installs with `npm ci --ignore-scripts`, runs `npm run verify`, checks the
-public package with `npm run pack:check`, and creates a prebuilt tarball with
-`npm run pack:verified` before publishing. The final publish uses
-`npm publish --ignore-scripts`, so neither `RELEASE_TOKEN` nor
-`NODE_AUTH_TOKEN` is exposed to package lifecycle scripts. The repository's
-only non-private workspace is `planview`; the private workspaces remain
-excluded by `.changeset/config.json`.
+`.github/workflows/release.yml` runs on pushes to `main`. It installs with
+`npm ci --ignore-scripts`, validates and packs the public package, then invokes
+`changesets/action` with the `RELEASE_TOKEN` PAT. Pending Changesets create or
+update `changeset-release/main`; after that PR is reviewed and merged, the next
+`main` push runs the guarded verified publisher for the versioned package.
 
-Set the repository secret `RELEASE_TOKEN` to an npm automation token. The token
-is provided only to the final publish step. Manual runs default to `dry_run`,
-which performs the same immutable install, verification, and pack checks but
-never publishes to npm or uses the release token. A manual publish must
-explicitly set `dry_run` to `false` and use the `main` ref.
+Set `RELEASE_TOKEN` to a GitHub PAT with permission to push the generated branch
+and create/update pull requests; the PAT is not an npm credential. Publishing is
+currently safe by default: `PLANVIEW_NPM_PUBLISH=disabled` performs no npm
+publish. To enable the merge-triggered publish later, configure the repository
+variable `PLANVIEW_NPM_PUBLISH=enabled`, `PLANVIEW_NPM_REGISTRY` explicitly, and
+a separate `NPM_TOKEN` secret; keep `PLANVIEW_NPM_REGISTRY` at the workflow's
+secure npmjs default (or update the setup-node registry configuration together
+with any deliberate registry change). `setup-node` configures the scoped
+`@abijith-suresh` npm registry without writing the token; `NODE_AUTH_TOKEN` is
+provided only to the final publish-capable Changesets step. The final publisher
+uses a verified tarball and `npm publish --ignore-scripts`; release verification
+runs without GitHub or npm credentials, and the publish child cannot run package
+lifecycle scripts.
 
-The workflow does not version pending Changesets in place. Maintainers should
-run `npm run version-packages`, review and merge the generated version and
-changelog changes, then let the push to `main` publish that release.
+The repository's only releasable workspace is
+`@abijith-suresh/planview`; the private workspaces remain excluded by
+`.changeset/config.json`. Feature PRs that change releasable CLI source paths
+must add a patch Changeset. The generated release PR is exempt because it
+contains the version and changelog produced by Changesets.

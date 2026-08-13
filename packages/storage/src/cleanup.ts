@@ -31,6 +31,7 @@ export type DocumentCleanupResult = Readonly<{
   readonly removedDocumentFiles: number;
   readonly removedMetadataRows: number;
   readonly removedStagedFiles: number;
+  readonly removedReadReferences: number;
   readonly removedFinalizationLocks: number;
   readonly reclaimedBytes: number;
   readonly retainedEntries: number;
@@ -104,6 +105,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
     let removedMetadataRows = 0;
     let reclaimedBytes = 0;
     let removedStagedFiles = 0;
+    let removedReadReferences = 0;
     let removedFinalizationLocks = 0;
     let retainedEntries = 0;
 
@@ -112,6 +114,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
     try {
       staging = await documentFileStore.reconcileDocumentFiles();
       removedStagedFiles += staging.stagedFilesRemoved;
+      removedReadReferences += staging.readReferencesRemoved;
       removedFinalizationLocks += staging.finalizationLocksRemoved;
       retainedEntries += staging.retainedEntries;
     } catch (cause) {
@@ -284,6 +287,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
       removedDocumentFiles,
       removedMetadataRows,
       removedStagedFiles,
+      removedReadReferences,
       removedFinalizationLocks,
       reclaimedBytes,
       retainedEntries,

@@ -1,12 +1,12 @@
 # Planview
 
-Planview is a TypeScript ESM monorepo for turning an HTML file into a persistent,
+Planview is a TypeScript ESM monorepo for turning an HTML file into a retained,
 immutable localhost URL.
 
 ## Bootstrap status
 
-The foundation includes the public `planview` CLI workspace and the private
-`@planview/core`, `@planview/daemon`, and `@planview/storage` workspaces. The CLI
+The foundation includes the public `@abijith-suresh/planview` npm workspace and the
+private `@planview/core`, `@planview/daemon`, and `@planview/storage` workspaces. The CLI
 is an installable TypeScript ESM package with detached daemon lifecycle
 commands: `start`, `status`, `stop`, and `restart`, plus `publish <file>` and
 `get <id|url>` for immutable HTML snapshots. The private daemon is bundled into
@@ -40,9 +40,9 @@ integration tests, and workspace builds. The CLI package can also be checked
 directly:
 
 ```sh
-npm run typecheck --workspace planview
-npm test --workspace planview
-npm pack --dry-run --workspace planview
+npm run typecheck --workspace @abijith-suresh/planview
+npm test --workspace @abijith-suresh/planview
+npm pack --dry-run --workspace @abijith-suresh/planview
 ```
 
 The package dry run invokes the CLI's `prepack` build, so it does not depend on
@@ -67,11 +67,13 @@ site with no prefix.
 ## GitHub Actions and Pages
 
 CI runs the Node 24 quality gate for pull requests and pushes to `main`. It also
-packs the public `planview` npm package and smoke-tests the resulting tarball
-without publishing it or requiring a secret. The release workflow runs after
-changes land on `main`, verifies and packs the immutable package, then publishes
-only `planview` using the `RELEASE_TOKEN` repository secret. Manual release runs
-default to a no-publish dry run. See [RELEASING.md](RELEASING.md) for details.
+packs the public `@abijith-suresh/planview` npm package and smoke-tests the resulting
+tarball without publishing it or requiring a secret. A push to `main` validates the
+repository, then the Changesets Action creates or updates the generated
+`changeset-release/main` version PR with the `RELEASE_TOKEN` PAT. Merging that PR
+runs the same release command; npm publishing remains explicitly disabled until
+its registry and separate npm token are configured. See [RELEASING.md](RELEASING.md)
+for details.
 
 The Pages workflow builds `apps/site` on relevant pushes to `main` and deploys it
 at `https://<owner>.github.io/<repository>/`. The existing Astro configuration
@@ -98,7 +100,7 @@ and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
 
 ## Planned structure
 
-- `apps/cli` — public command-line package (`planview`)
+- `apps/cli` — public npm package (`@abijith-suresh/planview`), with the `planview` command
 - `apps/site` — private static project site
 - `packages/core` — private path, v1 policy, document identifier, and source-file validation primitives
 - `packages/daemon` — private detached lifecycle daemon and authenticated management boundary

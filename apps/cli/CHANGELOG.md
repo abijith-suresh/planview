@@ -1,4 +1,4 @@
-# planview
+# @abijith-suresh/planview
 
 ## 0.1.1
 

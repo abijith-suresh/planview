@@ -90,6 +90,16 @@ test("--help and -h produce the same deterministic output", () => {
   assert.match(long.stdout, /^Usage: planview <command>/);
 });
 
+test("the public declaration does not reference private workspace packages", () => {
+  const declaration = readFileSync(resolve(packageRoot, "dist/index.d.ts"), "utf8");
+  assert.doesNotMatch(declaration, /@planview\//);
+});
+
+test("the public package is scoped while its CLI binary remains planview", () => {
+  assert.equal(packageJson.name, "@abijith-suresh/planview");
+  assert.deepEqual(packageJson.bin, { planview: "./dist/index.js" });
+});
+
 test("--version and -v follow the Changesets-managed package version", () => {
   const lockfile = JSON.parse(readFileSync(resolve(repositoryRoot, "package-lock.json"), "utf8"));
   assert.equal(lockfile.packages["apps/cli"].version, packageJson.version);
@@ -122,12 +132,12 @@ test("unknown options fail as typed Effects and preserve boundary output", () =>
   assert.deepEqual(stderr, [`Unknown option: --unknown\n\n${formatHelp()}`]);
 });
 
-test("the Effect boundary maps typed argument failures to the existing exit code", () => {
+test("the Effect boundary maps typed argument failures to the existing exit code", async () => {
   const stdout = [];
   const stderr = [];
 
   assert.equal(
-    main(
+    await main(
       ["--help", "unexpected"],
       (message) => stdout.push(message),
       (message) => stderr.push(message)
@@ -136,6 +146,20 @@ test("the Effect boundary maps typed argument failures to the existing exit code
   );
   assert.deepEqual(stdout, []);
   assert.deepEqual(stderr, [`Unexpected argument: unexpected\n\n${formatHelp()}`]);
+});
+
+test("programmatic help and version output await asynchronous writers", async () => {
+  const outputs = [];
+  const stdout = async (message) => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    outputs.push(message);
+  };
+
+  assert.equal(await main(["--help"], stdout, () => undefined), 0);
+  assert.equal(await main(["--version"], stdout, () => undefined), 0);
+  assert.equal(outputs.length, 2);
+  assert.equal(outputs[0], formatHelp());
+  assert.match(outputs[1], /^planview \d+\.\d+\.\d+\n$/);
 });
 
 test("unknown options fail with a useful error", () => {
@@ -161,7 +185,7 @@ test("the installed bin invokes the built CLI", () => {
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const result = spawnSync(
     npm,
-    ["exec", "--workspace", "planview", "--", "planview", "--version"],
+    ["exec", "--workspace", "@abijith-suresh/planview", "--", "planview", "--version"],
     { cwd: repositoryRoot, encoding: "utf8" }
   );
 

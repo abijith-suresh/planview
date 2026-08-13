@@ -103,7 +103,9 @@ rechecks the finalized inode identity and retains a replacement instead of
 unlinking it. Reads publish a private, identity-checked reference while the
 stream is active, and target deletion takes the same id-wide lock before
 checking those references; this protects normal same-user operations across
-store instances. The daemon additionally holds its operation gate across the
+store instances. Startup reconciliation removes read references whose local
+owner is definitely dead after a crash, while retaining malformed, foreign, or
+live-owner markers. The daemon additionally holds its operation gate across the
 HTTP response so cleanup cannot remove an active read. Target deletion is
 serialized with finalization. `cloneStagedFile`
 and `discardStagedFile` are required store operations: publication never falls
@@ -166,8 +168,8 @@ leave an unknown pair. Lock metadata/claims and directory
 entries have the platform-specific sync limits described above. The cleanup
 coordinator reconciles these known states conservatively: metadata-gated reads
 make uncommitted files invisible, stale locks are reclaimed only with the same
-liveness/lease proof as publication, and active reads or target locks are
-retained. It applies the fixed 30-day `lastAccessedAt` policy through an
+liveness/lease proof as publication, dead local read markers are reconciled, and
+active reads or target locks are retained. It applies the fixed 30-day `lastAccessedAt` policy through an
 injected clock and reports, rather than guesses through, filesystem faults.
 Tests labeled concurrent Planview operations cover cooperating store instances
 and normal lock/collision races. Tests labeled out-of-model hostile external

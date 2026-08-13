@@ -1,7 +1,7 @@
 {
-  "name": "planview",
+  "name": "@abijith-suresh/planview",
   "version": "0.1.1",
-  "description": "Turn an HTML file into a persistent, immutable localhost URL.",
+  "description": "Turn an HTML file into a durable, immutable localhost URL.",
   "type": "module",
   "engines": {
     "node": ">=24.19.0 <25"
@@ -30,8 +30,6 @@
     "test": "npm run build && node --test test/cli.test.mjs"
   },
   "devDependencies": {
-    "@planview/core": "0.1.0",
-    "@planview/daemon": "0.1.0",
     "@types/node": "24.10.1",
     "esbuild": "0.27.7"
   },
