@@ -4,6 +4,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
 import { Effect } from "effect";
 import {
   createDocumentPublicationCoordinator,
@@ -12,6 +13,7 @@ import {
   DocumentPublicationNotFoundError,
   DocumentPublicationReadError,
   DocumentPublicationRetryLimitError,
+  StorageQuotaExceededError,
   openDocumentFileStore,
   openStorage,
 } from "../dist/index.js";
@@ -56,6 +58,32 @@ const coordinator = (documentFileStore, metadataStore, overrides = {}) =>
   });
 
 const publicationFile = (documentsDir, documentId) => join(documentsDir, `${documentId}.html`);
+
+test("rejects a publication at the fixed quota and compensates its finalized file", () =>
+  withEnvironment(
+    async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
+      metadataStore.insertDocumentMetadata({
+        id: firstId,
+        createdAt: 1,
+        lastAccessedAt: 1,
+        size: V1_STORAGE_QUOTA_BYTES - V1_STORAGE_METADATA_BYTES_PER_DOCUMENT,
+      });
+      const source = join(directory, "over-quota.html");
+      await writeFile(source, "x");
+
+      await assert.rejects(
+        coordinator(documentFileStore, metadataStore, { generateId: () => secondId }).publish(
+          source
+        ),
+        (error) =>
+          error instanceof DocumentPublicationError &&
+          error.cause instanceof StorageQuotaExceededError &&
+          /fixed 1 GiB limit/.test(error.cause.message)
+      );
+      await assert.rejects(readFile(publicationFile(documentsDir, secondId)), { code: "ENOENT" });
+      assert.deepEqual(await readdir(stagingDir), []);
+    }
+  ));
 
 test("publishes one durable immutable result without changing source input", () =>
   withEnvironment(

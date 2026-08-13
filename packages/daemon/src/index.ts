@@ -2179,10 +2179,22 @@ const assertDescriptorEndpoint = (
 
 const parseResponse = <Value>(answer: DaemonResponse, path: string, statusCode: number) => {
   if (answer.statusCode !== statusCode) {
+    let detail: string | undefined;
+    try {
+      const errorPayload = parseJson(answer.body);
+      const errorMessage = isRecord(errorPayload)
+        ? recordValue(errorPayload, "message")
+        : undefined;
+      if (typeof errorMessage === "string") {
+        detail = errorMessage;
+      }
+    } catch {
+      // Preserve the status diagnostic when the daemon returned non-JSON data.
+    }
     throw new DaemonRequestError({
       path,
       cause: answer.body,
-      message: `The daemon returned HTTP ${answer.statusCode} for ${path}.`,
+      message: `The daemon returned HTTP ${answer.statusCode} for ${path}.${detail === undefined ? "" : ` ${detail}`}`,
     });
   }
   const parsed = parseJson(answer.body);

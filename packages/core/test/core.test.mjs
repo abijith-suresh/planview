@@ -7,6 +7,8 @@ import {
   V1_POLICY,
   V1_PORT,
   V1_RETENTION_DAYS,
+  V1_STORAGE_METADATA_BYTES_PER_DOCUMENT,
+  V1_STORAGE_QUOTA_BYTES,
 } from "../dist/index.js";
 
 const dependencies = (platform, homeDir, env = {}) => ({ platform, homeDir, env });
@@ -103,11 +105,15 @@ test("keeps the v1 policy values fixed and isolated", () => {
   assert.equal(V1_MAX_HTML_SIZE_BYTES, 10 * 1024 * 1024);
   assert.equal(V1_RETENTION_DAYS, 30);
   assert.equal(V1_CLEANUP_INTERVAL_HOURS, 24);
+  assert.equal(V1_STORAGE_QUOTA_BYTES, 1024 * 1024 * 1024);
+  assert.equal(V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, 4 * 1024);
   assert.deepEqual(V1_POLICY, {
     port: 4777,
     maxHtmlSizeBytes: 10 * 1024 * 1024,
     retentionDays: 30,
     cleanupIntervalHours: 24,
+    storageQuotaBytes: 1024 * 1024 * 1024,
+    storageMetadataBytesPerDocument: 4 * 1024,
   });
   assert.equal(Object.isFrozen(V1_POLICY), true);
 });
