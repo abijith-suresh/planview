@@ -5,8 +5,11 @@ CLI binary remains `planview`. Releases use Changesets and remain patch-only
 before `1.0.0`.
 
 1. Confirm the pending changesets with `npm run changeset:status`.
-2. Run `npm run verify` and `npm run pack:check`. Verification includes the
-   release-policy check, which rejects pre-1.0.0 minor or major
+2. Run `npm run verify` and `npm run pack:check`. CI additionally installs the
+   clean packed artifact on macOS and Windows and exercises CLI lifecycle,
+   publish/get, and skills installation there; those jobs do not publish or
+   require deployment credentials. Verification includes the release-policy
+   check, which rejects pre-1.0.0 minor or major
    `@abijith-suresh/planview` Changesets while allowing patch Changesets and
    unrelated/private entries.
 3. Run `npm run version-packages` to apply the release plan, update
