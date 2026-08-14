@@ -482,8 +482,10 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
           fileWatermark = undefined;
           break;
         }
-        // If a directory race caused a page to contain no regular files, use
-        // the name boundary examined by the store rather than looping forever.
+        // The store cursor advances over every examined name, including
+        // entries conservatively deferred by the scan fence. Do not derive it
+        // from returned files or a deferred entry can be admitted/skipped on a
+        // later page.
         fileCursor = page.nextId ?? fileCursor;
       }
 

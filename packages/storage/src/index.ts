@@ -43,6 +43,7 @@ export {
   DocumentFileStorePathError,
   DocumentFileTargetBusyError,
   type DocumentFileTargetCapability,
+  type DocumentFileTargetCommit,
   type DocumentFileTargetRecoveryPolicy,
   InvalidStagedDocumentFileHandleError,
   openDocumentFileStore,

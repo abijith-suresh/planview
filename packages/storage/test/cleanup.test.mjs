@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { Effect } from "effect";
 import {
   createDocumentCleanupCoordinator,
+  createDocumentPublicationCoordinator,
   createMetadataGatedDocumentReader,
   openDocumentFileStore,
   openStorage,
@@ -285,23 +286,103 @@ test("rechecks fresh and stale lock state and reports only removed locks", () =>
   }));
 
 test("retains a fresh uncommitted target for an in-flight publisher window", () =>
-  withEnvironment(async ({ documentFileStore, metadataStore, documentsDir }) => {
-    const documentId = id("h");
-    await writeFile(join(documentsDir, `${documentId}.html`), "fresh target");
-    const cleanup = createDocumentCleanupCoordinator({
-      documentFileStore,
-      metadataStore,
-      now: () => Date.now(),
-    });
+  withEnvironment(
+    async ({ documentFileStore, metadataStore, documentsDir }) => {
+      const documentId = id("h");
+      await writeFile(join(documentsDir, `${documentId}.html`), "fresh target");
+      const cleanup = createDocumentCleanupCoordinator({
+        documentFileStore,
+        metadataStore,
+        now: () => Date.now(),
+      });
 
-    const result = await cleanup.clean();
-    assert.equal(result.removedDocumentFiles, 0);
-    assert.equal(result.retainedEntries, 1);
-    assert.equal(
-      (await readFile(join(documentsDir, `${documentId}.html`))).toString(),
-      "fresh target"
-    );
-  }));
+      const result = await cleanup.clean();
+      assert.equal(result.removedDocumentFiles, 0);
+      assert.equal(result.retainedEntries, 1);
+      assert.equal(
+        (await readFile(join(documentsDir, `${documentId}.html`))).toString(),
+        "fresh target"
+      );
+    },
+    { documentFileScanStartedAt: () => Number.MAX_SAFE_INTEGER }
+  ));
+
+test("cleanup cannot delete a hard-linked target while publication commits metadata", () => {
+  let cleanup;
+  let publication;
+  let publicationPromise;
+  let targetLinkReadyResolve;
+  const targetLinkReady = new Promise((resolve) => {
+    targetLinkReadyResolve = resolve;
+  });
+  let releaseTargetLink;
+  const targetLinkRelease = new Promise((resolve) => {
+    releaseTargetLink = resolve;
+  });
+  let sizeEnteredResolve;
+  const sizeEntered = new Promise((resolve) => {
+    sizeEnteredResolve = resolve;
+  });
+  let releaseSize;
+  const sizeRelease = new Promise((resolve) => {
+    releaseSize = resolve;
+  });
+  return withEnvironment(
+    async ({ documentFileStore, metadataStore, directory, documentsDir }) => {
+      const documentId = id("p");
+      const source = join(directory, "publishing.html");
+      await writeFile(source, "publication fence");
+      cleanup = createDocumentCleanupCoordinator({
+        documentFileStore,
+        metadataStore,
+        now: () => 1_700_000_000_000,
+      });
+      publication = createDocumentPublicationCoordinator({
+        documentFileStore,
+        metadataStore,
+        generateId: () => documentId,
+        now: () => 1_700_000_000_000,
+        readPublishedSize: async () => {
+          sizeEnteredResolve();
+          await sizeRelease;
+          return 17;
+        },
+      });
+
+      publicationPromise = publication.publish(source);
+      await targetLinkReady;
+      const cleanupRun = cleanup.clean();
+      const cleanupResult = await cleanupRun;
+      releaseSize();
+      const result = await publicationPromise;
+
+      assert.equal(result.id, documentId);
+      assert.equal(cleanupResult.removedDocumentFiles, 0);
+      assert.equal(cleanupResult.removedMetadataRows, 0);
+      assert.equal(cleanupResult.failures.length, 1);
+      assert.deepEqual(metadataStore.getDocumentMetadata(documentId), result.metadata);
+      assert.equal(
+        (await readFile(join(documentsDir, `${documentId}.html`))).toString(),
+        "publication fence"
+      );
+    },
+    {
+      documentFileScanStartedAt: () => Number.MAX_SAFE_INTEGER,
+      documentFileScanObservation: (observation) => ({
+        ...observation,
+        modifiedAt: 1,
+      }),
+      beforeDocumentFilePageScan: async () => {
+        releaseTargetLink();
+        await sizeEntered;
+      },
+      beforeFinalizationTargetLink: async () => {
+        targetLinkReadyResolve();
+        await targetLinkRelease;
+      },
+    }
+  );
+});
 
 test("faults are reported without deleting a candidate", () =>
   withEnvironment(async ({ documentFileStore, metadataStore, directory }) => {
@@ -350,30 +431,142 @@ test("canceled cleanup returns a resumable cursor without skipping the active ro
     assert.deepEqual(await readdir(join(directory, "documents")), []);
   }));
 
-test("pages document files in exact bytewise order and resume without gaps", () =>
-  withEnvironment(async ({ documentFileStore, documentsDir }) => {
-    const ids = [id("A"), id("_"), id("-"), id("a"), id("0")];
-    await Promise.all(
-      ids.map((documentId) => writeFile(join(documentsDir, `${documentId}.html`), "x"))
-    );
-    const expected = [...ids].sort((left, right) =>
-      Buffer.compare(Buffer.from(left), Buffer.from(right))
-    );
-    const observed = [];
-    let page = await documentFileStore.listDocumentFilesPage(2);
-    const watermark = page.watermark;
-    observed.push(...page.files.map((file) => file.id));
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    const insertedId = id("1");
-    await writeFile(join(documentsDir, `${insertedId}.html`), "new");
-    let after = page.nextId;
-    do {
-      page = await documentFileStore.listDocumentFilesPage(2, after, watermark);
+test("pages document files in exact bytewise order and resume without gaps", () => {
+  const ids = [id("A"), id("_"), id("-"), id("a"), id("0")];
+  const insertedId = id("1");
+  return withEnvironment(
+    async ({ documentFileStore, documentsDir }) => {
+      await Promise.all(
+        ids.map((documentId) => writeFile(join(documentsDir, `${documentId}.html`), "x"))
+      );
+      const expected = [...ids].sort((left, right) =>
+        Buffer.compare(Buffer.from(left), Buffer.from(right))
+      );
+      const observed = [];
+      let page = await documentFileStore.listDocumentFilesPage(2);
+      const watermark = page.watermark;
       observed.push(...page.files.map((file) => file.id));
-      after = page.nextId;
-    } while (page.hasMore);
-    assert.deepEqual(observed, expected);
-  }));
+      await writeFile(join(documentsDir, `${insertedId}.html`), "new");
+      let after = page.nextId;
+      do {
+        page = await documentFileStore.listDocumentFilesPage(2, after, watermark);
+        observed.push(...page.files.map((file) => file.id));
+        after = page.nextId;
+      } while (page.hasMore);
+      assert.deepEqual(observed, expected);
+    },
+    {
+      documentFileScanStartedAt: () => 100,
+      documentFileScanObservation: (observation) => ({
+        ...observation,
+        identity: {
+          ...observation.identity,
+          birthtimeMs: observation.id === insertedId ? 200 : 1,
+        },
+      }),
+    }
+  );
+});
+
+test("defers a post-start file with a coarse birth-time fence without skipping", () => {
+  const firstId = id("a");
+  const candidateId = id("b");
+  const upperId = id("z");
+  let documentsDirectory;
+  let inserted = false;
+  return withEnvironment(
+    async ({ documentFileStore, documentsDir }) => {
+      documentsDirectory = documentsDir;
+      await Promise.all([
+        writeFile(join(documentsDir, `${firstId}.html`), "existing"),
+        writeFile(join(documentsDir, `${upperId}.html`), "upper"),
+      ]);
+
+      const first = await documentFileStore.listDocumentFilesPage(1);
+      assert.deepEqual(
+        first.files.map((file) => file.id),
+        [firstId]
+      );
+      assert.equal(first.nextId, firstId);
+      assert.equal(first.watermark?.startedAt, 200);
+
+      const deferred = await documentFileStore.listDocumentFilesPage(
+        1,
+        first.nextId,
+        first.watermark
+      );
+      assert.deepEqual(deferred.files, []);
+      assert.equal(deferred.nextId, candidateId);
+      assert.equal(deferred.hasMore, true);
+
+      const resumed = await documentFileStore.listDocumentFilesPage(
+        1,
+        deferred.nextId,
+        first.watermark
+      );
+      assert.deepEqual(
+        resumed.files.map((file) => file.id),
+        [upperId]
+      );
+    },
+    {
+      documentFileScanStartedAt: () => 200,
+      beforeDocumentFilePageScan: async (startedAt) => {
+        assert.equal(startedAt, 200);
+        if (!inserted) {
+          inserted = true;
+          await writeFile(join(documentsDirectory, `${candidateId}.html`), "post-start");
+        }
+      },
+      documentFileScanObservation: (observation) => ({
+        ...observation,
+        identity: {
+          ...observation.identity,
+          birthtimeMs: observation.id === candidateId ? 200 : 100,
+        },
+      }),
+    }
+  );
+});
+
+test("defers entries whose birth time is unavailable", () =>
+  withEnvironment(
+    async ({ documentFileStore, documentsDir }) => {
+      const firstId = id("a");
+      const deferredId = id("b");
+      await writeFile(join(documentsDir, `${firstId}.html`), "existing");
+      await writeFile(join(documentsDir, `${deferredId}.html`), "unavailable");
+      const page = await documentFileStore.listDocumentFilesPage(2);
+      assert.deepEqual(page.files, []);
+      assert.equal(page.nextId, deferredId);
+    },
+    {
+      documentFileScanStartedAt: () => 200,
+      documentFileScanObservation: (observation) => ({
+        ...observation,
+        identity: {
+          ...observation.identity,
+          birthtimeMs: Number.NaN,
+        },
+      }),
+    }
+  ));
+
+test("does not remove a replacement scan marker", () =>
+  withEnvironment(
+    async ({ documentFileStore, documentsDir }) => {
+      await assert.rejects(documentFileStore.listDocumentFilesPage(1), /identity-safe discard/);
+      const entries = await readdir(documentsDir);
+      assert.equal(entries.filter((entry) => entry.startsWith(".scan-")).length, 1);
+    },
+    {
+      documentFileScanStartedAt: () => 100,
+      beforeDocumentFileScanMarkerCleanup: async (markerPath) => {
+        await rm(markerPath);
+        await writeFile(markerPath, "replacement marker");
+      },
+    }
+  ));
 
 test("keeps reconciliation inside the cleanup item budget", () =>
   withEnvironment(async ({ documentFileStore, stagingDir }) => {
