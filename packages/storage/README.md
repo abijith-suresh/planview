@@ -33,8 +33,14 @@ policy-driven cleanup.
 `fs.link`, which is an atomic no-replace hard-link operation on the supported
 local filesystems. On success it returns an opaque target identity capability;
 coordinator compensation must use that capability rather than deleting by
-pathname. It deliberately does not use `rename`: POSIX `rename` can replace a
-target created concurrently. Per-handle and per-target atomic lock directories
+pathname. The private optional target-commit callback runs while the id-wide
+target lock is still held; the publication coordinator uses it to measure the
+linked target and commit metadata before cleanup can acquire that lock. Its
+provided target reader is valid only until that callback resolves. Callers that
+finalize without a callback retain the lower-level physical-file boundary and
+must use the publication coordinator for metadata visibility. It deliberately
+does not use `rename`: POSIX `rename` can replace a target created concurrently.
+Per-handle and per-target atomic lock directories
 contain owner/lease metadata. An expired lock
 is recovered only after a 30-second lease plus a 5-second grace period, when its
 metadata identifies this host and a process that is definitely gone; malformed,
@@ -106,8 +112,11 @@ checking those references; this protects normal same-user operations across
 store instances. Startup reconciliation removes read references whose local
 owner is definitely dead after a crash, while retaining malformed, foreign, or
 live-owner markers. The daemon additionally holds its operation gate across the
-HTTP response so cleanup cannot remove an active read. Target deletion is
-serialized with finalization. `cloneStagedFile`
+HTTP response so cleanup cannot remove an active read. Target deletion is serialized with finalization and with the publication
+metadata handoff: a cleanup candidate whose metadata row is not visible yet
+can only delete after the publisher's same-id target lock is released, at which
+point the row is committed or the publisher's failure path has retained a
+recoverable target. `cloneStagedFile`
 and `discardStagedFile` are required store operations: publication never falls
 back to reopening caller input or silently skips owned cleanup. Invalid IDs and
 handles are rejected before any owned path
@@ -159,9 +168,11 @@ coordinator deliberately does **not** claim a cross-filesystem atomic
 transaction. Exact remaining crash properties are: a crash after staged-file
 sync can leave a staged snapshot; after target-link/directory sync and before
 metadata commit it can leave a physical file with no row (the gated reader
-rejects it); a post-publication staging-directory sync failure can leave that
-recoverable target with unknown staging/lock durability and no row (the
-coordinator never deletes the target under the retain policy); after metadata
+rejects it), but a live cooperating publisher holds the target lock across this
+handoff so cleanup cannot remove that target; a post-publication staging-
+directory sync failure can leave that recoverable target with unknown
+staging/lock durability and no row (the coordinator never deletes the target
+under the retain policy); after metadata
 commit and before snapshot cleanup it can leave a valid published pair plus
 duplicate staging; and a crash or thrown error at the metadata boundary can
 leave an unknown pair. Lock metadata/claims and directory
@@ -170,11 +181,30 @@ coordinator reconciles these known states conservatively: metadata-gated reads
 make uncommitted files invisible, stale locks are reclaimed only with the same
 liveness/lease proof as publication, dead local read markers are reconciled, and
 active reads or target locks are retained. It applies the fixed 30-day `lastAccessedAt` policy through an
-injected clock and reports, rather than guesses through, filesystem faults. Retention candidates use a
+injected clock and reports, rather than guesses through, filesystem faults.
+
+## Fixed v1 storage quota
+
+Committed snapshots have a fixed 1 GiB logical storage ceiling. Admission charges the
+published HTML byte count plus 4 KiB per document for its SQLite metadata row,
+generation token, and indexes. The charge is checked in the same `BEGIN IMMEDIATE`
+transaction that inserts the metadata row, so concurrent daemon/storage instances
+cannot both spend the same remaining capacity. Retention deletion releases the row's
+charge in its transaction; no user configuration, quota command, or UI is added.
+Staging and finalization remain bounded by the existing 10 MiB per-source limit, and
+uncommitted/orphaned files remain invisible to readers and are handled by normal
+reconciliation rather than being counted as active documents. A quota rejection is
+reported as a publish error with the fixed limit and remaining capacity. Retention
+continues to use the normal fixed 30-day last-access policy.
+
+Retention candidates use a
 `lastAccessedAt, id` SQLite index and bounded tuple-cursor pages; cleanup has fixed item/time budgets and
 returns `resumable` when the next invocation must continue. Metadata and document reconciliation advance
-through bounded id pages instead of building a full metadata catalog. The cleanup benchmark runs full
-cleanup for 1,000 and 10,000 rows and reports wall time, batches, reclaimed bytes, and before/peak/after
+through bounded id pages instead of building a full metadata catalog. Document-file pages use a
+fixed id fence plus a strict filesystem birth-time fence for pass membership; equal, coarse, or
+unavailable birth times are conservatively deferred to a later pass rather than being admitted
+as snapshot members. The cleanup benchmark runs full cleanup for 1,000 and 10,000 rows and reports
+wall time, batches, reclaimed bytes, and before/peak/after
 RSS and heap memory with `npm run benchmark:cleanup --workspace @planview/storage`.
 Tests labeled concurrent Planview operations cover cooperating store instances
 and normal lock/collision races. Tests labeled out-of-model hostile external

@@ -117,7 +117,8 @@ export type DocumentPublicationCoordinatorOptions = {
   readonly readPublishedSize?: (
     id: DocumentId,
     documentFileStore: DocumentFileStore,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    readTarget?: () => Promise<ReadStream>
   ) => Promise<number>;
 };
 
@@ -216,10 +217,13 @@ const defaultIsMetadataUniquenessCollision = (error: unknown) => {
 const defaultReadPublishedSize = async (
   id: DocumentId,
   documentFileStore: DocumentFileStore,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  readTarget?: () => Promise<ReadStream>
 ) => {
   signal?.throwIfAborted();
-  const stream = await documentFileStore.readDocumentFile(id);
+  const stream = await (readTarget === undefined
+    ? documentFileStore.readDocumentFile(id)
+    : readTarget());
   const onAbort = () => stream.destroy(signal?.reason);
   signal?.addEventListener("abort", onAbort, { once: true });
   let size = 0;
@@ -766,13 +770,46 @@ export const createDocumentPublicationCoordinator = (
         let targetState: DocumentFileResourceState = "absent";
         let targetCapability: DocumentFileTargetCapability | undefined;
         let targetRecoveryPolicy: DocumentFileTargetRecoveryPolicy = "delete";
+        let targetCommitCause: unknown;
+        let metadata: DocumentMetadata | undefined;
         try {
           // Once finalization starts, let the storage coordinator complete its
           // atomic file boundary. Cancellation is safe before this point, but
           // interrupting it after the hard-link would require guessing which
           // side of the publication boundary won.
           signal?.throwIfAborted();
-          targetCapability = await documentFileStore.finalizeStagedFile(attemptHandle, id);
+          targetCapability = await documentFileStore.finalizeStagedFile(
+            attemptHandle,
+            id,
+            async (_target, readTarget) => {
+              try {
+                const targetReadStore = {
+                  ...documentFileStore,
+                  readDocument: readTarget,
+                  readDocumentFile: readTarget,
+                };
+                const size = await readPublishedSize(id, targetReadStore, signal, readTarget);
+                signal?.throwIfAborted();
+                const createdAt = now();
+                const candidate = Object.freeze({
+                  id,
+                  createdAt,
+                  lastAccessedAt: createdAt,
+                  size,
+                });
+                // The file store holds the id-wide target lock here. This is
+                // the visibility fence between a physical hard link and the
+                // metadata commit; cleanup can only observe the target as busy
+                // until this insertion has crossed its SQLite boundary.
+                signal?.throwIfAborted();
+                metadataStore.insertDocumentMetadata(candidate);
+                metadata = candidate;
+              } catch (cause) {
+                targetCommitCause = cause;
+                throw cause;
+              }
+            }
+          );
           targetState = "retained";
           targetLockStates.delete(id);
           const state = ownedHandles.get(attemptHandle);
@@ -817,6 +854,79 @@ export const createDocumentPublicationCoordinator = (
             }
           }
 
+          if (cause instanceof DocumentFileFinalizeError && cause.targetCommitAttempted) {
+            const commitCause = targetCommitCause ?? cause.cause;
+            let uniquenessCollision = false;
+            try {
+              uniquenessCollision = isMetadataUniquenessCollision(commitCause);
+            } catch (classifierCause) {
+              const observation = observeMetadata(id);
+              const metadataState: MetadataObservation =
+                observation.status === "absent" ? "absent" : "unknown";
+              const observedCause = observation.cause;
+              await compensate(id, {
+                targetState,
+                ...(targetCapability === undefined ? {} : { targetCapability }),
+                targetRecoveryPolicy: metadataState === "absent" ? "delete" : "retain",
+                metadataState,
+                cause:
+                  observedCause === undefined
+                    ? classifierCause
+                    : new AggregateError([classifierCause, observedCause]),
+              });
+              throw makePublicationError({ sourcePath, id, cause: classifierCause });
+            }
+
+            const observation = observeMetadata(id);
+            // The target lock prevented a cooperating cleanup from deleting
+            // the target while this callback ran. A row after an insert error
+            // is still not proof that this invocation inserted it, so retain
+            // an occupied or unreadable pair as an orphan.
+            const metadataState: MetadataObservation =
+              observation.status === "absent" ? "absent" : "unknown";
+            const recoveryPolicy: DocumentFileTargetRecoveryPolicy =
+              metadataState === "absent" ? "delete" : "retain";
+            if (uniquenessCollision && metadataState === "absent") {
+              await compensate(id, {
+                targetState,
+                ...(targetCapability === undefined ? {} : { targetCapability }),
+                targetRecoveryPolicy: recoveryPolicy,
+                metadataState,
+                cause: commitCause,
+                handles: new Set([attemptHandle]),
+              });
+              lastRetryCause = commitCause;
+              if (attempt < maxAttempts) {
+                continue;
+              }
+              await compensateWithoutId(commitCause);
+              throw new DocumentPublicationRetryLimitError({
+                sourcePath,
+                attempts: attempt,
+                cause: commitCause,
+                message: `Could not publish document from ${sourcePath}: exhausted ${maxAttempts} attempts after metadata uniqueness collisions.`,
+              });
+            }
+
+            const observedCause = observation.cause;
+            await compensate(id, {
+              targetState,
+              ...(targetCapability === undefined ? {} : { targetCapability }),
+              targetRecoveryPolicy: recoveryPolicy,
+              metadataState,
+              cause:
+                observedCause === undefined
+                  ? commitCause
+                  : new AggregateError([commitCause, observedCause]),
+            });
+            throw makePublicationError({
+              sourcePath,
+              id,
+              handle: attemptHandle,
+              cause: commitCause,
+            });
+          }
+
           if (isDocumentFileCollision(cause) && targetState === "absent") {
             await compensate(id, {
               targetState,
@@ -847,100 +957,92 @@ export const createDocumentPublicationCoordinator = (
           throw makePublicationError({ sourcePath, id, handle: attemptHandle, cause });
         }
 
-        let size: number;
-        try {
-          size = await readPublishedSize(id, documentFileStore, signal);
-          signal?.throwIfAborted();
-        } catch (cause) {
-          await compensate(id, {
-            targetState: "retained",
-            targetCapability,
-            metadataState: "absent",
-            cause,
-          });
-          throw makePublicationError({ sourcePath, id, handle: attemptHandle, cause });
-        }
-
-        let metadata: DocumentMetadata;
-        try {
-          const createdAt = now();
-          metadata = Object.freeze({
-            id,
-            createdAt,
-            lastAccessedAt: createdAt,
-            size,
-          });
-        } catch (cause) {
-          await compensate(id, {
-            targetState: "retained",
-            targetCapability,
-            metadataState: "absent",
-            cause,
-          });
-          throw makePublicationError({ sourcePath, id, handle: attemptHandle, cause });
-        }
-
-        try {
-          // The file is durable, but the metadata row is the visibility
-          // boundary. Recheck cancellation immediately before committing it;
-          // an abort observed after this point cannot safely retract a commit
-          // without an ownership token.
-          signal?.throwIfAborted();
-          metadataStore.insertDocumentMetadata(metadata);
-        } catch (cause) {
-          let uniquenessCollision = false;
+        if (metadata === undefined) {
+          // Adapters written against the pre-fence store contract may ignore
+          // the optional callback. Keep them usable, but the built-in store
+          // never takes this path: its callback above commits while the
+          // target lock is held.
           try {
-            uniquenessCollision = isMetadataUniquenessCollision(cause);
-          } catch (classifierCause) {
+            const size = await readPublishedSize(id, documentFileStore, signal);
+            signal?.throwIfAborted();
+            const createdAt = now();
+            const candidate = Object.freeze({
+              id,
+              createdAt,
+              lastAccessedAt: createdAt,
+              size,
+            });
+            signal?.throwIfAborted();
+            metadataStore.insertDocumentMetadata(candidate);
+            metadata = candidate;
+          } catch (cause) {
+            let uniquenessCollision = false;
+            try {
+              uniquenessCollision = isMetadataUniquenessCollision(cause);
+            } catch (classifierCause) {
+              const observation = observeMetadata(id);
+              const metadataState: MetadataObservation =
+                observation.status === "absent" ? "absent" : "unknown";
+              const observedCause = observation.cause;
+              await compensate(id, {
+                targetState: "retained",
+                targetCapability,
+                targetRecoveryPolicy: metadataState === "absent" ? "delete" : "retain",
+                metadataState,
+                cause:
+                  observedCause === undefined
+                    ? classifierCause
+                    : new AggregateError([classifierCause, observedCause]),
+              });
+              throw makePublicationError({ sourcePath, id, cause: classifierCause });
+            }
+
             const observation = observeMetadata(id);
             const metadataState: MetadataObservation =
               observation.status === "absent" ? "absent" : "unknown";
+            if (uniquenessCollision && metadataState === "absent") {
+              await compensate(id, {
+                targetState: "retained",
+                targetCapability,
+                targetRecoveryPolicy: "delete",
+                metadataState,
+                cause,
+                handles: new Set([attemptHandle]),
+              });
+              lastRetryCause = cause;
+              if (attempt < maxAttempts) {
+                continue;
+              }
+              await compensateWithoutId(cause);
+              throw new DocumentPublicationRetryLimitError({
+                sourcePath,
+                attempts: attempt,
+                cause,
+                message: `Could not publish document from ${sourcePath}: exhausted ${maxAttempts} attempts after metadata uniqueness collisions.`,
+              });
+            }
+
             const observedCause = observation.cause;
             await compensate(id, {
               targetState: "retained",
               targetCapability,
+              targetRecoveryPolicy: metadataState === "absent" ? "delete" : "retain",
               metadataState,
               cause:
-                observedCause === undefined
-                  ? classifierCause
-                  : new AggregateError([classifierCause, observedCause]),
+                observedCause === undefined ? cause : new AggregateError([cause, observedCause]),
             });
-            throw makePublicationError({ sourcePath, id, cause: classifierCause });
+            throw makePublicationError({ sourcePath, id, handle: attemptHandle, cause });
           }
+        }
 
-          const observation = observeMetadata(id);
-          // A row after an insert exception is never proof that this call
-          // inserted it. Matching id/timestamps/size is not an ownership token;
-          // a concurrent or reused invocation can produce the same values.
-          const metadataState: MetadataObservation =
-            observation.status === "absent" ? "absent" : "unknown";
-          if (uniquenessCollision && observation.status === "absent") {
-            await compensate(id, {
-              targetState: "retained",
-              targetCapability,
-              metadataState,
-              cause,
-              handles: new Set([attemptHandle]),
-            });
-            lastRetryCause = cause;
-            if (attempt < maxAttempts) {
-              continue;
-            }
-            await compensateWithoutId(cause);
-            throw new DocumentPublicationRetryLimitError({
-              sourcePath,
-              attempts: attempt,
-              cause,
-              message: `Could not publish document from ${sourcePath}: exhausted ${maxAttempts} attempts after metadata uniqueness collisions.`,
-            });
-          }
-
-          const observedCause = observation.cause;
+        if (metadata === undefined || targetCapability === undefined) {
+          const cause = new Error("The publication metadata commit returned without a result.");
           await compensate(id, {
             targetState: "retained",
-            targetCapability,
-            metadataState,
-            cause: observedCause === undefined ? cause : new AggregateError([cause, observedCause]),
+            ...(targetCapability === undefined ? {} : { targetCapability }),
+            targetRecoveryPolicy: "retain",
+            metadataState: "unknown",
+            cause,
           });
           throw makePublicationError({ sourcePath, id, handle: attemptHandle, cause });
         }

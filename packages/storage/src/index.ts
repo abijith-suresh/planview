@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
 import { Data, Effect } from "effect";
 
 export {
@@ -42,6 +43,7 @@ export {
   DocumentFileStorePathError,
   DocumentFileTargetBusyError,
   type DocumentFileTargetCapability,
+  type DocumentFileTargetCommit,
   type DocumentFileTargetRecoveryPolicy,
   InvalidStagedDocumentFileHandleError,
   openDocumentFileStore,
@@ -77,6 +79,21 @@ export type DocumentAggregate = {
   readonly count: number;
   readonly size: number;
 };
+
+export type DocumentStorageUsage = Readonly<{
+  /** Published HTML bytes plus the fixed metadata charge per document. */
+  readonly bytes: number;
+  readonly documentBytes: number;
+  readonly metadataBytes: number;
+  readonly documentCount: number;
+}>;
+
+export class StorageQuotaExceededError extends Data.TaggedError("StorageQuotaExceededError")<{
+  readonly currentBytes: number;
+  readonly requestedBytes: number;
+  readonly quotaBytes: number;
+  readonly message: string;
+}> {}
 
 export type DocumentMetadataSnapshot = Readonly<
   DocumentMetadata & {
@@ -146,6 +163,7 @@ export interface MetadataStore {
   ) => DocumentMetadataPage;
   readonly recordDocumentAccess: (id: string, accessedAt?: number) => boolean;
   readonly getDocumentAggregate: () => DocumentAggregate;
+  readonly getDocumentStorageUsage: () => DocumentStorageUsage;
   readonly deleteDocument: (id: string) => boolean;
   /** Deletes only if the row is still older than the supplied retention cutoff. */
   readonly deleteDocumentIfLastAccessedBefore: (
@@ -231,6 +249,19 @@ const readText = (value: unknown, field: string) => {
   return value;
 };
 
+const formatBytes = (bytes: number) => {
+  if (bytes % (1024 * 1024 * 1024) === 0) {
+    return `${bytes / (1024 * 1024 * 1024)} GiB`;
+  }
+  if (bytes % (1024 * 1024) === 0) {
+    return `${bytes / (1024 * 1024)} MiB`;
+  }
+  if (bytes % 1024 === 0) {
+    return `${bytes / 1024} KiB`;
+  }
+  return `${bytes} bytes`;
+};
+
 const validateId = (id: unknown) => {
   if (typeof id !== "string" || id.trim().length === 0) {
     throw new StorageInvariantError({
@@ -279,6 +310,29 @@ const validateGeneration = (generation: unknown) => {
 
   return generation;
 };
+
+const storageUsageFor = (documentBytes: number, documentCount: number) => {
+  const metadataBytes =
+    documentCount >=
+    Math.ceil((V1_STORAGE_QUOTA_BYTES + 1) / V1_STORAGE_METADATA_BYTES_PER_DOCUMENT)
+      ? V1_STORAGE_QUOTA_BYTES + 1
+      : documentCount * V1_STORAGE_METADATA_BYTES_PER_DOCUMENT;
+  const bytes =
+    documentBytes >= V1_STORAGE_QUOTA_BYTES + 1 - metadataBytes
+      ? V1_STORAGE_QUOTA_BYTES + 1
+      : documentBytes + metadataBytes;
+  return {
+    bytes,
+    documentBytes,
+    metadataBytes,
+    documentCount,
+  } satisfies DocumentStorageUsage;
+};
+
+const quotaChargeFor = (documentBytes: number) =>
+  documentBytes > V1_STORAGE_QUOTA_BYTES - V1_STORAGE_METADATA_BYTES_PER_DOCUMENT
+    ? V1_STORAGE_QUOTA_BYTES + 1
+    : documentBytes + V1_STORAGE_METADATA_BYTES_PER_DOCUMENT;
 
 const validateMetadata = (metadata: DocumentMetadata) => {
   if (metadata === null || typeof metadata !== "object") {
@@ -547,6 +601,45 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     ensureOpen();
     const normalized = validateMetadata(metadata);
     inTransaction(database, () => {
+      // Check an existing id first so a normal uniqueness error keeps its
+      // precedence over quota admission. BEGIN IMMEDIATE makes the usage
+      // observation and both metadata writes one serialized decision across
+      // cooperating storage instances and processes.
+      const existing = database
+        .prepare("SELECT id FROM documents WHERE id = :id")
+        .get({ ":id": normalized.id });
+      if (existing !== undefined) {
+        database
+          .prepare(
+            `INSERT INTO documents (id, createdAt, lastAccessedAt, size)
+             VALUES (:id, :createdAt, :lastAccessedAt, :size)`
+          )
+          .run({
+            ":id": normalized.id,
+            ":createdAt": normalized.createdAt,
+            ":lastAccessedAt": normalized.lastAccessedAt,
+            ":size": normalized.size,
+          });
+        return;
+      }
+
+      const aggregate = database
+        .prepare("SELECT COUNT(*) AS count, COALESCE(SUM(size), 0) AS size FROM documents")
+        .get();
+      const current = storageUsageFor(
+        readInteger(aggregate === undefined ? undefined : rowValue(aggregate, "size"), "size"),
+        readInteger(aggregate === undefined ? undefined : rowValue(aggregate, "count"), "count")
+      );
+      const requestedBytes = quotaChargeFor(normalized.size);
+      if (current.bytes + requestedBytes > V1_STORAGE_QUOTA_BYTES) {
+        throw new StorageQuotaExceededError({
+          currentBytes: current.bytes,
+          requestedBytes,
+          quotaBytes: V1_STORAGE_QUOTA_BYTES,
+          message: `Planview storage quota exceeded: this publication needs ${formatBytes(requestedBytes)} but only ${formatBytes(Math.max(0, V1_STORAGE_QUOTA_BYTES - current.bytes))} remains of the fixed ${formatBytes(V1_STORAGE_QUOTA_BYTES)} limit. Run planview clean to remove expired snapshots, then try again.`,
+        });
+      }
+
       database
         .prepare(
           `INSERT INTO documents (id, createdAt, lastAccessedAt, size)
@@ -731,6 +824,11 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     };
   };
 
+  const getDocumentStorageUsage = () => {
+    const aggregate = getDocumentAggregate();
+    return storageUsageFor(aggregate.size, aggregate.count);
+  };
+
   const deleteGenerationAfterDocumentDelete = (id: string, generation?: string) => {
     const generationClause = generation === undefined ? "" : " AND generation = :generation";
     database
@@ -849,6 +947,7 @@ const createStore = (database: DatabaseSync): MetadataStore => {
     listDocumentMetadataPage,
     recordDocumentAccess,
     getDocumentAggregate,
+    getDocumentStorageUsage,
     deleteDocument,
     deleteDocumentIfLastAccessedBefore,
     deleteDocumentIfMatches,

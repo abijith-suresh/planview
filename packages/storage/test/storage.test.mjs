@@ -6,10 +6,12 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { Worker } from "node:worker_threads";
 import { Effect } from "effect";
+import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
 import {
   CURRENT_SCHEMA_VERSION,
   openStorage,
   StorageClosedError,
+  StorageQuotaExceededError,
   StorageInvariantError,
   StorageMigrationError,
   StorageOpenError,
@@ -109,6 +111,76 @@ test("opens a new database, applies v1, and persists the exact metadata schema",
     });
   });
 });
+
+test("accounts document bytes and metadata before atomically admitting a publication", () =>
+  withStorage(({ storage }) => {
+    storage.insertDocumentMetadata(
+      metadata("full", 1, V1_STORAGE_QUOTA_BYTES - V1_STORAGE_METADATA_BYTES_PER_DOCUMENT)
+    );
+    assert.deepEqual(storage.getDocumentStorageUsage(), {
+      bytes: V1_STORAGE_QUOTA_BYTES,
+      documentBytes: V1_STORAGE_QUOTA_BYTES - V1_STORAGE_METADATA_BYTES_PER_DOCUMENT,
+      metadataBytes: V1_STORAGE_METADATA_BYTES_PER_DOCUMENT,
+      documentCount: 1,
+    });
+
+    assert.throws(
+      () => storage.insertDocumentMetadata(metadata("next", 2, 1)),
+      (error) =>
+        error instanceof StorageQuotaExceededError &&
+        error.currentBytes === V1_STORAGE_QUOTA_BYTES &&
+        error.requestedBytes === V1_STORAGE_METADATA_BYTES_PER_DOCUMENT + 1 &&
+        error.quotaBytes === V1_STORAGE_QUOTA_BYTES &&
+        /fixed 1 GiB limit/.test(error.message)
+    );
+    assert.equal(storage.getDocumentMetadata("next"), undefined);
+  }));
+
+test("serializes concurrent quota admission across storage instances", () =>
+  withTempDirectory("planview-storage-quota-race-", async (directory) => {
+    const databasePath = join(directory, "metadata.sqlite");
+    const workers = ["left", "right"].map(
+      (id) =>
+        new Worker(new URL("./quota-insert-worker.mjs", import.meta.url), {
+          workerData: { databasePath, id },
+        })
+    );
+    try {
+      const results = await Promise.all(
+        workers.map(
+          (worker) =>
+            new Promise((resolve, reject) => {
+              worker.once("message", resolve);
+              worker.once("error", reject);
+            })
+        )
+      );
+      assert.equal(results.filter((result) => result === "accepted").length, 1);
+      assert.equal(results.filter((result) => result === "quota").length, 1);
+      const storage = Effect.runSync(openStorage(databasePath));
+      try {
+        assert.equal(storage.getDocumentStorageUsage().bytes, V1_STORAGE_QUOTA_BYTES);
+      } finally {
+        storage.close();
+      }
+    } finally {
+      await Promise.all(workers.map((worker) => worker.terminate()));
+    }
+  }));
+
+test("retention deletion releases the fixed metadata quota charge", () =>
+  withStorage(({ storage }) => {
+    storage.insertDocumentMetadata(
+      metadata("expired", 1, V1_STORAGE_QUOTA_BYTES - V1_STORAGE_METADATA_BYTES_PER_DOCUMENT)
+    );
+    assert.throws(
+      () => storage.insertDocumentMetadata(metadata("blocked", 2, 1)),
+      StorageQuotaExceededError
+    );
+    assert.notEqual(storage.deleteDocumentIfLastAccessedBefore("expired", 2), undefined);
+    storage.insertDocumentMetadata(metadata("reclaimed", 3, 1));
+    assert.equal(storage.getDocumentMetadata("reclaimed")?.size, 1);
+  }));
 
 test("migrates an existing version-zero database transactionally", () =>
   withTempDirectory("planview-storage-migration-", (directory) => {

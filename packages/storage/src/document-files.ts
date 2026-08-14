@@ -96,6 +96,8 @@ export type DocumentFileStoreOptions = {
   readonly beforeStagedSourceCopy?: (stagedPath: string) => Promise<void>;
   /** Private race-test seam for identity-safe source cleanup. */
   readonly beforeStagedSourceCleanup?: (stagedPath: string) => Promise<void>;
+  /** Private race-test seam immediately before the target hard link. */
+  readonly beforeFinalizationTargetLink?: (targetPath: string) => Promise<void>;
   /** Private fault seam before target identity inspection. */
   readonly beforeFinalizationTargetInspection?: (targetPath: string) => Promise<void>;
   /** Private fault seam for target residual classification. */
@@ -104,6 +106,16 @@ export type DocumentFileStoreOptions = {
   readonly beforePostPublicationStagingDirectorySync?: () => Promise<void>;
   /** Private race-test seam for target compensation. */
   readonly beforeDocumentTargetDelete?: (targetPath: string) => Promise<void>;
+  /** Private race-test seam immediately before a file-page scan begins. */
+  readonly beforeDocumentFilePageScan?: (startedAt: number | undefined) => Promise<void>;
+  /** Private deterministic seam for the file-page scan boundary. */
+  readonly documentFileScanStartedAt?: () => number | undefined;
+  /** Private deterministic seam for file-page scan observations. */
+  readonly documentFileScanObservation?: (
+    observation: DocumentFileObservation
+  ) => DocumentFileObservation;
+  /** Private race-test seam immediately before scan-marker cleanup. */
+  readonly beforeDocumentFileScanMarkerCleanup?: (markerPath: string) => Promise<void>;
 };
 
 declare const stagedDocumentFileHandleBrand: unique symbol;
@@ -124,6 +136,15 @@ export type DocumentFileTargetCapability = Readonly<{
   readonly [documentFileTargetCapabilityBrand]: "DocumentFileTargetCapability";
 }>;
 
+/**
+ * Runs the publication metadata handoff while the id-wide target lock is
+ * still held. The target reader is valid only until the callback resolves.
+ */
+export type DocumentFileTargetCommit = (
+  target: DocumentFileTargetCapability,
+  readTarget: () => Promise<ReadStream>
+) => Promise<void>;
+
 export type DocumentFileResourceState = "absent" | "retained" | "unknown";
 export type DocumentFileTargetRecoveryPolicy = "delete" | "retain";
 
@@ -138,10 +159,13 @@ export type DocumentFileObservation = Readonly<{
 }>;
 
 export type DocumentFileScanWatermark = Readonly<{
-  /** The maximum bytewise id admitted to this pass. */
+  /** The maximum bytewise id examined by this pass. */
   readonly throughId: string;
-  /** Creation-time watermark prevents new entries reusing a low id joining the pass. */
-  readonly startedAt: number;
+  /**
+   * A strict filesystem birth-time fence. Entries equal to the fence, or
+   * whose birth time is unavailable, are deferred to a later pass.
+   */
+  readonly startedAt?: number;
 }>;
 
 export type DocumentFilePage = Readonly<{
@@ -233,6 +257,8 @@ export class DocumentFileFinalizeError extends Data.TaggedError("DocumentFileFin
   readonly handle: string;
   /** Whether a linked target may still be retained when the failure escaped. */
   readonly targetCreated: boolean;
+  /** Whether the target-commit callback was entered after durable publication. */
+  readonly targetCommitAttempted: boolean;
   /** The identity capability for a target this finalizer linked, if retained or uncertain. */
   readonly targetCapability?: DocumentFileTargetCapability;
   /** Whether coordinator compensation may delete a retained target. */
@@ -298,7 +324,8 @@ export interface DocumentFileStore {
   ) => Promise<StagedDocumentFileHandle>;
   readonly finalizeStagedFile: (
     handle: StagedDocumentFileHandle,
-    id: string
+    id: string,
+    targetCommit?: DocumentFileTargetCommit
   ) => Promise<DocumentFileTargetCapability>;
   readonly readDocument: (id: string) => Promise<ReadStream>;
   readonly readDocumentLease: (id: string) => Promise<DocumentFileReadLease>;
@@ -396,6 +423,8 @@ const canonicalPath = (path: string) => pathKey(realpathSync.native(path));
 
 const samePath = (left: string, right: string) => pathKey(left) === pathKey(right);
 
+const usableBirthtime = (value: number) => Number.isFinite(value) && value > 0;
+
 const sameFileIdentity = (left: FileIdentity, right: FileIdentity) => {
   if (left.dev !== right.dev || left.ino !== right.ino) {
     return false;
@@ -404,10 +433,10 @@ const sameFileIdentity = (left: FileIdentity, right: FileIdentity) => {
   // Device/inode is the usual POSIX identity, but birthtime distinguishes an
   // inode that has been recycled while both observations retain the same
   // device/inode pair. Node exposes birthtimeMs on the supported platforms;
-  // if an adapter supplies a non-finite value, fall back to dev/ino rather
-  // than rejecting a platform that does not report creation time.
-  const leftBirthtime = Number.isFinite(left.birthtimeMs) ? left.birthtimeMs : undefined;
-  const rightBirthtime = Number.isFinite(right.birthtimeMs) ? right.birthtimeMs : undefined;
+  // if it reports a non-positive/non-finite value, fall back to dev/ino rather
+  // than claiming creation-time precision on a platform that does not provide it.
+  const leftBirthtime = usableBirthtime(left.birthtimeMs) ? left.birthtimeMs : undefined;
+  const rightBirthtime = usableBirthtime(right.birthtimeMs) ? right.birthtimeMs : undefined;
   if (leftBirthtime !== undefined && rightBirthtime !== undefined) {
     return leftBirthtime === rightBirthtime;
   }
@@ -1448,10 +1477,15 @@ const createStore = ({
   beforeStagedCloneCleanup,
   beforeStagedSourceCopy,
   beforeStagedSourceCleanup,
+  beforeFinalizationTargetLink,
   beforeFinalizationTargetInspection,
   beforeFinalizationTargetCleanup,
   beforePostPublicationStagingDirectorySync,
   beforeDocumentTargetDelete,
+  beforeDocumentFilePageScan,
+  documentFileScanStartedAt,
+  documentFileScanObservation,
+  beforeDocumentFileScanMarkerCleanup,
 }: {
   readonly documentsDir: TrustedDirectory;
   readonly stagingDir: TrustedDirectory;
@@ -1462,10 +1496,17 @@ const createStore = ({
   readonly beforeStagedCloneCleanup?: (clonedPath: string) => Promise<void>;
   readonly beforeStagedSourceCopy?: (stagedPath: string) => Promise<void>;
   readonly beforeStagedSourceCleanup?: (stagedPath: string) => Promise<void>;
+  readonly beforeFinalizationTargetLink?: (targetPath: string) => Promise<void>;
   readonly beforeFinalizationTargetInspection?: (targetPath: string) => Promise<void>;
   readonly beforeFinalizationTargetCleanup?: (targetPath: string) => Promise<void>;
   readonly beforePostPublicationStagingDirectorySync?: () => Promise<void>;
   readonly beforeDocumentTargetDelete?: (targetPath: string) => Promise<void>;
+  readonly beforeDocumentFilePageScan?: (startedAt: number | undefined) => Promise<void>;
+  readonly documentFileScanStartedAt?: () => number | undefined;
+  readonly documentFileScanObservation?: (
+    observation: DocumentFileObservation
+  ) => DocumentFileObservation;
+  readonly beforeDocumentFileScanMarkerCleanup?: (markerPath: string) => Promise<void>;
 }) => {
   const stagedIdentities = new Map<string, FileIdentity>();
   const documentMutexes = new Map<string, Promise<void>>();
@@ -1582,6 +1623,96 @@ const createStore = ({
   const stagingPath = (handle: unknown) => entryPath(stagingDir, validateStagedHandle(handle));
   const documentPath = (id: string) => entryPath(documentsDir, `${validateDocumentId(id)}.html`);
   const targetLockPath = (id: string) => entryPath(stagingDir, `.${id}.target.lock`);
+  async function discardEntry(
+    directory: TrustedDirectory,
+    name: string,
+    expectedIdentity: FileIdentity,
+    expectedContents?: string
+  ) {
+    verifyTrustedDirectory(directory);
+    const path = entryPath(directory, name);
+    let current: Stats;
+    try {
+      current = await lstat(path);
+    } catch (cause) {
+      if (isNotFound(cause)) {
+        return false;
+      }
+      throw cause;
+    }
+    if (current.isSymbolicLink() || !current.isFile()) {
+      throw regularFileError(path);
+    }
+    if (!sameFileIdentity(expectedIdentity, current)) {
+      throw new Error("The file was replaced before identity-safe discard.");
+    }
+    if (expectedContents !== undefined) {
+      const file = await openWithoutFollowingLinks(path, constants.O_RDONLY, path, false);
+      try {
+        const contents = await file.readFile("utf8");
+        if (contents !== expectedContents) {
+          throw new Error("The file contents were replaced before identity-safe discard.");
+        }
+      } finally {
+        await file.close();
+      }
+    }
+    await unlink(path);
+    return true;
+  }
+  const captureDocumentScanWatermark = async () => {
+    // A filesystem birth time is an optional, potentially coarse boundary. Do
+    // not substitute a wall-clock value: if the filesystem cannot provide one,
+    // the pass must defer its candidates rather than claim snapshot precision.
+    for (let attempt = 0; attempt < MAX_STAGED_ALLOCATION_ATTEMPTS; attempt += 1) {
+      const markerContents = Buffer.from(generateBytes(16)).toString("base64url");
+      const markerName = `.scan-${markerContents}`;
+      const markerPath = entryPath(documentsDir, markerName);
+      let markerCreated = false;
+      let markerContentsWritten = false;
+      let markerFile: Awaited<ReturnType<typeof open>> | undefined;
+      let markerIdentity: FileIdentity | undefined;
+      try {
+        markerFile = await open(
+          markerPath,
+          constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | NO_FOLLOW,
+          PRIVATE_FILE_MODE
+        );
+        markerCreated = true;
+        markerIdentity = await markerFile.stat();
+        await markerFile.writeFile(markerContents, "utf8");
+        await markerFile.sync();
+        markerContentsWritten = true;
+        await markerFile.close();
+        markerFile = undefined;
+        return documentFileScanStartedAt === undefined
+          ? usableBirthtime(markerIdentity.birthtimeMs)
+            ? markerIdentity.birthtimeMs
+            : undefined
+          : documentFileScanStartedAt();
+      } catch (cause) {
+        if (!markerCreated && errorCode(cause) === "EEXIST") {
+          continue;
+        }
+        throw cause;
+      } finally {
+        await markerFile?.close().catch(() => undefined);
+        if (markerIdentity !== undefined) {
+          try {
+            await beforeDocumentFileScanMarkerCleanup?.(markerPath);
+          } finally {
+            await discardEntry(
+              documentsDir,
+              markerName,
+              markerIdentity,
+              markerContentsWritten ? markerContents : undefined
+            );
+          }
+        }
+      }
+    }
+    throw new Error("Could not allocate a document file scan watermark.");
+  };
   const acquireTargetLock = async (id: string) => {
     const path = targetLockPath(id);
     const deadline = process.hrtime.bigint() + BigInt(TARGET_LOCK_WAIT_MS) * 1_000_000n;
@@ -1609,31 +1740,6 @@ const createStore = ({
   const releaseTargetLock = async (id: string, lease: FinalizationLockLease) => {
     await removeFinalizationLockDirectory(targetLockPath(id), lease);
     await syncDirectory(stagingDir);
-  };
-  const discardEntry = async (
-    directory: TrustedDirectory,
-    name: string,
-    expectedIdentity: FileIdentity
-  ) => {
-    verifyTrustedDirectory(directory);
-    const path = entryPath(directory, name);
-    let current: Stats;
-    try {
-      current = await lstat(path);
-    } catch (cause) {
-      if (isNotFound(cause)) {
-        return false;
-      }
-      throw cause;
-    }
-    if (current.isSymbolicLink() || !current.isFile()) {
-      throw regularFileError(path);
-    }
-    if (!sameFileIdentity(expectedIdentity, current)) {
-      throw new Error("The file was replaced before identity-safe discard.");
-    }
-    await unlink(path);
-    return true;
   };
   const close = () => {
     if (closePromise === undefined) {
@@ -1827,7 +1933,11 @@ const createStore = ({
     }
   };
 
-  const finalizeStagedFile = async (handleValue: StagedDocumentFileHandle, id: string) => {
+  const finalizeStagedFile = async (
+    handleValue: StagedDocumentFileHandle,
+    id: string,
+    targetCommit?: DocumentFileTargetCommit
+  ) => {
     const releaseOperation = beginOperation();
     try {
       ensureTrustedRoots();
@@ -1851,6 +1961,7 @@ const createStore = ({
       let postPublicationStagingSyncFailed = false;
       let targetRecoveryPolicy: DocumentFileTargetRecoveryPolicy = "delete";
       let targetState: DocumentFileResourceState = "absent";
+      let targetCommitAttempted = false;
       let targetIdentity: FileIdentity | undefined;
       let targetCapability: DocumentFileTargetCapability | undefined;
       let sourceIdentity: FileIdentity | undefined;
@@ -1979,6 +2090,7 @@ const createStore = ({
 
         ensureTrustedRoots();
         await source.sync();
+        await beforeFinalizationTargetLink?.(targetPath);
         try {
           // link() is the Node-supported atomic no-replace primitive. rename() would
           // replace a concurrently-created target on POSIX, so it is intentionally not
@@ -2021,25 +2133,67 @@ const createStore = ({
         lockLease = undefined;
         lockOwned = false;
         finalizationLockState = "absent";
+        const syncPostPublicationStaging = async () => {
+          try {
+            await beforePostPublicationStagingDirectorySync?.();
+            await syncDirectory(stagingDir);
+          } catch (postPublicationSyncCause) {
+            // A failed directory sync makes the durability of every just-removed
+            // staging entry ambiguous. Keep all residual states recoverable and
+            // let the coordinator preserve the already-synced target.
+            postPublicationStagingSyncFailed = true;
+            stagedFileState = "unknown";
+            finalizationLockState = "unknown";
+            targetLockState = "unknown";
+            throw postPublicationSyncCause;
+          }
+        };
+        if (targetCommit !== undefined) {
+          // Keep the target lock through the final staging sync and the
+          // metadata handoff. A cleanup pass that saw this target before its
+          // row existed must therefore wait/fail as busy instead of deleting
+          // the target between finalization and metadata commit.
+          await syncPostPublicationStaging();
+        }
+        if (targetCapability === undefined || targetIdentity === undefined) {
+          throw new Error("The finalized document target identity was unavailable.");
+        }
+        const expectedTargetIdentity = targetIdentity;
+        const readTarget = async () => {
+          ensureTrustedRoots();
+          let targetFile: Awaited<ReturnType<typeof open>> | undefined;
+          try {
+            targetFile = await openWithoutFollowingLinks(
+              targetPath,
+              constants.O_RDONLY,
+              targetPath,
+              false
+            );
+            const currentTarget = await targetFile.stat();
+            if (!sameFileIdentity(expectedTargetIdentity, currentTarget)) {
+              throw new Error("The finalized document target changed during metadata commit.");
+            }
+            const stream = targetFile.createReadStream({ autoClose: true });
+            targetFile = undefined;
+            return stream;
+          } catch (cause) {
+            await targetFile?.close().catch(() => undefined);
+            throw cause;
+          }
+        };
+        if (targetCommit !== undefined) {
+          targetCommitAttempted = true;
+          await targetCommit(targetCapability, readTarget);
+        }
         await removeFinalizationLockDirectory(targetLockPath, targetLockLease);
         targetLockLease = undefined;
         targetLockOwned = false;
         targetLockState = "absent";
-        try {
-          await beforePostPublicationStagingDirectorySync?.();
-          await syncDirectory(stagingDir);
-        } catch (postPublicationSyncCause) {
-          // A failed directory sync makes the durability of every just-removed
-          // staging entry ambiguous. Keep all residual states recoverable and
-          // let the coordinator preserve the already-synced target.
-          postPublicationStagingSyncFailed = true;
-          stagedFileState = "unknown";
-          finalizationLockState = "unknown";
-          targetLockState = "unknown";
-          throw postPublicationSyncCause;
-        }
-        if (targetCapability === undefined) {
-          throw new Error("The finalized document target identity was unavailable.");
+        if (targetCommit === undefined) {
+          // Preserve the legacy direct-finalization boundary for callers that
+          // do not have metadata to commit. The Planview coordinator uses the
+          // callback above, which keeps this sync inside the publication fence.
+          await syncPostPublicationStaging();
         }
         return targetCapability;
       } catch (cause) {
@@ -2164,6 +2318,12 @@ const createStore = ({
             }
           }
         }
+        if (postPublicationStagingSyncFailed && targetLockState === "absent") {
+          // The lock pathname was removed, but the sync boundary was
+          // ambiguous; report that uncertainty even when best-effort cleanup
+          // happened to finish.
+          targetLockState = "unknown";
+        }
 
         if (
           cleanupCause === undefined &&
@@ -2177,6 +2337,7 @@ const createStore = ({
           id: documentId,
           handle,
           targetCreated,
+          targetCommitAttempted,
           ...(targetCapability === undefined ? {} : { targetCapability }),
           targetRecoveryPolicy,
           targetState,
@@ -2873,28 +3034,41 @@ const createStore = ({
     try {
       ensureTrustedRoots();
       const cursor = afterId === undefined ? undefined : validateDocumentId(afterId);
-      const scanStartedAt = Date.now();
+      const suppliedStartedAt = watermark?.startedAt;
+      if (
+        suppliedStartedAt !== undefined &&
+        (!Number.isFinite(suppliedStartedAt) || suppliedStartedAt < 0)
+      ) {
+        throw new RangeError("Document file scan watermark must contain a valid timestamp.");
+      }
       const scanWatermark =
         watermark === undefined
           ? undefined
           : {
               throughId: validateDocumentId(watermark.throughId),
-              startedAt: watermark.startedAt,
+              ...(suppliedStartedAt === undefined ? {} : { startedAt: suppliedStartedAt }),
             };
-      if (
-        scanWatermark !== undefined &&
-        (!Number.isSafeInteger(scanWatermark.startedAt) || scanWatermark.startedAt < 0)
-      ) {
+      const scanStartedAt =
+        scanWatermark?.startedAt ??
+        (scanWatermark === undefined ? await captureDocumentScanWatermark() : undefined);
+      if (scanStartedAt !== undefined && (!Number.isFinite(scanStartedAt) || scanStartedAt < 0)) {
         throw new RangeError("Document file scan watermark must contain a valid timestamp.");
       }
+      await beforeDocumentFilePageScan?.(scanStartedAt);
       const ids = await documentEntryIds(cursor, scanWatermark?.throughId);
       const pageIds = ids.slice(0, limit);
       const files: DocumentFileObservation[] = [];
       for (const documentId of pageIds) {
-        const observation = await getDocumentFileObservation(documentId);
+        const observed = await getDocumentFileObservation(documentId);
+        const observation =
+          observed === undefined
+            ? undefined
+            : (documentFileScanObservation?.(observed) ?? observed);
         if (
           observation !== undefined &&
-          observation.identity.birthtimeMs <= (scanWatermark?.startedAt ?? scanStartedAt)
+          scanStartedAt !== undefined &&
+          usableBirthtime(observation.identity.birthtimeMs) &&
+          observation.identity.birthtimeMs < scanStartedAt
         ) {
           files.push(observation);
         }
@@ -2903,7 +3077,12 @@ const createStore = ({
       const lastId = ids.at(-1);
       const pageWatermark =
         scanWatermark ??
-        (lastId === undefined ? undefined : { throughId: lastId, startedAt: scanStartedAt });
+        (lastId === undefined
+          ? undefined
+          : {
+              throughId: lastId,
+              ...(scanStartedAt === undefined ? {} : { startedAt: scanStartedAt }),
+            });
       return {
         files,
         hasMore: ids.length > limit,
@@ -3408,6 +3587,9 @@ const initializeStore = (options: DocumentFileStoreOptions) => {
       ...(options.beforeStagedSourceCleanup === undefined
         ? {}
         : { beforeStagedSourceCleanup: options.beforeStagedSourceCleanup }),
+      ...(options.beforeFinalizationTargetLink === undefined
+        ? {}
+        : { beforeFinalizationTargetLink: options.beforeFinalizationTargetLink }),
       ...(options.beforeFinalizationTargetInspection === undefined
         ? {}
         : { beforeFinalizationTargetInspection: options.beforeFinalizationTargetInspection }),
@@ -3423,6 +3605,18 @@ const initializeStore = (options: DocumentFileStoreOptions) => {
       ...(options.beforeDocumentTargetDelete === undefined
         ? {}
         : { beforeDocumentTargetDelete: options.beforeDocumentTargetDelete }),
+      ...(options.beforeDocumentFilePageScan === undefined
+        ? {}
+        : { beforeDocumentFilePageScan: options.beforeDocumentFilePageScan }),
+      ...(options.documentFileScanStartedAt === undefined
+        ? {}
+        : { documentFileScanStartedAt: options.documentFileScanStartedAt }),
+      ...(options.documentFileScanObservation === undefined
+        ? {}
+        : { documentFileScanObservation: options.documentFileScanObservation }),
+      ...(options.beforeDocumentFileScanMarkerCleanup === undefined
+        ? {}
+        : { beforeDocumentFileScanMarkerCleanup: options.beforeDocumentFileScanMarkerCleanup }),
     });
   } catch (cause) {
     if (documentsDir !== undefined) {
