@@ -25,7 +25,7 @@
     "publish:verified": "node scripts/publish-verified.mjs",
     "release": "node scripts/release.mjs",
     "changeset:check": "node scripts/changeset-presence.mjs",
-    "test": "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs scripts/changeset-presence.test.mjs scripts/publish-verified.test.mjs scripts/version-packages.test.mjs scripts/release-workflow.test.mjs scripts/actionlint.test.mjs && npm run test --workspaces --if-present",
+    "test": "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs scripts/changeset-presence.test.mjs scripts/publish-verified.test.mjs scripts/version-packages.test.mjs scripts/release-workflow.test.mjs scripts/cross-platform-workflow.test.mjs scripts/actionlint.test.mjs && npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "verify": "npm run check && npm run build",
     "version-packages": "npm run release-policy && changeset version && npm install --package-lock-only --ignore-scripts"
