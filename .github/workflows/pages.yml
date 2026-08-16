@@ -18,19 +18,25 @@ concurrency:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 jobs:
   build:
     name: Build site (Node 24)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+        with:
+          enablement: true
 
       - name: Setup Node.js from repository version file
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -54,6 +60,8 @@ jobs:
         run: npm ci
 
       - name: Build site
+        env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
         run: npm run build --workspace @planview/site
 
       - name: Upload Pages artifact
@@ -66,9 +74,6 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      pages: write
-      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
