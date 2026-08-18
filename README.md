@@ -66,9 +66,12 @@ site with no prefix.
 
 ## GitHub Actions and Pages
 
-CI runs the Node 24 quality gate for pull requests and pushes to `main`. It also
-packs the public `@abijith-suresh/planview` npm package and smoke-tests the resulting
-tarball without publishing it or requiring a secret. A push to `main` validates the
+CI runs the required Node 24 quality gate on Linux for pull requests and pushes to
+`main`. It also packs the public `@abijith-suresh/planview` npm package and
+smoke-tests the resulting tarball without publishing it or requiring a secret.
+macOS and Windows run the same clean packed artifact through CLI install,
+publish/get, daemon status/stop, and bundled skills installation; the POSIX-only
+storage suite remains part of Linux `npm run verify`. A push to `main` validates the
 repository, then the Changesets Action creates or updates the generated
 `changeset-release/main` version PR with the `RELEASE_TOKEN` PAT. Merging that PR
 runs the same release command; npm publishing remains explicitly disabled until
