@@ -123,7 +123,7 @@ const assertOwnedAndStableDirectory = async (path: string, label: string, privat
   if (isWritableByOtherUsers(stats)) {
     throw new Error(`Refusing to use ${label} because it is writable by another user: ${path}`);
   }
-  if ((stats.mode & 0o700) !== 0o700) {
+  if (process.platform !== "win32" && (stats.mode & 0o700) !== 0o700) {
     throw new Error(
       `Refusing to use ${label} because it is not writable by the current user: ${path}`
     );
