@@ -386,6 +386,27 @@ const isNotFound = (error: unknown) => errorCode(error) === "ENOENT";
 
 const describe = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
+// macOS keeps several writable system roots behind stable aliases. Resolve
+// those aliases before the no-symlink walk so a normal temp directory such as
+// /var/folders remains usable without allowing arbitrary user symlinks.
+const MACOS_SYSTEM_PATH_ALIASES = [
+  ["/etc", "/private/etc"],
+  ["/tmp", "/private/tmp"],
+  ["/var", "/private/var"],
+] as const;
+
+const normalizeStoragePath = (path: string) => {
+  if (process.platform !== "darwin") {
+    return path;
+  }
+  for (const [alias, target] of MACOS_SYSTEM_PATH_ALIASES) {
+    if (path === alias || path.startsWith(`${alias}/`)) {
+      return `${target}${path.slice(alias.length)}`;
+    }
+  }
+  return path;
+};
+
 const validateDirectoryPath = (path: unknown, label: string) => {
   if (typeof path !== "string" || path.length === 0 || !isAbsolute(path)) {
     throw new DocumentFileStorePathError({
@@ -395,7 +416,7 @@ const validateDirectoryPath = (path: unknown, label: string) => {
     });
   }
 
-  const normalized = resolve(path);
+  const normalized = normalizeStoragePath(resolve(path));
   if (normalized === parse(normalized).root) {
     throw new DocumentFileStorePathError({
       path,
@@ -527,7 +548,7 @@ const makePrivateDirectory = (path: string) => {
     }
 
     const realPath = canonicalPath(path);
-    if (!samePath(realPath, path)) {
+    if (process.platform !== "win32" && !samePath(realPath, path)) {
       throw pathError(path, "storage paths and their parents must resolve without symlinks.");
     }
 
@@ -558,7 +579,7 @@ const openTrustedDirectory = (path: string) => {
       throw pathError(path, "the storage directory must be a real directory.");
     }
     const expectedPath = canonicalPath(path);
-    if (!samePath(expectedPath, path)) {
+    if (process.platform !== "win32" && !samePath(expectedPath, path)) {
       throw pathError(path, "storage paths and their parents must resolve without symlinks.");
     }
 
@@ -618,7 +639,7 @@ const verifyTrustedDirectory = (directory: TrustedDirectory) => {
     checkAncestorSecurity(current, stats, index === segments.length - 1);
   }
 
-  if (!samePath(canonicalPath(directory.path), directory.path)) {
+  if (process.platform !== "win32" && !samePath(canonicalPath(directory.path), directory.path)) {
     throw pathError(
       directory.path,
       "storage paths and their parents must resolve without symlinks."
