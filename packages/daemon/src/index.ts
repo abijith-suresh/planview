@@ -101,6 +101,24 @@ const TEST_PUBLISH_PAUSE_ONCE_ENV = "PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_ONCE";
 const TEST_UNCOOPERATIVE_PUBLISH_ENV = "PLANVIEW_TEST_DAEMON_UNCOOPERATIVE_PUBLISH";
 const TEST_CLEANUP_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_CLEANUP_PAUSE_MS";
 const LIFECYCLE_TOKEN_ENV = "PLANVIEW_DAEMON_LIFECYCLE_TOKEN";
+// These values are runtime plumbing, not application configuration. Keep the
+// allowlist narrow so detached daemons do not inherit tokens or Node flags,
+// while retaining the platform variables needed by Node and native tooling.
+const SAFE_RUNTIME_ENVIRONMENT_KEYS = [
+  "PATH",
+  "HOME",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "XDG_DATA_HOME",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  "SystemRoot",
+  "ComSpec",
+] as const;
 const TEST_DAEMON_ENVIRONMENT_KEYS = [
   TEST_ADOPTION_PAUSE_ENV,
   TEST_PUBLISH_PAUSE_ENV,
@@ -143,6 +161,12 @@ export const resolveDaemonEnvironment = (
     PLANVIEW_RUNTIME_DIR: config.runtimeDir,
     [LIFECYCLE_TOKEN_ENV]: lifecycleToken,
   };
+  for (const key of SAFE_RUNTIME_ENVIRONMENT_KEYS) {
+    const value = source[key];
+    if (value !== undefined) {
+      environment[key] = value;
+    }
+  }
   const testProcess = source["NODE_ENV"] === "test" || config.port !== DAEMON_PORT;
   if (testProcess) {
     environment["NODE_ENV"] = "test";
