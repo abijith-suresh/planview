@@ -1780,7 +1780,7 @@ const createStore = ({
       ensureTrustedRoots();
       validateSourceFileExtension(sourcePath);
 
-      const absoluteSourcePath = resolve(sourcePath);
+      const absoluteSourcePath = normalizeStoragePath(resolve(sourcePath));
       let source: Awaited<ReturnType<typeof open>> | undefined;
       let staged: Awaited<ReturnType<typeof open>> | undefined;
       let sourceStream: ReadStream | undefined;
