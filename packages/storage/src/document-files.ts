@@ -1888,7 +1888,7 @@ const createStore = ({
         ensureTrustedRoots();
         const durableStaged = await openWithoutFollowingLinks(
           stagingPath(handle),
-          constants.O_RDONLY,
+          constants.O_RDWR,
           stagingPath(handle),
           false
         );
@@ -2010,12 +2010,7 @@ const createStore = ({
       try {
         const expectedStagedIdentity = stagedIdentities.get(handle);
         try {
-          source = await openWithoutFollowingLinks(
-            sourcePath,
-            constants.O_RDONLY,
-            sourcePath,
-            false
-          );
+          source = await openWithoutFollowingLinks(sourcePath, constants.O_RDWR, sourcePath, false);
         } catch (sourceOpenCause) {
           stagedFileState = isNotFound(sourceOpenCause) ? "absent" : "unknown";
           throw sourceOpenCause;
@@ -2468,12 +2463,7 @@ const createStore = ({
         }
 
         try {
-          source = await openWithoutFollowingLinks(
-            sourcePath,
-            constants.O_RDONLY,
-            sourcePath,
-            false
-          );
+          source = await openWithoutFollowingLinks(sourcePath, constants.O_RDWR, sourcePath, false);
         } catch (cause) {
           sourceFileState = isNotFound(cause) ? "absent" : "unknown";
           throw cause;
