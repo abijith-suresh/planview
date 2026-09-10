@@ -192,6 +192,18 @@ const descriptorAt = (runtimeDir) => {
   }
 };
 
+const waitForReady = async (port, secret) =>
+  waitFor(async () => {
+    const response = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+      headers: { "x-planview-secret": secret },
+    });
+    if (response.status !== 200) {
+      return undefined;
+    }
+    const payload = await response.json();
+    return payload.ready === true ? payload : undefined;
+  });
+
 test("public configuration fixes 4777, while test injection is explicit and contained", () => {
   const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-config-"));
   const appDataDir = join(fixture, "app-data");
@@ -485,6 +497,7 @@ test("the daemon is a private, graceful process with POSIX ownership checks", as
       assert.equal(statSync(join(runtimeDir, "daemon.json")).uid, process.getuid());
     }
 
+    await waitForReady(port, descriptor.secret);
     const root = await fetch(`http://127.0.0.1:${port}/`);
     assert.equal(root.status, 200);
     assert.match(await root.text(), /Planview daemon running/);
