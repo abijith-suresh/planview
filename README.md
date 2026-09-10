@@ -9,7 +9,8 @@ The foundation includes the public `@abijith-suresh/planview` npm workspace and 
 private `@planview/core`, `@planview/daemon`, and `@planview/storage` workspaces. The CLI
 is an installable TypeScript ESM package with detached daemon lifecycle
 commands: `start`, `status`, `stop`, and `restart`, plus `publish <file|folder>`
-and `get <id|url>` for immutable HTML snapshots. A publish folder must contain
+and `get <id|url>` for immutable HTML snapshots. `preview <file|folder>` also
+publishes and opens the resulting URL. A publish folder must contain
 `index.html`; its assets are served below the same immutable URL. The private daemon is bundled into
 the one published CLI artifact and owns loopback-only lifecycle HTTP and direct
 snapshot serving.
