@@ -101,6 +101,13 @@ const TEST_PUBLISH_PAUSE_ONCE_ENV = "PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_ONCE";
 const TEST_UNCOOPERATIVE_PUBLISH_ENV = "PLANVIEW_TEST_DAEMON_UNCOOPERATIVE_PUBLISH";
 const TEST_CLEANUP_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_CLEANUP_PAUSE_MS";
 const LIFECYCLE_TOKEN_ENV = "PLANVIEW_DAEMON_LIFECYCLE_TOKEN";
+const TEST_DAEMON_ENVIRONMENT_KEYS = [
+  TEST_ADOPTION_PAUSE_ENV,
+  TEST_PUBLISH_PAUSE_ENV,
+  TEST_PUBLISH_PAUSE_ONCE_ENV,
+  TEST_UNCOOPERATIVE_PUBLISH_ENV,
+  TEST_CLEANUP_PAUSE_ENV,
+] as const;
 const isTestProcess = () => {
   const { NODE_ENV } = process.env;
   return NODE_ENV === "test";
@@ -125,6 +132,30 @@ export type DaemonConfig = Readonly<{
   readonly host: typeof DAEMON_HOST;
   readonly port: number;
 }>;
+
+export const resolveDaemonEnvironment = (
+  config: Pick<DaemonConfig, "appDataDir" | "runtimeDir" | "port">,
+  lifecycleToken: string,
+  source: Readonly<Record<string, string | undefined>> = process.env
+) => {
+  const environment: Record<string, string> = {
+    PLANVIEW_APP_DATA_DIR: config.appDataDir,
+    PLANVIEW_RUNTIME_DIR: config.runtimeDir,
+    [LIFECYCLE_TOKEN_ENV]: lifecycleToken,
+  };
+  const testProcess = source["NODE_ENV"] === "test" || config.port !== DAEMON_PORT;
+  if (testProcess) {
+    environment["NODE_ENV"] = "test";
+    environment[TEST_PORT_ENV] = String(config.port);
+    for (const key of TEST_DAEMON_ENVIRONMENT_KEYS) {
+      const value = source[key];
+      if (value !== undefined) {
+        environment[key] = value;
+      }
+    }
+  }
+  return environment;
+};
 
 export type DaemonConfigOptions = DaemonPathOptions;
 
@@ -1462,9 +1493,16 @@ const handleRequest = async (
         try {
           const requestAbort = new AbortController();
           const abortRequest = () => requestAbort.abort(new Error("The client disconnected."));
+          const admissionSignal =
+            requestSignal === undefined
+              ? requestAbort.signal
+              : AbortSignal.any([requestAbort.signal, requestSignal]);
           request.once("aborted", abortRequest);
-          permit = await documentReadAdmission.acquire(requestAbort.signal);
-          request.off("aborted", abortRequest);
+          try {
+            permit = await documentReadAdmission.acquire(admissionSignal);
+          } finally {
+            request.off("aborted", abortRequest);
+          }
           await handlePublishedDocument(
             documentId,
             res,
@@ -2532,15 +2570,7 @@ const startWithLock = async (
     detached: true,
     stdio: "ignore",
     windowsHide: true,
-    env: {
-      ...process.env,
-      PLANVIEW_APP_DATA_DIR: config.appDataDir,
-      PLANVIEW_RUNTIME_DIR: config.runtimeDir,
-      [LIFECYCLE_TOKEN_ENV]: lock.token,
-      ...(isTestProcess() || config.port !== DAEMON_PORT
-        ? { NODE_ENV: "test", [TEST_PORT_ENV]: String(config.port) }
-        : {}),
-    },
+    env: resolveDaemonEnvironment(config, lock.token),
   });
   child.unref();
   return waitForReady(config, startupTimeoutMs, child);

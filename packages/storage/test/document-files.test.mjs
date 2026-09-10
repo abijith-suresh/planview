@@ -127,6 +127,34 @@ test("copies a valid source without mutating it and survives source changes", ()
     assert.deepEqual(await readStream(stream), original);
   }));
 
+test("rejects a same-size source mutation after the copy completes", () =>
+  withTempDirectory(async (directory) => {
+    const documentsDir = join(directory, "documents");
+    const stagingDir = join(directory, "staging");
+    const source = join(directory, "same-size-mutation.html");
+    await writeFile(source, "original source");
+    const store = Effect.runSync(
+      openDocumentFileStore({
+        documentsDir,
+        stagingDir,
+        afterStagedSourceCopy: async (sourcePath) => {
+          const contents = await readFile(sourcePath);
+          contents[0] ^= 0xff;
+          await writeFile(sourcePath, contents);
+        },
+      })
+    );
+    try {
+      await assert.rejects(
+        store.stageSourceFile(source),
+        (error) => error.name === "DocumentFileSourceError"
+      );
+      assert.deepEqual(await readdir(stagingDir), []);
+    } finally {
+      await store.close();
+    }
+  }));
+
 test("accepts exactly 10 MiB and rejects oversize sources with staging cleanup", () =>
   withStore(async ({ directory, store }) => {
     const exact = join(directory, "exact.html");

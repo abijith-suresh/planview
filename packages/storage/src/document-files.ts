@@ -94,6 +94,8 @@ export type DocumentFileStoreOptions = {
   readonly beforeStagedCloneCleanup?: (clonedPath: string) => Promise<void>;
   /** Private race-test seam before the staged source is copied. */
   readonly beforeStagedSourceCopy?: (stagedPath: string) => Promise<void>;
+  /** Private race-test seam immediately after the staged source is copied. */
+  readonly afterStagedSourceCopy?: (sourcePath: string) => Promise<void>;
   /** Private race-test seam for identity-safe source cleanup. */
   readonly beforeStagedSourceCleanup?: (stagedPath: string) => Promise<void>;
   /** Private race-test seam immediately before the target hard link. */
@@ -538,8 +540,19 @@ const makePrivateDirectory = (path: string) => {
         if (errorCode(cause) !== "ENOENT") {
           throw cause;
         }
-        mkdirSync(current, { mode: PRIVATE_DIRECTORY_MODE });
-        const created = lstatSync(current);
+        let created: Stats;
+        try {
+          mkdirSync(current, { mode: PRIVATE_DIRECTORY_MODE });
+          created = lstatSync(current);
+        } catch (mkdirCause) {
+          if (errorCode(mkdirCause) !== "EEXIST") {
+            throw mkdirCause;
+          }
+          // Another Planview process may have created this directory after our
+          // lstat. Re-check the raced path with the same trust rules instead
+          // of treating the expected race as an initialization failure.
+          created = lstatSync(current);
+        }
         if (!created.isDirectory() || created.isSymbolicLink()) {
           throw pathError(current, "the storage directory was replaced while it was created.");
         }
@@ -1497,6 +1510,7 @@ const createStore = ({
   beforeStagedCloneLink,
   beforeStagedCloneCleanup,
   beforeStagedSourceCopy,
+  afterStagedSourceCopy,
   beforeStagedSourceCleanup,
   beforeFinalizationTargetLink,
   beforeFinalizationTargetInspection,
@@ -1516,6 +1530,7 @@ const createStore = ({
   readonly beforeStagedCloneLink?: (sourcePath: string) => Promise<void>;
   readonly beforeStagedCloneCleanup?: (clonedPath: string) => Promise<void>;
   readonly beforeStagedSourceCopy?: (stagedPath: string) => Promise<void>;
+  readonly afterStagedSourceCopy?: (sourcePath: string) => Promise<void>;
   readonly beforeStagedSourceCleanup?: (stagedPath: string) => Promise<void>;
   readonly beforeFinalizationTargetLink?: (targetPath: string) => Promise<void>;
   readonly beforeFinalizationTargetInspection?: (targetPath: string) => Promise<void>;
@@ -1866,6 +1881,7 @@ const createStore = ({
         } else {
           await pipeline(sourceStream, limiter, destinationStream, { signal });
         }
+        await afterStagedSourceCopy?.(absoluteSourcePath);
         source = undefined;
         staged = undefined;
 
@@ -1875,6 +1891,8 @@ const createStore = ({
           pathAfterRead.isSymbolicLink() ||
           !pathAfterRead.isFile() ||
           !sameFileIdentity(stats, pathAfterRead) ||
+          pathAfterRead.mtimeMs !== stats.mtimeMs ||
+          pathAfterRead.ctimeMs !== stats.ctimeMs ||
           copiedBytes !== stats.size ||
           copiedBytes !== pathAfterRead.size
         ) {
@@ -3595,6 +3613,9 @@ const initializeStore = (options: DocumentFileStoreOptions) => {
       ...(options.beforeStagedSourceCopy === undefined
         ? {}
         : { beforeStagedSourceCopy: options.beforeStagedSourceCopy }),
+      ...(options.afterStagedSourceCopy === undefined
+        ? {}
+        : { afterStagedSourceCopy: options.afterStagedSourceCopy }),
       ...(options.beforeStagedSourceCleanup === undefined
         ? {}
         : { beforeStagedSourceCleanup: options.beforeStagedSourceCleanup }),
