@@ -590,9 +590,15 @@ const processIsAlive = (pid: number) => {
   }
 };
 
+// FileHandle.stat() and lstat() can expose different timestamp precision on
+// macOS and Windows even when they describe the same open file. Adoption also
+// re-reads and validates the lifecycle token, so identity is the portable
+// proof needed for this handoff while sameFile remains strict for cleanup.
+const sameFileIdentity = (left: Stats, right: Stats) =>
+  left.dev === right.dev && left.ino === right.ino;
+
 const sameFile = (left: Stats, right: Stats) =>
-  left.dev === right.dev &&
-  left.ino === right.ino &&
+  sameFileIdentity(left, right) &&
   left.size === right.size &&
   left.mtimeMs === right.mtimeMs;
 
@@ -869,7 +875,7 @@ const adoptLock = async (paths: DaemonPaths, token: string) => {
       constants.O_RDWR | (process.platform === "win32" ? 0 : constants.O_NOFOLLOW)
     );
     const currentStats = await file.stat();
-    if (!sameFile(observation.stats, currentStats)) {
+    if (!sameFileIdentity(observation.stats, currentStats)) {
       throw new Error("The daemon lifecycle lock was replaced during adoption.");
     }
     const current = parseJson(await file.readFile({ encoding: "utf8" }));
