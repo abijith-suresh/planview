@@ -264,7 +264,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     corePackageJson.scripts,
     "test",
-    "npm run build && node --test test/core.test.mjs test/core-identifiers.test.mjs test/core-source-validation.test.mjs",
+    "npm run build && node --test test/core.test.mjs test/core-identifiers.test.mjs test/core-source-validation.test.mjs test/core-bundle-format.test.mjs",
     "core test script"
   );
   expectProperty(

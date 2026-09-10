@@ -1,6 +1,6 @@
 # Planview
 
-Planview is a TypeScript ESM monorepo for turning an HTML file into a retained,
+Planview is a TypeScript ESM monorepo for turning an HTML file or page folder into a retained,
 immutable localhost URL.
 
 ## Bootstrap status
@@ -8,8 +8,9 @@ immutable localhost URL.
 The foundation includes the public `@abijith-suresh/planview` npm workspace and the
 private `@planview/core`, `@planview/daemon`, and `@planview/storage` workspaces. The CLI
 is an installable TypeScript ESM package with detached daemon lifecycle
-commands: `start`, `status`, `stop`, and `restart`, plus `publish <file>` and
-`get <id|url>` for immutable HTML snapshots. The private daemon is bundled into
+commands: `start`, `status`, `stop`, and `restart`, plus `publish <file|folder>`
+and `get <id|url>` for immutable HTML snapshots. A publish folder must contain
+`index.html`; its assets are served below the same immutable URL. The private daemon is bundled into
 the one published CLI artifact and owns loopback-only lifecycle HTTP and direct
 snapshot serving.
 Core resolves conventional per-user application-data paths and holds the fixed

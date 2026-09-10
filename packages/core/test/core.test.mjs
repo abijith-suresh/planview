@@ -110,6 +110,9 @@ test("keeps the v1 policy values fixed and isolated", () => {
   assert.deepEqual(V1_POLICY, {
     port: 4777,
     maxHtmlSizeBytes: 10 * 1024 * 1024,
+    maxBundleFiles: 512,
+    maxBundleManifestBytes: 512 * 1024,
+    maxBundlePathBytes: 1024,
     retentionDays: 30,
     cleanupIntervalHours: 24,
     storageQuotaBytes: 1024 * 1024 * 1024,

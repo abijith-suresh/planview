@@ -26,3 +26,11 @@ including `V1_MAX_HTML_SIZE_BYTES` (10 MiB). `validateSourceFile()` combines the
 extension and size checks. These validators do not inspect, read, or copy files.
 Unsupported extensions, invalid sizes, and oversized files produce distinct
 error classes with stable `code` values.
+
+## Page bundles
+
+The v1 bundle format stores a folder snapshot in one HTML-named file. It has a
+fixed header, a bounded JSON manifest, and byte ranges for each regular file.
+Bundles require a root `index.html`, use safe POSIX paths, and are limited to
+512 files and a 512 KiB manifest. The storage and daemon layers validate the
+manifest before serving any range.

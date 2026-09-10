@@ -1,27 +1,22 @@
 import { realpathSync } from "node:fs";
-import { lstat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isValidDocumentId, V1_PORT } from "@planview/core";
 import {
-  isValidDocumentId,
-  V1_PORT,
-  validateSourceFileExtension,
-  validateSourceFileSize,
-} from "@planview/core";
-import {
+  cleanDaemon,
   inspectDaemon,
   publishDocument,
   resolveDaemonConfig,
   resolveDaemonConfigForTest,
   restartDaemon,
   retrieveDocument,
-  cleanDaemon,
   startDetachedDaemon,
   stopDaemon,
 } from "@planview/daemon";
-import { installSkills } from "./skills.js";
 import { Data, Effect } from "effect";
 import packageJson from "../package.json" with { type: "json" };
+import { preparePublishSource } from "./publish-source.js";
+import { installSkills } from "./skills.js";
 
 const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
@@ -218,21 +213,19 @@ const formatRunning = (status: {
 const runPublishCommand = (sourcePath: string, stdout: StdoutWriter) =>
   Effect.tryPromise({
     try: async () => {
-      validateSourceFileExtension(sourcePath);
-      const absoluteSourcePath = resolve(sourcePath);
-      const sourceStats = await lstat(absoluteSourcePath);
-      if (!sourceStats.isFile() || sourceStats.isSymbolicLink()) {
-        throw new Error(`The source file must be a regular HTML file: ${sourcePath}.`);
+      const prepared = await preparePublishSource(sourcePath);
+      try {
+        const config = resolveCliDaemonConfig();
+        const published = await publishDocument(config, {
+          daemonScriptPath: daemonScriptPath(),
+          sourcePath: prepared.sourcePath,
+          sourceSizeBytes: prepared.sourceSizeBytes,
+        });
+        await stdout(`http://localhost:${published.descriptor.port}/${published.id}\n`);
+        return 0;
+      } finally {
+        await prepared.cleanup();
       }
-      validateSourceFileSize(sourceStats.size);
-      const config = resolveCliDaemonConfig();
-      const published = await publishDocument(config, {
-        daemonScriptPath: daemonScriptPath(),
-        sourcePath: absoluteSourcePath,
-        sourceSizeBytes: sourceStats.size,
-      });
-      await stdout(`http://localhost:${published.descriptor.port}/${published.id}\n`);
-      return 0;
     },
     catch: (cause) =>
       new PublishCommandError({

@@ -17,7 +17,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validateDocumentId } from "@planview/core";
+import { createBundleHeader, encodeBundleManifest, validateDocumentId } from "@planview/core";
 import {
   createDocumentPublicationCoordinator,
   openDocumentFileStore,
@@ -128,6 +128,46 @@ const seedPublishedDocument = async (appDataDir, fixture, documentId, contents) 
   writeFileSync(sourcePath, contents);
   const metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
   const documentFileStore = Effect.runSync(openDocumentFileStore({ documentsDir, stagingDir }));
+  try {
+    const publication = createDocumentPublicationCoordinator({
+      documentFileStore,
+      metadataStore,
+      generateId: () => documentId,
+    });
+    await publication.publish(sourcePath);
+  } finally {
+    await documentFileStore.close();
+    metadataStore.close();
+  }
+  return sourcePath;
+};
+
+const makeBundle = (files) => {
+  let offset = 0;
+  const entries = files.map(({ path, contents }) => {
+    const entry = { path, offset, size: contents.byteLength };
+    offset += contents.byteLength;
+    return entry;
+  });
+  const manifest = encodeBundleManifest(entries);
+  return Buffer.concat([
+    Buffer.from(createBundleHeader(manifest)),
+    Buffer.from(manifest),
+    ...files.map(({ contents }) => contents),
+  ]);
+};
+
+const seedPublishedBundle = async (appDataDir, fixture, documentId, files) => {
+  const sourcePath = join(fixture, `${documentId}.source.html`);
+  mkdirSync(appDataDir, { recursive: true, mode: 0o700 });
+  writeFileSync(sourcePath, makeBundle(files));
+  const metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+  const documentFileStore = Effect.runSync(
+    openDocumentFileStore({
+      documentsDir: join(appDataDir, "documents"),
+      stagingDir: join(appDataDir, "staging"),
+    })
+  );
   try {
     const publication = createDocumentPublicationCoordinator({
       documentFileStore,
@@ -502,6 +542,46 @@ test("exact management paths do not shadow a published id beginning with __planv
       headers: { "x-planview-secret": descriptor.secret },
     });
     assert.equal(authorized.status, 200);
+  } finally {
+    await stopChild(child);
+    await removeFixture(fixture);
+  }
+});
+
+test("serves a page bundle root and its asset entries", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-page-bundle-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const documentId = validateDocumentId("e".repeat(21));
+  let child;
+  try {
+    await seedPublishedBundle(appDataDir, fixture, documentId, [
+      { path: "index.html", contents: Buffer.from("<h1>bundle home</h1>") },
+      { path: "assets/app.css", contents: Buffer.from("body { color: red; }") },
+    ]);
+    child = startChild(appDataDir, runtimeDir, port);
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitForReady(port, descriptor.secret);
+
+    const redirect = await fetch(`http://127.0.0.1:${port}/${documentId}`, {
+      redirect: "manual",
+    });
+    assert.equal(redirect.status, 308);
+    assert.equal(redirect.headers.get("location"), `/${documentId}/`);
+
+    const page = await fetch(`http://127.0.0.1:${port}/${documentId}/`);
+    assert.equal(page.status, 200);
+    assert.equal(page.headers.get("content-type"), "text/html; charset=utf-8");
+    assert.equal(await page.text(), "<h1>bundle home</h1>");
+
+    const stylesheet = await fetch(`http://127.0.0.1:${port}/${documentId}/assets/app.css`);
+    assert.equal(stylesheet.status, 200);
+    assert.equal(stylesheet.headers.get("content-type"), "text/css; charset=utf-8");
+    assert.equal(await stylesheet.text(), "body { color: red; }");
+
+    const encodedSlash = await fetch(`http://127.0.0.1:${port}/${documentId}/assets%2Fapp.css`);
+    assert.equal(encodedSlash.status, 404);
   } finally {
     await stopChild(child);
     await removeFixture(fixture);

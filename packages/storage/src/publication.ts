@@ -16,6 +16,7 @@ import {
   DocumentFileDeleteError,
   DocumentFileDiscardError,
   DocumentFileFinalizeError,
+  type DocumentFileFormat,
   DocumentFileNotRegularError,
   type DocumentFileReadLease,
   type DocumentFileResourceState,
@@ -131,6 +132,11 @@ export interface MetadataGatedDocumentReader {
   readonly readPublishedDocument: (id: DocumentId) => Promise<ReadStream>;
   /** Holds active-read protection until a post-transfer action is complete. */
   readonly readPublishedDocumentLease: (id: DocumentId) => Promise<DocumentFileReadLease>;
+  readonly inspectPublishedDocument: (id: DocumentId) => Promise<DocumentFileFormat>;
+  readonly readPublishedDocumentEntryLease: (
+    id: DocumentId,
+    path: string
+  ) => Promise<DocumentFileReadLease>;
 }
 
 export interface DocumentPublicationCoordinator extends MetadataGatedDocumentReader {
@@ -324,7 +330,50 @@ export const createMetadataGatedDocumentReader = (
     return lease.stream;
   };
 
-  return { readPublishedDocument, readPublishedDocumentLease };
+  const inspectPublishedDocument = async (id: DocumentId) => {
+    const documentId = validateDocumentId(id);
+    if (metadataStore.getDocumentMetadata(documentId) === undefined) {
+      throw new DocumentPublicationNotFoundError({
+        id: documentId,
+        message: `Document ${documentId} is not a committed publication.`,
+      });
+    }
+    try {
+      return await documentFileStore.inspectDocumentFormat(documentId);
+    } catch (cause) {
+      throw new DocumentPublicationReadError({
+        id: documentId,
+        cause,
+        message: `Could not inspect published document ${documentId}: ${describe(cause)}`,
+      });
+    }
+  };
+
+  const readPublishedDocumentEntryLease = async (id: DocumentId, path: string) => {
+    const documentId = validateDocumentId(id);
+    if (metadataStore.getDocumentMetadata(documentId) === undefined) {
+      throw new DocumentPublicationNotFoundError({
+        id: documentId,
+        message: `Document ${documentId} is not a committed publication.`,
+      });
+    }
+    try {
+      return await documentFileStore.readDocumentEntryLease(documentId, path);
+    } catch (cause) {
+      throw new DocumentPublicationReadError({
+        id: documentId,
+        cause,
+        message: `Could not read published document ${documentId}: ${describe(cause)}`,
+      });
+    }
+  };
+
+  return {
+    readPublishedDocument,
+    readPublishedDocumentLease,
+    inspectPublishedDocument,
+    readPublishedDocumentEntryLease,
+  };
 };
 
 const makePublicationError = ({
@@ -1096,6 +1145,8 @@ export const createDocumentPublicationCoordinator = (
     publishDocument: publish,
     readPublishedDocument: reader.readPublishedDocument,
     readPublishedDocumentLease: reader.readPublishedDocumentLease,
+    inspectPublishedDocument: reader.inspectPublishedDocument,
+    readPublishedDocumentEntryLease: reader.readPublishedDocumentEntryLease,
   };
 };
 
