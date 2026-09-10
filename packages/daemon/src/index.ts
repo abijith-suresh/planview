@@ -598,9 +598,7 @@ const sameFileIdentity = (left: Stats, right: Stats) =>
   left.dev === right.dev && left.ino === right.ino;
 
 const sameFile = (left: Stats, right: Stats) =>
-  sameFileIdentity(left, right) &&
-  left.size === right.size &&
-  left.mtimeMs === right.mtimeMs;
+  sameFileIdentity(left, right) && left.size === right.size && left.mtimeMs === right.mtimeMs;
 
 const removeIfSame = async (path: string, observation: FileObservation) => {
   try {
@@ -2471,6 +2469,7 @@ const waitForReady = async (
   const deadline = Date.now() + timeoutMs;
   let readinessObserved = false;
   let startupFailure: DaemonRequestError | undefined;
+  let childDiagnostics = "";
   let rejectChildFailure: ((error: DaemonRequestError) => void) | undefined;
   const childFailure =
     child === undefined
@@ -2482,12 +2481,21 @@ const waitForReady = async (
     if (readinessObserved || startupFailure !== undefined) {
       return;
     }
+    const diagnostics = childDiagnostics.trim();
+    const detailedCause =
+      diagnostics.length === 0
+        ? cause
+        : new Error(`${describe(cause)}\nDaemon stderr: ${diagnostics}`);
     startupFailure = new DaemonRequestError({
       path: DAEMON_READY_PATH,
-      cause,
-      message: `The detached Planview daemon failed before readiness: ${describe(cause)}`,
+      cause: detailedCause,
+      message: `The detached Planview daemon failed before readiness: ${describe(detailedCause)}`,
     });
     rejectChildFailure?.(startupFailure);
+  };
+  const onChildStderr = (chunk: string | Uint8Array) => {
+    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    childDiagnostics = `${childDiagnostics}${text}`.slice(-8 * 1024);
   };
   const onChildError = (cause: Error) => failForChild(cause);
   const onChildExit = (code: number | null, signal: NodeJS.Signals | null) =>
@@ -2507,6 +2515,8 @@ const waitForReady = async (
 
   child?.once("error", onChildError);
   child?.once("exit", onChildExit);
+  child?.stderr?.setEncoding("utf8");
+  child?.stderr?.on("data", onChildStderr);
   if (child !== undefined && (child.exitCode !== null || child.signalCode !== null)) {
     onChildExit(child.exitCode, child.signalCode);
   }
@@ -2552,6 +2562,8 @@ const waitForReady = async (
   } finally {
     child?.off("error", onChildError);
     child?.off("exit", onChildExit);
+    child?.stderr?.off("data", onChildStderr);
+    child?.stderr?.destroy();
   }
   throw new DaemonRequestError({
     path: DAEMON_READY_PATH,
@@ -2596,9 +2608,10 @@ const startWithLock = async (
     });
   }
   const { spawn } = await import("node:child_process");
+  const captureStartupDiagnostics = isTestProcess() || config.port !== DAEMON_PORT;
   const child = spawn(process.execPath, [options.daemonScriptPath], {
     detached: true,
-    stdio: "ignore",
+    stdio: captureStartupDiagnostics ? ["ignore", "ignore", "pipe"] : "ignore",
     windowsHide: true,
     env: resolveDaemonEnvironment(config, lock.token),
   });
