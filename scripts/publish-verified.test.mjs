@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const script = fileURLToPath(new URL("./publish-verified.mjs", import.meta.url));
+const packageMetadata = JSON.parse(readFileSync(join(root, "apps/cli/package.json"), "utf8"));
 
 const withTarball = (environment, callback) => {
   const directory = mkdtempSync(join(tmpdir(), "planview-publish-verified-"));
@@ -33,7 +34,7 @@ test("scoped publishing is explicitly disabled by default", () => {
   );
 
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /@abijith-suresh\/planview@0\.1\.1/);
+  assert.ok(result.stdout.includes(`${packageMetadata.name}@${packageMetadata.version}`));
   assert.match(result.stdout, /explicitly disabled/);
   assert.doesNotMatch(result.stdout, /npm publish\s/);
 });
