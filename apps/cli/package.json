@@ -27,7 +27,8 @@
     "build": "npm run build --workspace @planview/daemon && tsc --project tsconfig.json && node scripts/bundle.mjs && node scripts/make-executable.mjs dist/index.js",
     "prepack": "npm run build",
     "typecheck": "npm run build --workspace @planview/daemon && tsc --project tsconfig.json --noEmit",
-    "test": "npm run build && node --test \"test/**/*.test.mjs\""
+    "test": "npm run build && npm run typecheck:test && node --test \"test/**/*.test.mts\"",
+    "typecheck:test": "tsc --project tsconfig.test.json"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

@@ -247,8 +247,14 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     cliPackageJson.scripts,
     "test",
-    'npm run build && node --test "test/**/*.test.mjs"',
+    'npm run build && npm run typecheck:test && node --test "test/**/*.test.mts"',
     "CLI test script"
+  );
+  expectProperty(
+    cliPackageJson.scripts,
+    "typecheck:test",
+    "tsc --project tsconfig.test.json",
+    "CLI test typecheck script"
   );
 
   const daemonPackageJson = readJson("packages/daemon/package.json");
