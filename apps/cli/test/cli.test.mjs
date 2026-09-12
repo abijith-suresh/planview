@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import {
   chmodSync,
   existsSync,
@@ -20,7 +21,7 @@ import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Effect, Exit } from "effect";
-import { formatHelp, main, parseGetReference, run } from "../dist/index.js";
+import { formatHelp, main, openUrl, parseGetReference, run } from "../dist/index.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "../..");
@@ -87,6 +88,38 @@ test("--help and -h produce the same deterministic output", () => {
   assert.equal(long.stderr, "");
   assert.equal(long.stdout, short.stdout);
   assert.match(long.stdout, /^Usage: planview <command>/);
+});
+
+test("preview opens URLs with the platform browser launcher", async () => {
+  let command;
+  let argumentsList;
+  let options;
+  let unrefCalled = false;
+  const child = new EventEmitter();
+  child.unref = () => {
+    unrefCalled = true;
+  };
+  const fakeSpawn = (spawnCommand, spawnArguments, spawnOptions) => {
+    command = spawnCommand;
+    argumentsList = spawnArguments;
+    options = spawnOptions;
+    queueMicrotask(() => child.emit("spawn"));
+    return child;
+  };
+
+  await openUrl("http://localhost:4777/example", fakeSpawn);
+
+  const expected =
+    process.platform === "win32"
+      ? { command: "cmd.exe", arguments: ["/c", "start", "", "http://localhost:4777/example"] }
+      : process.platform === "darwin"
+        ? { command: "open", arguments: ["http://localhost:4777/example"] }
+        : { command: "xdg-open", arguments: ["http://localhost:4777/example"] };
+  assert.equal(command, expected.command);
+  assert.deepEqual(argumentsList, expected.arguments);
+  assert.equal(options.detached, true);
+  assert.equal(options.stdio, "ignore");
+  assert.equal(unrefCalled, true);
 });
 
 test("the public declaration does not reference private workspace packages", () => {

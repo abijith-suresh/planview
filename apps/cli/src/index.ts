@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -32,6 +33,7 @@ export const HELP = `Usage: planview <command>
 
 Commands:
   publish     Publish one immutable HTML snapshot and print its localhost URL
+  preview     Publish a file or page folder and open its URL in a browser
   get         Retrieve a stored HTML snapshot by id or exact local URL
   start       Start the local daemon, or reuse the running daemon
   status      Show daemon status without starting it
@@ -148,6 +150,12 @@ export class PublishCommandError extends Data.TaggedError("PublishCommandError")
   readonly message: string;
 }> {}
 
+export class PreviewCommandError extends Data.TaggedError("PreviewCommandError")<{
+  readonly sourcePath: string;
+  readonly cause: unknown;
+  readonly message: string;
+}> {}
+
 export class GetCommandError extends Data.TaggedError("GetCommandError")<{
   readonly reference: string;
   readonly cause: unknown;
@@ -170,12 +178,14 @@ export type CliError =
   | UnexpectedArgumentsError
   | DaemonCommandError
   | PublishCommandError
+  | PreviewCommandError
   | GetCommandError
   | SkillsCommandError
   | OutputCommandError;
 
 const COMMANDS = [
   "publish",
+  "preview",
   "get",
   "start",
   "status",
@@ -196,6 +206,47 @@ const describe = (cause: unknown) => (cause instanceof Error ? cause.message : S
 
 const daemonScriptPath = () => fileURLToPath(new URL("./daemon.js", import.meta.url));
 
+const browserCommand = () =>
+  process.platform === "win32"
+    ? { command: "cmd.exe", arguments: ["/c", "start", ""] }
+    : process.platform === "darwin"
+      ? { command: "open", arguments: [] }
+      : { command: "xdg-open", arguments: [] };
+
+export const openUrl = (url: string, spawnProcess: typeof spawn = spawn) =>
+  new Promise<void>((resolvePromise, rejectPromise) => {
+    const browser = browserCommand();
+    let settled = false;
+    const child = spawnProcess(browser.command, [...browser.arguments, url], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    const cleanup = () => {
+      child.off("error", onError);
+      child.off("spawn", onSpawn);
+    };
+    const onError = (cause: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      rejectPromise(cause);
+    };
+    const onSpawn = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      child.unref();
+      resolvePromise();
+    };
+    child.once("error", onError);
+    child.once("spawn", onSpawn);
+  });
+
 const resolveCliDaemonConfig = () => {
   const { NODE_ENV, PLANVIEW_TEST_DAEMON_PORT: configuredTestPort } = process.env;
   const testPort = NODE_ENV === "test" ? configuredTestPort : undefined;
@@ -210,7 +261,7 @@ const formatRunning = (status: {
   readonly port: number;
 }) => `Planview daemon is running at http://${status.host}:${status.port}/ (pid ${status.pid}).\n`;
 
-const runPublishCommand = (sourcePath: string, stdout: StdoutWriter) =>
+const publishSource = (sourcePath: string) =>
   Effect.tryPromise({
     try: async () => {
       const prepared = await preparePublishSource(sourcePath);
@@ -221,8 +272,7 @@ const runPublishCommand = (sourcePath: string, stdout: StdoutWriter) =>
           sourcePath: prepared.sourcePath,
           sourceSizeBytes: prepared.sourceSizeBytes,
         });
-        await stdout(`http://localhost:${published.descriptor.port}/${published.id}\n`);
-        return 0;
+        return `http://localhost:${published.descriptor.port}/${published.id}`;
       } finally {
         await prepared.cleanup();
       }
@@ -234,6 +284,55 @@ const runPublishCommand = (sourcePath: string, stdout: StdoutWriter) =>
         message: `Could not publish ${sourcePath}: ${describe(cause)}`,
       }),
   });
+
+const runPublishCommand = (sourcePath: string, stdout: StdoutWriter) =>
+  publishSource(sourcePath).pipe(
+    Effect.flatMap((url) =>
+      Effect.tryPromise({
+        try: async () => {
+          await stdout(`${url}\n`);
+          return 0;
+        },
+        catch: (cause) =>
+          new OutputCommandError({
+            cause,
+            message: `Could not write the published URL: ${describe(cause)}`,
+          }),
+      })
+    ),
+    Effect.mapError((cause) =>
+      cause instanceof OutputCommandError
+        ? cause
+        : new PublishCommandError({
+            sourcePath,
+            cause,
+            message: `Could not publish ${sourcePath}: ${describe(cause)}`,
+          })
+    )
+  );
+
+const runPreviewCommand = (sourcePath: string, stdout: StdoutWriter) =>
+  publishSource(sourcePath).pipe(
+    Effect.flatMap((url) =>
+      Effect.tryPromise({
+        try: async () => {
+          await stdout(`${url}\n`);
+          await openUrl(url);
+          return 0;
+        },
+        catch: (cause) => cause,
+      })
+    ),
+    Effect.mapError((cause) =>
+      cause instanceof PreviewCommandError
+        ? cause
+        : new PreviewCommandError({
+            sourcePath,
+            cause,
+            message: `Could not preview ${sourcePath}: ${describe(cause)}`,
+          })
+    )
+  );
 
 const runGetCommand = (reference: string, stdout: StdoutWriter) =>
   Effect.tryPromise({
@@ -270,7 +369,7 @@ const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
   });
 
 const runDaemonCommand = (
-  command: Exclude<Command, "publish" | "get" | "skills">,
+  command: Exclude<Command, "publish" | "preview" | "get" | "skills">,
   stdout: StdoutWriter
 ) =>
   Effect.tryPromise({
@@ -448,12 +547,12 @@ const command = (
     return runSkillsInstallCommand(options.includes("--force"), stdout);
   }
 
-  if (argument === "publish" || argument === "get") {
+  if (argument === "publish" || argument === "preview" || argument === "get") {
     if (trailing.length !== 1 || trailing[0] === undefined) {
       const label =
         trailing.length === 0
           ? argument === "publish"
-            ? "Missing source file"
+            ? "Missing source file or folder"
             : "Missing document id or URL"
           : "Unexpected arguments";
       return Effect.fail(
@@ -463,9 +562,13 @@ const command = (
         })
       );
     }
-    return argument === "publish"
-      ? runPublishCommand(trailing[0], stdout)
-      : runGetCommand(trailing[0], stdout);
+    if (argument === "publish") {
+      return runPublishCommand(trailing[0], stdout);
+    }
+    if (argument === "preview") {
+      return runPreviewCommand(trailing[0], stdout);
+    }
+    return runGetCommand(trailing[0], stdout);
   }
 
   if (trailing.length > 0) {
@@ -497,6 +600,7 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
         "UnexpectedArgumentsError",
         "DaemonCommandError",
         "PublishCommandError",
+        "PreviewCommandError",
         "GetCommandError",
         "SkillsCommandError",
         "OutputCommandError",
