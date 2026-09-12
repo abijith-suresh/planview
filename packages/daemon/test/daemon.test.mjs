@@ -226,6 +226,36 @@ test("public configuration fixes 4777, while test injection is explicit and cont
   }
 });
 
+test("detached daemon environments contain Planview settings and safe runtime plumbing", () => {
+  const environment = daemon.resolveDaemonEnvironment(
+    { appDataDir: "/tmp/planview-app-data", runtimeDir: "/tmp/planview-runtime", port: 4777 },
+    "lifecycle-token",
+    {
+      NODE_ENV: "test",
+      PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "250",
+      NPM_TOKEN: "should-not-be-forwarded",
+      NODE_OPTIONS: "--not-a-real-node-option",
+      PATH: "/unrelated/path",
+      HOME: "/home/test-user",
+      USERPROFILE: "C:\\Users\\test-user",
+      SystemRoot: "C:\\Windows",
+    }
+  );
+
+  assert.deepEqual(environment, {
+    PLANVIEW_APP_DATA_DIR: "/tmp/planview-app-data",
+    PLANVIEW_RUNTIME_DIR: "/tmp/planview-runtime",
+    PLANVIEW_DAEMON_LIFECYCLE_TOKEN: "lifecycle-token",
+    PATH: "/unrelated/path",
+    HOME: "/home/test-user",
+    USERPROFILE: "C:\\Users\\test-user",
+    SystemRoot: "C:\\Windows",
+    NODE_ENV: "test",
+    PLANVIEW_TEST_DAEMON_PORT: "4777",
+    PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "250",
+  });
+});
+
 test("a detached child failure is observed and the starter releases its lifecycle lock", async () => {
   const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-start-failure-"));
   const appDataDir = join(fixture, "app-data");

@@ -101,6 +101,31 @@ const TEST_PUBLISH_PAUSE_ONCE_ENV = "PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_ONCE";
 const TEST_UNCOOPERATIVE_PUBLISH_ENV = "PLANVIEW_TEST_DAEMON_UNCOOPERATIVE_PUBLISH";
 const TEST_CLEANUP_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_CLEANUP_PAUSE_MS";
 const LIFECYCLE_TOKEN_ENV = "PLANVIEW_DAEMON_LIFECYCLE_TOKEN";
+// These values are runtime plumbing, not application configuration. Keep the
+// allowlist narrow so detached daemons do not inherit tokens or Node flags,
+// while retaining the platform variables needed by Node and native tooling.
+const SAFE_RUNTIME_ENVIRONMENT_KEYS = [
+  "PATH",
+  "HOME",
+  "USERPROFILE",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "XDG_DATA_HOME",
+  "TMPDIR",
+  "TEMP",
+  "TMP",
+  "SystemRoot",
+  "ComSpec",
+] as const;
+const TEST_DAEMON_ENVIRONMENT_KEYS = [
+  TEST_ADOPTION_PAUSE_ENV,
+  TEST_PUBLISH_PAUSE_ENV,
+  TEST_PUBLISH_PAUSE_ONCE_ENV,
+  TEST_UNCOOPERATIVE_PUBLISH_ENV,
+  TEST_CLEANUP_PAUSE_ENV,
+] as const;
 const isTestProcess = () => {
   const { NODE_ENV } = process.env;
   return NODE_ENV === "test";
@@ -125,6 +150,36 @@ export type DaemonConfig = Readonly<{
   readonly host: typeof DAEMON_HOST;
   readonly port: number;
 }>;
+
+export const resolveDaemonEnvironment = (
+  config: Pick<DaemonConfig, "appDataDir" | "runtimeDir" | "port">,
+  lifecycleToken: string,
+  source: Readonly<Record<string, string | undefined>> = process.env
+) => {
+  const environment: Record<string, string> = {
+    PLANVIEW_APP_DATA_DIR: config.appDataDir,
+    PLANVIEW_RUNTIME_DIR: config.runtimeDir,
+    [LIFECYCLE_TOKEN_ENV]: lifecycleToken,
+  };
+  for (const key of SAFE_RUNTIME_ENVIRONMENT_KEYS) {
+    const value = source[key];
+    if (value !== undefined) {
+      environment[key] = value;
+    }
+  }
+  const testProcess = source["NODE_ENV"] === "test" || config.port !== DAEMON_PORT;
+  if (testProcess) {
+    environment["NODE_ENV"] = "test";
+    environment[TEST_PORT_ENV] = String(config.port);
+    for (const key of TEST_DAEMON_ENVIRONMENT_KEYS) {
+      const value = source[key];
+      if (value !== undefined) {
+        environment[key] = value;
+      }
+    }
+  }
+  return environment;
+};
 
 export type DaemonConfigOptions = DaemonPathOptions;
 
@@ -535,11 +590,15 @@ const processIsAlive = (pid: number) => {
   }
 };
 
+// FileHandle.stat() and lstat() can expose different timestamp precision on
+// macOS and Windows even when they describe the same open file. Adoption also
+// re-reads and validates the lifecycle token, so identity is the portable
+// proof needed for this handoff while sameFile remains strict for cleanup.
+const sameFileIdentity = (left: Stats, right: Stats) =>
+  left.dev === right.dev && left.ino === right.ino;
+
 const sameFile = (left: Stats, right: Stats) =>
-  left.dev === right.dev &&
-  left.ino === right.ino &&
-  left.size === right.size &&
-  left.mtimeMs === right.mtimeMs;
+  sameFileIdentity(left, right) && left.size === right.size && left.mtimeMs === right.mtimeMs;
 
 const removeIfSame = async (path: string, observation: FileObservation) => {
   try {
@@ -814,7 +873,7 @@ const adoptLock = async (paths: DaemonPaths, token: string) => {
       constants.O_RDWR | (process.platform === "win32" ? 0 : constants.O_NOFOLLOW)
     );
     const currentStats = await file.stat();
-    if (!sameFile(observation.stats, currentStats)) {
+    if (!sameFileIdentity(observation.stats, currentStats)) {
       throw new Error("The daemon lifecycle lock was replaced during adoption.");
     }
     const current = parseJson(await file.readFile({ encoding: "utf8" }));
@@ -1462,9 +1521,16 @@ const handleRequest = async (
         try {
           const requestAbort = new AbortController();
           const abortRequest = () => requestAbort.abort(new Error("The client disconnected."));
+          const admissionSignal =
+            requestSignal === undefined
+              ? requestAbort.signal
+              : AbortSignal.any([requestAbort.signal, requestSignal]);
           request.once("aborted", abortRequest);
-          permit = await documentReadAdmission.acquire(requestAbort.signal);
-          request.off("aborted", abortRequest);
+          try {
+            permit = await documentReadAdmission.acquire(admissionSignal);
+          } finally {
+            request.off("aborted", abortRequest);
+          }
           await handlePublishedDocument(
             documentId,
             res,
@@ -2403,6 +2469,7 @@ const waitForReady = async (
   const deadline = Date.now() + timeoutMs;
   let readinessObserved = false;
   let startupFailure: DaemonRequestError | undefined;
+  let childDiagnostics = "";
   let rejectChildFailure: ((error: DaemonRequestError) => void) | undefined;
   const childFailure =
     child === undefined
@@ -2414,12 +2481,21 @@ const waitForReady = async (
     if (readinessObserved || startupFailure !== undefined) {
       return;
     }
+    const diagnostics = childDiagnostics.trim();
+    const detailedCause =
+      diagnostics.length === 0
+        ? cause
+        : new Error(`${describe(cause)}\nDaemon stderr: ${diagnostics}`);
     startupFailure = new DaemonRequestError({
       path: DAEMON_READY_PATH,
-      cause,
-      message: `The detached Planview daemon failed before readiness: ${describe(cause)}`,
+      cause: detailedCause,
+      message: `The detached Planview daemon failed before readiness: ${describe(detailedCause)}`,
     });
     rejectChildFailure?.(startupFailure);
+  };
+  const onChildStderr = (chunk: string | Uint8Array) => {
+    const text = typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    childDiagnostics = `${childDiagnostics}${text}`.slice(-8 * 1024);
   };
   const onChildError = (cause: Error) => failForChild(cause);
   const onChildExit = (code: number | null, signal: NodeJS.Signals | null) =>
@@ -2439,6 +2515,8 @@ const waitForReady = async (
 
   child?.once("error", onChildError);
   child?.once("exit", onChildExit);
+  child?.stderr?.setEncoding("utf8");
+  child?.stderr?.on("data", onChildStderr);
   if (child !== undefined && (child.exitCode !== null || child.signalCode !== null)) {
     onChildExit(child.exitCode, child.signalCode);
   }
@@ -2484,6 +2562,8 @@ const waitForReady = async (
   } finally {
     child?.off("error", onChildError);
     child?.off("exit", onChildExit);
+    child?.stderr?.off("data", onChildStderr);
+    child?.stderr?.destroy();
   }
   throw new DaemonRequestError({
     path: DAEMON_READY_PATH,
@@ -2528,19 +2608,12 @@ const startWithLock = async (
     });
   }
   const { spawn } = await import("node:child_process");
+  const captureStartupDiagnostics = isTestProcess() || config.port !== DAEMON_PORT;
   const child = spawn(process.execPath, [options.daemonScriptPath], {
     detached: true,
-    stdio: "ignore",
+    stdio: captureStartupDiagnostics ? ["ignore", "ignore", "pipe"] : "ignore",
     windowsHide: true,
-    env: {
-      ...process.env,
-      PLANVIEW_APP_DATA_DIR: config.appDataDir,
-      PLANVIEW_RUNTIME_DIR: config.runtimeDir,
-      [LIFECYCLE_TOKEN_ENV]: lock.token,
-      ...(isTestProcess() || config.port !== DAEMON_PORT
-        ? { NODE_ENV: "test", [TEST_PORT_ENV]: String(config.port) }
-        : {}),
-    },
+    env: resolveDaemonEnvironment(config, lock.token),
   });
   child.unref();
   return waitForReady(config, startupTimeoutMs, child);
