@@ -346,9 +346,6 @@ test("retains a fresh uncommitted target for an in-flight publisher window", () 
 test("cleanup cannot delete a hard-linked target while publication commits metadata", () => {
   let cleanup!: ReturnType<typeof createDocumentCleanupCoordinator>;
   let publication!: ReturnType<typeof createDocumentPublicationCoordinator>;
-  let publicationPromise!: ReturnType<
-    ReturnType<typeof createDocumentPublicationCoordinator>["publish"]
-  >;
   let targetLinkReadyResolve!: () => void;
   const targetLinkReady = new Promise<void>((resolve) => {
     targetLinkReadyResolve = resolve;
@@ -387,7 +384,7 @@ test("cleanup cannot delete a hard-linked target while publication commits metad
         },
       });
 
-      publicationPromise = runEffect(publication.publish(source));
+      const publicationPromise = runEffect(publication.publish(source));
       await targetLinkReady;
       const cleanupRun = runEffect(cleanup.clean());
       const cleanupResult = await cleanupRun;
