@@ -26,7 +26,6 @@ import type {
   DocumentPublicationCoordinator,
   DocumentPublicationCoordinatorOptions,
   MetadataStore,
-  StagedDocumentFileHandle,
 } from "../dist/index.js";
 
 const id = (character: string): DocumentId => character.repeat(21) as DocumentId;

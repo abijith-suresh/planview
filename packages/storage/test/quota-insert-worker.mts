@@ -2,6 +2,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
 import { Effect } from "effect";
 import { openStorage, StorageQuotaExceededError } from "../dist/index.js";
+import type { MetadataStore } from "../dist/index.js";
 
 if (parentPort === null) {
   throw new Error("The quota insert worker requires a parent port.");
@@ -12,7 +13,7 @@ const { databasePath, id } = workerData as {
   readonly databasePath: string;
   readonly id: string;
 };
-let storage;
+let storage: MetadataStore | undefined;
 try {
   storage = Effect.runSync(openStorage(databasePath));
   storage.insertDocumentMetadata({

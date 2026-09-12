@@ -67,7 +67,7 @@ const generationCount = (databasePath: string): number => {
   try {
     const count = (
       database.prepare("SELECT COUNT(*) AS count FROM document_generations").get() as SqliteRow
-    )["count"];
+    ).count;
     if (typeof count !== "number") {
       throw new TypeError("SQLite returned a non-numeric generation count.");
     }
@@ -80,11 +80,11 @@ const generationCount = (databasePath: string): number => {
 const inspectSchema = (databasePath: string) => {
   const database = new DatabaseSync(databasePath);
   try {
-    const version = (database.prepare("PRAGMA user_version").get() as SqliteRow)["user_version"];
+    const version = (database.prepare("PRAGMA user_version").get() as SqliteRow).user_version;
     const columns = database.prepare("PRAGMA table_info(documents)").all() as SqliteRow[];
     return {
       version,
-      columns: columns.map((row) => row["name"]),
+      columns: columns.map((row) => row.name),
     };
   } finally {
     database.close();
@@ -276,12 +276,12 @@ test("rejects a claimed v1 database whose schema omits required semantics withou
     );
     const database = new DatabaseSync(databasePath);
     try {
-      assert.equal((database.prepare("PRAGMA user_version").get() as SqliteRow)["user_version"], 1);
+      assert.equal((database.prepare("PRAGMA user_version").get() as SqliteRow).user_version, 1);
       const actualSchema = (
         database
           .prepare("SELECT sql FROM sqlite_schema WHERE name = 'documents'")
           .get() as SqliteRow
-      )["sql"];
+      ).sql;
       if (typeof actualSchema !== "string") {
         throw new TypeError("SQLite returned no documents schema.");
       }
@@ -356,7 +356,7 @@ test("uses the access-order index for bounded 1k candidate and reconciliation pa
       const database = new DatabaseSync(databasePath);
       try {
         const indexes = (database.prepare("PRAGMA index_list(documents)").all() as SqliteRow[]).map(
-          (row) => row["name"]
+          (row) => row.name
         );
         assert.equal(indexes.includes("documents_last_accessed_at_idx"), true);
       } finally {
@@ -394,10 +394,10 @@ test("metadata cursors use SQLite bytewise order and a rowid watermark", () =>
     const expected = [...ids].sort((left, right) =>
       Buffer.compare(Buffer.from(left), Buffer.from(right))
     );
-    const observed = [];
+    const observed: string[] = [];
     const watermark = storage.getDocumentMetadataScanWatermark();
-    let cursor;
-    let page;
+    let cursor: string | undefined;
+    let page: ReturnType<MetadataStore["listDocumentMetadataPage"]>;
     do {
       page = storage.listDocumentMetadataPage(2, cursor, watermark);
       observed.push(...page.rows.map((row) => row.id));
@@ -459,8 +459,8 @@ test("deletes only the generation belonging to the deleted document", () =>
 test("persists metadata across close and reopen", () =>
   withTempDirectory("planview-storage-persistence-", (directory) => {
     const databasePath = join(directory, "metadata.sqlite");
-    let first;
-    let second;
+    let first: MetadataStore | undefined;
+    let second: MetadataStore | undefined;
     try {
       first = Effect.runSync(openStorage(databasePath));
       const expected = metadata("persistent", 42, 9, 43);
