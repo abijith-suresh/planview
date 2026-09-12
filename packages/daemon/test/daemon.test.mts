@@ -34,7 +34,7 @@ import type { MetadataStore } from "@planview/storage";
 import { Effect } from "effect";
 import * as daemon from "../dist/index.js";
 
-const runEffect = (effect) => Effect.runPromise(effect);
+const runEffect = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
 
 const packageRoot = new URL("..", import.meta.url);
 const entry = fileURLToPath(new URL("./dist/entry.js", packageRoot));
@@ -491,13 +491,11 @@ test("status and stop surface corrupt and insecure descriptors as typed errors",
 
   try {
     writeFileSync(descriptorPath, "{not-json", { encoding: "utf8", mode: 0o600 });
-    await assert.rejects(
-      runEffect(daemon.inspectDaemon(config)),
-      (error) => isTaggedError(error, "DaemonDescriptorError")
+    await assert.rejects(runEffect(daemon.inspectDaemon(config)), (error) =>
+      isTaggedError(error, "DaemonDescriptorError")
     );
-    await assert.rejects(
-      runEffect(daemon.stopDaemon(config)),
-      (error) => isTaggedError(error, "DaemonDescriptorError")
+    await assert.rejects(runEffect(daemon.stopDaemon(config)), (error) =>
+      isTaggedError(error, "DaemonDescriptorError")
     );
 
     if (process.platform !== "win32") {
@@ -514,13 +512,11 @@ test("status and stop surface corrupt and insecure descriptors as typed errors",
         { encoding: "utf8", mode: 0o600 }
       );
       chmodSync(descriptorPath, 0o644);
-      await assert.rejects(
-        runEffect(daemon.inspectDaemon(config)),
-        (error) => isTaggedError(error, "DaemonDescriptorError")
+      await assert.rejects(runEffect(daemon.inspectDaemon(config)), (error) =>
+        isTaggedError(error, "DaemonDescriptorError")
       );
-      await assert.rejects(
-        runEffect(daemon.stopDaemon(config)),
-        (error) => isTaggedError(error, "DaemonDescriptorError")
+      await assert.rejects(runEffect(daemon.stopDaemon(config)), (error) =>
+        isTaggedError(error, "DaemonDescriptorError")
       );
     }
   } finally {
