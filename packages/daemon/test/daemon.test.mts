@@ -587,6 +587,12 @@ test("exact management paths do not shadow a published id beginning with __planv
   const child = startChild(appDataDir, runtimeDir, port);
   try {
     const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
     const document = await fetch(`http://127.0.0.1:${port}/${documentId}`);
     assert.equal(document.status, 200);
     assert.equal(await document.text(), "<!doctype html><p>private-looking id</p>");
