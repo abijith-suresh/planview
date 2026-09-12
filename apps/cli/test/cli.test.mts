@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import {
+  spawn,
+  spawnSync,
+  type ChildProcess,
+  type ChildProcessByStdio,
+  type SpawnOptions,
+} from "node:child_process";
 import { EventEmitter } from "node:events";
 import {
   chmodSync,
@@ -18,6 +24,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { Readable } from "node:stream";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Effect, Exit } from "effect";
@@ -28,10 +35,22 @@ const repositoryRoot = resolve(packageRoot, "../..");
 const cli = resolve(packageRoot, "dist/index.js");
 const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json"), "utf8"));
 
-const removeFixture = (path) =>
+type OutputMessage = string | Uint8Array;
+type ChildExit = { readonly code: number | null; readonly signal: NodeJS.Signals | null };
+type DocumentMetadata = { readonly createdAt: number; readonly lastAccessedAt: number };
+type SqliteRow = Readonly<{
+  readonly createdAt?: unknown;
+  readonly lastAccessedAt?: unknown;
+}>;
+type PipedChild = ChildProcessByStdio<null, Readable, Readable>;
+
+const removeFixture = (path: string): Promise<void> =>
   rm(path, { force: true, recursive: true, maxRetries: 10, retryDelay: 50 });
 
-const waitFor = async (condition, timeout = 10_000) => {
+const waitFor = async <T,>(
+  condition: () => T | false | undefined | PromiseLike<T | false | undefined>,
+  timeout = 10_000
+): Promise<T> => {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     try {
@@ -42,13 +61,13 @@ const waitFor = async (condition, timeout = 10_000) => {
     } catch {
       // The fixture may not have been created yet.
     }
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
   }
   throw new Error("Timed out waiting for daemon lifecycle state.");
 };
 
-const waitForExit = (child, timeout = 10_000) =>
-  new Promise((resolve, reject) => {
+const waitForExit = (child: ChildProcess, timeout = 10_000): Promise<ChildExit> =>
+  new Promise<ChildExit>((resolve, reject) => {
     if (child.exitCode !== null || child.signalCode !== null) {
       resolve({ code: child.exitCode, signal: child.signalCode });
       return;
@@ -57,11 +76,11 @@ const waitForExit = (child, timeout = 10_000) =>
       cleanup();
       reject(new Error("Timed out waiting for starter process exit."));
     }, timeout);
-    const onExit = (code, signal) => {
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
       cleanup();
       resolve({ code, signal });
     };
-    const onError = (error) => {
+    const onError = (error: Error) => {
       cleanup();
       reject(error);
     };
@@ -74,10 +93,38 @@ const waitForExit = (child, timeout = 10_000) =>
     child.once("error", onError);
   });
 
-const execute = (...args) =>
+const execute = (...args: string[]) =>
   spawnSync(process.execPath, [cli, ...args], {
     encoding: "utf8",
   });
+
+const readDocumentMetadata = (database: DatabaseSync, id: string): DocumentMetadata | undefined => {
+  const row = database
+    .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
+    .get({ ":id": id }) as SqliteRow | undefined;
+  if (row === undefined) {
+    return undefined;
+  }
+  const createdAt = row.createdAt;
+  const lastAccessedAt = row.lastAccessedAt;
+  return typeof createdAt === "number" && typeof lastAccessedAt === "number"
+    ? { createdAt, lastAccessedAt }
+    : undefined;
+};
+
+const documentIdFromUrl = (url: string): string => {
+  const id = url.split("/").at(-1);
+  if (id === undefined) {
+    throw new Error(`Expected a document id in ${url}.`);
+  }
+  return id;
+};
+
+const collectOutput =
+  (target: string[]) =>
+  (message: OutputMessage): void => {
+    target.push(typeof message === "string" ? message : Buffer.from(message).toString("utf8"));
+  };
 
 test("--help and -h produce the same deterministic output", () => {
   const long = execute("--help");
@@ -91,23 +138,27 @@ test("--help and -h produce the same deterministic output", () => {
 });
 
 test("preview opens URLs with the platform browser launcher", async () => {
-  let command;
-  let argumentsList;
-  let options;
+  let command: string | undefined;
+  let argumentsList: readonly string[] | undefined;
+  let options: SpawnOptions | undefined;
   let unrefCalled = false;
-  const child = new EventEmitter();
+  const child = new EventEmitter() as EventEmitter & { unref: () => void };
   child.unref = () => {
     unrefCalled = true;
   };
-  const fakeSpawn = (spawnCommand, spawnArguments, spawnOptions) => {
+  const fakeSpawn = (
+    spawnCommand: string,
+    spawnArguments: readonly string[],
+    spawnOptions: SpawnOptions
+  ): ChildProcess => {
     command = spawnCommand;
     argumentsList = spawnArguments;
     options = spawnOptions;
     queueMicrotask(() => child.emit("spawn"));
-    return child;
+    return child as unknown as ChildProcess;
   };
 
-  await openUrl("http://localhost:4777/example", fakeSpawn);
+  await openUrl("http://localhost:4777/example", fakeSpawn as typeof spawn);
 
   const expected =
     process.platform === "win32"
@@ -117,6 +168,7 @@ test("preview opens URLs with the platform browser launcher", async () => {
         : { command: "xdg-open", arguments: ["http://localhost:4777/example"] };
   assert.equal(command, expected.command);
   assert.deepEqual(argumentsList, expected.arguments);
+  assert.ok(options);
   assert.equal(options.detached, true);
   assert.equal(options.stdio, "ignore");
   assert.equal(unrefCalled, true);
@@ -146,13 +198,11 @@ test("--version and -v follow the Changesets-managed package version", () => {
 });
 
 test("unknown options fail as typed Effects and preserve boundary output", () => {
-  const stdout = [];
-  const stderr = [];
-  const program = run(
-    ["--unknown"],
-    (message) => stdout.push(message),
-    (message) => stderr.push(message)
-  );
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const program = run(["--unknown"], collectOutput(stdout), (message) => {
+    stderr.push(message);
+  });
   const exit = Effect.runSyncExit(program);
   stderr.length = 0;
   const error = Effect.runSync(Effect.flip(program));
@@ -165,15 +215,13 @@ test("unknown options fail as typed Effects and preserve boundary output", () =>
 });
 
 test("the Effect boundary maps typed argument failures to the existing exit code", async () => {
-  const stdout = [];
-  const stderr = [];
+  const stdout: string[] = [];
+  const stderr: string[] = [];
 
   assert.equal(
-    await main(
-      ["--help", "unexpected"],
-      (message) => stdout.push(message),
-      (message) => stderr.push(message)
-    ),
+    await main(["--help", "unexpected"], collectOutput(stdout), (message) => {
+      stderr.push(message);
+    }),
     1
   );
   assert.deepEqual(stdout, []);
@@ -181,17 +229,19 @@ test("the Effect boundary maps typed argument failures to the existing exit code
 });
 
 test("programmatic help and version output await asynchronous writers", async () => {
-  const outputs = [];
-  const stdout = async (message) => {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    outputs.push(message);
+  const outputs: string[] = [];
+  const stdout = async (message: OutputMessage): Promise<void> => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    outputs.push(typeof message === "string" ? message : Buffer.from(message).toString("utf8"));
   };
 
   assert.equal(await main(["--help"], stdout, () => undefined), 0);
   assert.equal(await main(["--version"], stdout, () => undefined), 0);
   assert.equal(outputs.length, 2);
   assert.equal(outputs[0], formatHelp());
-  assert.match(outputs[1], /^planview \d+\.\d+\.\d+\n$/);
+  const versionOutput = outputs[1];
+  assert.ok(versionOutput);
+  assert.match(versionOutput, /^planview \d+\.\d+\.\d+\n$/);
 });
 
 test("unknown options fail with a useful error", () => {
@@ -255,11 +305,10 @@ test("a starter crash after daemon lock adoption does not strand lifecycle comma
     PLANVIEW_TEST_DAEMON_ADOPTION_PAUSE_MS: "2000",
   };
   const starter = spawn(process.execPath, [cli, "start"], {
-    encoding: "utf8",
     env: environment,
     stdio: "ignore",
   });
-  const executeInFixture = (...args) =>
+  const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
   const lockPath = join(daemonRuntimeDir, "lifecycle.lock");
 
@@ -304,7 +353,7 @@ test("start, status, stop, and restart are process-backed and private", async ()
     PLANVIEW_RUNTIME_DIR: daemonRuntimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
   };
-  const executeInFixture = (...args) =>
+  const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
 
   try {
@@ -356,8 +405,8 @@ test("start, status, stop, and restart are process-backed and private", async ()
   }
 });
 
-const freePort = () =>
-  new Promise((resolvePort, rejectPort) => {
+const freePort = (): Promise<number> =>
+  new Promise<number>((resolvePort, rejectPort) => {
     const server = createServer();
     server.once("error", rejectPort);
     server.listen(0, "127.0.0.1", () => {
@@ -385,7 +434,7 @@ test("publish validates before startup and preserves the source file", async () 
     PLANVIEW_RUNTIME_DIR: runtimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
   };
-  const executeInFixture = (...args) =>
+  const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
   const invalidPath = join(runtimeRoot, "source.txt");
   writeFileSync(invalidPath, "not html");
@@ -451,12 +500,12 @@ test("publish starts or reuses the daemon, serves raw immutable HTML, and record
     PLANVIEW_RUNTIME_DIR: runtimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
   };
-  const executeInFixture = (...args) =>
+  const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
   const sourcePath = join(runtimeRoot, "source.html");
   const original = "<!doctype html><html><body><h1>snapshot one</h1></body></html>";
   writeFileSync(sourcePath, original);
-  let database;
+  let database: DatabaseSync | undefined;
 
   try {
     const first = executeInFixture("publish", sourcePath);
@@ -468,9 +517,7 @@ test("publish starts or reuses the daemon, serves raw immutable HTML, and record
     const firstBrowserUrl = firstUrl.replace("localhost", "127.0.0.1");
 
     database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
-    const before = database
-      .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
-      .get({ ":id": firstUrl.slice(firstUrl.lastIndexOf("/") + 1) });
+    const before = readDocumentMetadata(database, documentIdFromUrl(firstUrl));
     assert.ok(before);
     database.close();
     database = undefined;
@@ -484,10 +531,10 @@ test("publish starts or reuses the daemon, serves raw immutable HTML, and record
     const after = await waitFor(() => {
       database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
       try {
-        const result = database
-          .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
-          .get({ ":id": firstUrl.slice(firstUrl.lastIndexOf("/") + 1) });
-        return result?.lastAccessedAt > before.lastAccessedAt ? result : undefined;
+        const result = readDocumentMetadata(database, documentIdFromUrl(firstUrl));
+        return result !== undefined && result.lastAccessedAt > before.lastAccessedAt
+          ? result
+          : undefined;
       } finally {
         database.close();
         database = undefined;
@@ -541,7 +588,7 @@ test("publish accepts a page folder and serves its root and assets", async () =>
     PLANVIEW_RUNTIME_DIR: runtimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
   };
-  const executeInFixture = (...args) =>
+  const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
   const site = join(runtimeRoot, "site");
   mkdirSync(join(site, "assets"), { recursive: true });
@@ -553,7 +600,7 @@ test("publish accepts a page folder and serves its root and assets", async () =>
     assert.equal(published.status, 0, published.stderr);
     assert.equal(published.stderr, "");
     const url = published.stdout.trim();
-    const id = url.split("/").at(-1);
+    const id = documentIdFromUrl(url);
     assert.match(id, /^[A-Za-z0-9_-]{21}$/);
 
     const page = await fetch(url.replace("localhost", "127.0.0.1"));
@@ -625,9 +672,9 @@ test("get streams exact bytes across daemon restart and only records successful 
     PLANVIEW_RUNTIME_DIR: runtimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
   };
-  const executeInFixture = (...args) =>
+  const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
-  const executeRawInFixture = (...args) =>
+  const executeRawInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], {
       encoding: null,
       env: environment,
@@ -640,7 +687,7 @@ test("get streams exact bytes across daemon restart and only records successful 
     Buffer.from("</body></html>\n"),
   ]);
   writeFileSync(sourcePath, original);
-  let database;
+  let database: DatabaseSync | undefined;
 
   try {
     const published = executeInFixture("publish", sourcePath);
@@ -648,9 +695,7 @@ test("get streams exact bytes across daemon restart and only records successful 
     const url = published.stdout.trim();
     const id = url.slice(url.lastIndexOf("/") + 1);
     database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
-    const before = database
-      .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
-      .get({ ":id": id });
+    const before = readDocumentMetadata(database, id);
     assert.ok(before);
     database.close();
     database = undefined;
@@ -663,10 +708,8 @@ test("get streams exact bytes across daemon restart and only records successful 
     const after = await waitFor(() => {
       database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
       try {
-        const row = database
-          .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
-          .get({ ":id": id });
-        return row?.lastAccessedAt > before.lastAccessedAt ? row : undefined;
+        const row = readDocumentMetadata(database, id);
+        return row !== undefined && row.lastAccessedAt > before.lastAccessedAt ? row : undefined;
       } finally {
         database.close();
         database = undefined;
@@ -703,7 +746,7 @@ test("get honors stdout backpressure and records access after the slow consumer 
     PLANVIEW_RUNTIME_DIR: runtimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
   };
-  const executeInFixture = (...args) =>
+  const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
   const sourcePath = join(runtimeRoot, "backpressure.html");
   const original = Buffer.concat([
@@ -712,43 +755,41 @@ test("get honors stdout backpressure and records access after the slow consumer 
     Buffer.from("</body>"),
   ]);
   writeFileSync(sourcePath, original);
-  let child;
+  let child: PipedChild | undefined;
 
   try {
     const published = executeInFixture("publish", sourcePath);
     assert.equal(published.status, 0, published.stderr);
-    const id = published.stdout.trim().split("/").at(-1);
-    assert.ok(id);
+    const id = documentIdFromUrl(published.stdout.trim());
 
     const beforeDatabase = new DatabaseSync(join(appDataDir, "metadata.sqlite"), {
       timeout: 5000,
     });
-    const before = beforeDatabase
-      .prepare("SELECT lastAccessedAt FROM documents WHERE id = :id")
-      .get({ ":id": id });
+    const before = readDocumentMetadata(beforeDatabase, id);
     beforeDatabase.close();
     assert.ok(before);
 
-    child = spawn(process.execPath, [cli, "get", id], {
+    const transfer = spawn(process.execPath, [cli, "get", id], {
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const output = [];
-    const errors = [];
-    child.stderr.on("data", (chunk) => errors.push(chunk));
+    child = transfer;
+    const output: Buffer[] = [];
+    const errors: Buffer[] = [];
+    transfer.stderr.on("data", (chunk: Buffer) => errors.push(chunk));
     const consume = (async () => {
-      for await (const chunk of child.stdout) {
+      for await (const chunk of transfer.stdout) {
         output.push(chunk);
-        await new Promise((resolve) => setTimeout(resolve, 5));
+        await new Promise<void>((resolve) => setTimeout(resolve, 5));
       }
     })();
-    const result = await Promise.all([consume, waitForExit(child)]).then((values) => values[1]);
+    const result = await Promise.all([consume, waitForExit(transfer)]).then((values) => values[1]);
 
     assert.equal(result.code, 0, Buffer.concat(errors).toString("utf8"));
     assert.deepEqual(Buffer.concat(output), original);
-    const after = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 })
-      .prepare("SELECT lastAccessedAt FROM documents WHERE id = :id")
-      .get({ ":id": id });
+    const afterDatabase = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
+    const after = readDocumentMetadata(afterDatabase, id);
+    afterDatabase.close();
     assert.ok(after);
     assert.ok(after.lastAccessedAt > before.lastAccessedAt);
   } finally {
@@ -773,7 +814,7 @@ test("get aborts the daemon transfer on a closed stdout consumer without recordi
     PLANVIEW_RUNTIME_DIR: runtimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
   };
-  const executeInFixture = (...args) =>
+  const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
   const sourcePath = join(runtimeRoot, "epipe.html");
   writeFileSync(
@@ -784,39 +825,35 @@ test("get aborts the daemon transfer on a closed stdout consumer without recordi
       Buffer.from("</body></html>"),
     ])
   );
-  let child;
-  let database;
+  let child: PipedChild | undefined;
+  let database: DatabaseSync | undefined;
 
   try {
     const published = executeInFixture("publish", sourcePath);
     assert.equal(published.status, 0, published.stderr);
-    const id = published.stdout.trim().split("/").at(-1);
-    assert.ok(id);
+    const id = documentIdFromUrl(published.stdout.trim());
     database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
-    const before = database
-      .prepare("SELECT lastAccessedAt FROM documents WHERE id = :id")
-      .get({ ":id": id });
+    const before = readDocumentMetadata(database, id);
     assert.ok(before);
     database.close();
     database = undefined;
 
-    child = spawn(process.execPath, [cli, "get", id], {
+    const transfer = spawn(process.execPath, [cli, "get", id], {
       env: environment,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    child.stdout.pause();
-    const errors = [];
-    child.stderr.on("data", (chunk) => errors.push(chunk));
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    child.stdout.destroy();
-    const result = await waitForExit(child);
+    child = transfer;
+    transfer.stdout.pause();
+    const errors: Buffer[] = [];
+    transfer.stderr.on("data", (chunk: Buffer) => errors.push(chunk));
+    await new Promise<void>((resolve) => setTimeout(resolve, 150));
+    transfer.stdout.destroy();
+    const result = await waitForExit(transfer);
 
     assert.equal(result.code, 1, Buffer.concat(errors).toString("utf8"));
     assert.match(Buffer.concat(errors).toString("utf8"), /Could not retrieve/);
     database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
-    const after = database
-      .prepare("SELECT lastAccessedAt FROM documents WHERE id = :id")
-      .get({ ":id": id });
+    const after = readDocumentMetadata(database, id);
     assert.ok(after);
     assert.equal(after.lastAccessedAt, before.lastAccessedAt);
   } finally {
@@ -834,9 +871,9 @@ test("start never stops an unknown owner of the daemon port", async () => {
   const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-port-owner-test-"));
   const port = await freePort();
   const owner = createServer((socket) => socket.end());
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     owner.once("error", reject);
-    owner.listen(port, "127.0.0.1", resolve);
+    owner.listen(port, "127.0.0.1", () => resolve());
   });
   const result = spawnSync(process.execPath, [cli, "start"], {
     encoding: "utf8",
@@ -855,7 +892,7 @@ test("start never stops an unknown owner of the daemon port", async () => {
     assert.match(result.stderr, /\n$/);
     assert.equal(owner.listening, true);
   } finally {
-    await new Promise((resolve, reject) =>
+    await new Promise<void>((resolve, reject) =>
       owner.close((error) => (error ? reject(error) : resolve()))
     );
     await removeFixture(runtimeRoot);
@@ -874,17 +911,16 @@ test("clean uses the authenticated daemon policy and startup reconciliation", as
     PLANVIEW_RUNTIME_DIR: runtimeDir,
     PLANVIEW_TEST_DAEMON_PORT: String(port),
   };
-  const executeInFixture = (...args) =>
+  const executeInFixture = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
   const sourcePath = join(runtimeRoot, "cleanup.html");
   writeFileSync(sourcePath, "cleanup me");
-  let database;
+  let database: DatabaseSync | undefined;
 
   try {
     const published = executeInFixture("publish", sourcePath);
     assert.equal(published.status, 0, published.stderr);
-    const documentId = published.stdout.trim().split("/").at(-1);
-    assert.ok(documentId);
+    const documentId = documentIdFromUrl(published.stdout.trim());
     database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
     database
       .prepare("UPDATE documents SET createdAt = 1, lastAccessedAt = 1 WHERE id = :id")
@@ -905,8 +941,7 @@ test("clean uses the authenticated daemon policy and startup reconciliation", as
 
     const secondPublished = executeInFixture("publish", sourcePath);
     assert.equal(secondPublished.status, 0, secondPublished.stderr);
-    const secondDocumentId = secondPublished.stdout.trim().split("/").at(-1);
-    assert.ok(secondDocumentId);
+    const secondDocumentId = documentIdFromUrl(secondPublished.stdout.trim());
     database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
     database
       .prepare("UPDATE documents SET createdAt = 1, lastAccessedAt = 1 WHERE id = :id")
@@ -950,7 +985,7 @@ test("clean uses the authenticated daemon policy and startup reconciliation", as
 test("skills install stages both skills, refuses conflicts, and supports explicit replacement", async () => {
   const home = mkdtempSync(join(tmpdir(), "planview-skills-home-"));
   const environment = { ...process.env, HOME: home, USERPROFILE: home };
-  const executeInHome = (...args) =>
+  const executeInHome = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], {
       encoding: "utf8",
       env: environment,
@@ -1055,7 +1090,7 @@ test("skills recovery repairs every crash boundary before the next install", asy
     const home = mkdtempSync(join(tmpdir(), `planview-skills-crash-${crashPoint}-`));
     const environment = { ...process.env, HOME: home, USERPROFILE: home };
     const skillsRoot = join(home, ".agents", "skills");
-    const executeInHome = (...args) =>
+    const executeInHome = (...args: string[]) =>
       spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
 
     try {
@@ -1096,8 +1131,8 @@ test("concurrent forced skills installs serialize on one lock", async () => {
   const home = mkdtempSync(join(tmpdir(), "planview-skills-concurrent-"));
   const environment = { ...process.env, HOME: home, USERPROFILE: home };
   const skillsRoot = join(home, ".agents", "skills");
-  let first;
-  let second;
+  let first: ChildProcess | undefined;
+  let second: ChildProcess | undefined;
 
   try {
     const initial = spawnSync(process.execPath, [cli, "skills", "install"], {
@@ -1106,7 +1141,6 @@ test("concurrent forced skills installs serialize on one lock", async () => {
     });
     assert.equal(initial.status, 0, initial.stderr);
     first = spawn(process.execPath, [cli, "skills", "install", "--force"], {
-      encoding: "utf8",
       env: {
         ...environment,
         PLANVIEW_TEST_SKILLS_PAUSE_AT: "after-lock",
@@ -1114,7 +1148,6 @@ test("concurrent forced skills installs serialize on one lock", async () => {
       },
     });
     second = spawn(process.execPath, [cli, "skills", "install", "--force"], {
-      encoding: "utf8",
       env: environment,
     });
     const results = await Promise.all([waitForExit(first), waitForExit(second)]);
