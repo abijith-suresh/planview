@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
+import type { DocumentId } from "@planview/core";
 import { Effect } from "effect";
 import {
+  DocumentFileFinalizeError,
   createDocumentPublicationCoordinator,
   DocumentFileDeleteError,
   DocumentPublicationError,
@@ -17,13 +19,44 @@ import {
   openDocumentFileStore,
   openStorage,
 } from "../dist/index.js";
+import type {
+  DocumentFileStore,
+  DocumentFileStoreOptions,
+  DocumentMetadata,
+  DocumentPublicationCoordinator,
+  DocumentPublicationCoordinatorOptions,
+  MetadataStore,
+} from "../dist/index.js";
 
-const id = (character) => character.repeat(21);
+const id = (character: string): DocumentId => character.repeat(21) as DocumentId;
 const firstId = id("a");
 const secondId = id("b");
 const thirdId = id("c");
 
-const withEnvironment = async (callback, storeOptions = {}) => {
+const idAt = (values: readonly DocumentId[], index: number): DocumentId => {
+  const value = values[index];
+  if (value === undefined) {
+    throw new Error(`Test ID index ${index} is out of range.`);
+  }
+  return value;
+};
+
+type PublicationEnvironment = Readonly<{
+  readonly directory: string;
+  readonly documentFileStore: DocumentFileStore;
+  readonly metadataStore: MetadataStore;
+  readonly documentsDir: string;
+  readonly stagingDir: string;
+}>;
+type PublicationStoreOptions = Omit<DocumentFileStoreOptions, "documentsDir" | "stagingDir">;
+type CoordinatorOverrides = Partial<
+  Omit<DocumentPublicationCoordinatorOptions, "documentFileStore" | "metadataStore">
+>;
+
+const withEnvironment = async <T,>(
+  callback: (environment: PublicationEnvironment) => T | PromiseLike<T>,
+  storeOptions: PublicationStoreOptions = {}
+): Promise<T> => {
   const directory = await mkdtemp(join(tmpdir(), "planview-publication-"));
   const documentFileStore = Effect.runSync(
     openDocumentFileStore({
@@ -48,7 +81,11 @@ const withEnvironment = async (callback, storeOptions = {}) => {
   }
 };
 
-const coordinator = (documentFileStore, metadataStore, overrides = {}) =>
+const coordinator = (
+  documentFileStore: DocumentFileStore,
+  metadataStore: MetadataStore,
+  overrides: CoordinatorOverrides = {}
+): DocumentPublicationCoordinator =>
   createDocumentPublicationCoordinator({
     documentFileStore,
     metadataStore,
@@ -57,7 +94,8 @@ const coordinator = (documentFileStore, metadataStore, overrides = {}) =>
     ...overrides,
   });
 
-const publicationFile = (documentsDir, documentId) => join(documentsDir, `${documentId}.html`);
+const publicationFile = (documentsDir: string, documentId: string): string =>
+  join(documentsDir, `${documentId}.html`);
 
 test("rejects a publication at the fixed quota and compensates its finalized file", () =>
   withEnvironment(
@@ -174,9 +212,9 @@ test("keeps a staged snapshot across file collisions even when input is deleted 
       await writeFile(publicationFile(documentsDir, firstId), "pre-existing");
 
       let generated = 0;
-      const wrappedStore = {
+      const wrappedStore: DocumentFileStore = {
         ...documentFileStore,
-        stageSourceFile: async (sourcePath) => {
+        stageSourceFile: async (sourcePath: string) => {
           const handle = await documentFileStore.stageSourceFile(sourcePath);
           await writeFile(sourcePath, "mutated after staging");
           await rm(sourcePath);
@@ -184,7 +222,7 @@ test("keeps a staged snapshot across file collisions even when input is deleted 
         },
       };
       const result = await coordinator(wrappedStore, metadataStore, {
-        generateId: () => [firstId, secondId][generated++],
+        generateId: () => idAt([firstId, secondId], generated++),
       }).publish(source);
 
       assert.equal(result.id, secondId);
@@ -202,19 +240,20 @@ test("does not treat matching metadata fields as ownership after a unique error"
       const source = join(directory, "ambiguous-commit.html");
       await writeFile(source, "committed despite throw");
       let generated = 0;
-      const throwingMetadata = {
+      const throwingMetadata: MetadataStore = {
         ...metadataStore,
-        insertDocumentMetadata: (metadata) => {
+        insertDocumentMetadata: (metadata: DocumentMetadata) => {
           metadataStore.insertDocumentMetadata(metadata);
-          const error = new Error("unique after commit");
-          error.code = "SQLITE_CONSTRAINT_UNIQUE";
+          const error = Object.assign(new Error("unique after commit"), {
+            code: "SQLITE_CONSTRAINT_UNIQUE",
+          });
           throw error;
         },
       };
 
       await assert.rejects(
         coordinator(documentFileStore, throwingMetadata, {
-          generateId: () => [firstId, secondId][generated++],
+          generateId: () => idAt([firstId, secondId], generated++),
         }).publish(source),
         (error) =>
           error instanceof DocumentPublicationError &&
@@ -238,11 +277,12 @@ test("retains an ambiguous unique publication pair instead of silently retrying"
       await writeFile(source, "possibly committed");
       let generated = 0;
       let metadataLookups = 0;
-      const ambiguousMetadata = {
+      const ambiguousMetadata: MetadataStore = {
         ...metadataStore,
         insertDocumentMetadata: () => {
-          const error = new Error("unique boundary failed");
-          error.code = "SQLITE_CONSTRAINT_UNIQUE";
+          const error = Object.assign(new Error("unique boundary failed"), {
+            code: "SQLITE_CONSTRAINT_UNIQUE",
+          });
           throw error;
         },
         getDocumentMetadata: () => {
@@ -255,7 +295,7 @@ test("retains an ambiguous unique publication pair instead of silently retrying"
 
       await assert.rejects(
         coordinator(documentFileStore, ambiguousMetadata, {
-          generateId: () => [firstId, secondId][generated++],
+          generateId: () => idAt([firstId, secondId], generated++),
         }).publish(source),
         (error) =>
           error instanceof DocumentPublicationError &&
@@ -277,19 +317,20 @@ test("retries a unique error only after metadata proves the id is absent", () =>
     const source = join(directory, "absent-after-unique.html");
     await writeFile(source, "retry after proof");
     let generated = 0;
-    const throwingMetadata = {
+    const throwingMetadata: MetadataStore = {
       ...metadataStore,
-      insertDocumentMetadata: (metadata) => {
+      insertDocumentMetadata: (metadata: DocumentMetadata) => {
         if (metadata.id === firstId) {
-          const error = new Error("rolled back unique boundary");
-          error.code = "SQLITE_CONSTRAINT_UNIQUE";
+          const error = Object.assign(new Error("rolled back unique boundary"), {
+            code: "SQLITE_CONSTRAINT_UNIQUE",
+          });
           throw error;
         }
         metadataStore.insertDocumentMetadata(metadata);
       },
     };
     const result = await coordinator(documentFileStore, throwingMetadata, {
-      generateId: () => [firstId, secondId][generated++],
+      generateId: () => idAt([firstId, secondId], generated++),
     }).publish(source);
     assert.equal(result.id, secondId);
     assert.equal(generated, 2);
@@ -311,7 +352,7 @@ test("retries file and SQLite metadata uniqueness collisions without exposing pa
 
       let generated = 0;
       const result = await coordinator(documentFileStore, metadataStore, {
-        generateId: () => [firstId, thirdId, secondId][generated++],
+        generateId: () => idAt([firstId, thirdId, secondId], generated++),
       }).publish(source);
 
       assert.equal(result.id, secondId);
@@ -330,7 +371,7 @@ test("retains anonymous staged recovery state when stage fails after creating an
   withEnvironment(async ({ documentFileStore, metadataStore, stagingDir }) => {
     const source = join(stagingDir, "../stage-adapter-fault.html");
     await writeFile(source, "hidden staged artifact");
-    const adapter = {
+    const adapter: DocumentFileStore = {
       ...documentFileStore,
       stageSourceFile: async (sourcePath) => {
         await documentFileStore.stageSourceFile(sourcePath);
@@ -468,7 +509,8 @@ test("preserves a durable target after post-publication staging fsync failure", 
         ),
         (error) =>
           error instanceof DocumentPublicationError &&
-          error.cause?.targetRecoveryPolicy === "retain" &&
+          error.cause instanceof DocumentFileFinalizeError &&
+          error.cause.targetRecoveryPolicy === "retain" &&
           error.orphan?.resources.documentFiles[0]?.state === "retained" &&
           error.orphan.resources.finalizationLocks.some(
             (resource) => resource.id === firstId && resource.state === "unknown"
@@ -563,7 +605,7 @@ test("out-of-model hostile external target replacement survives delayed compensa
     await writeFile(source, "original target owner");
     const target = publicationFile(documentsDir, firstId);
     let replaced = false;
-    const racingStore = {
+    const racingStore: DocumentFileStore = {
       ...documentFileStore,
       deleteDocumentFile: async (documentId, capability) => {
         if (!replaced) {
@@ -595,7 +637,7 @@ test("reports a recoverable orphan when staging compensation fails", () =>
     async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
       const source = join(directory, "input.html");
       await writeFile(source, "orphan staging");
-      const failingDiscardStore = {
+      const failingDiscardStore: DocumentFileStore = {
         ...documentFileStore,
         discardStagedFile: async () => {
           throw new Error("discard fault");
@@ -624,7 +666,7 @@ test("compensates a committed pair when final snapshot cleanup fails", () =>
     async ({ directory, documentFileStore, metadataStore, documentsDir, stagingDir }) => {
       const source = join(directory, "input.html");
       await writeFile(source, "post-commit cleanup");
-      const failingDiscardStore = {
+      const failingDiscardStore: DocumentFileStore = {
         ...documentFileStore,
         discardStagedFile: async () => {
           throw new Error("post-commit discard fault");
@@ -649,7 +691,7 @@ test("does not report success when cleanup rolls back a committed publication", 
       const source = join(directory, "rollback-cleanup.html");
       await writeFile(source, "rollback cleanup");
       let firstDiscard = true;
-      const store = {
+      const store: DocumentFileStore = {
         ...documentFileStore,
         discardStagedFile: async (handle) => {
           if (firstDiscard) {
@@ -698,25 +740,25 @@ test("concurrent Planview publications keep compensation invocation-local", asyn
     await writeFile(firstSource, "first fault");
     await writeFile(secondSource, "second survives");
 
-    let firstStagedResolve;
-    const firstStaged = new Promise((resolve) => {
+    let firstStagedResolve!: () => void;
+    const firstStaged = new Promise<void>((resolve) => {
       firstStagedResolve = resolve;
     });
-    let firstCloneResolve;
-    const firstCloneDone = new Promise((resolve) => {
+    let firstCloneResolve!: () => void;
+    const firstCloneDone = new Promise<void>((resolve) => {
       firstCloneResolve = resolve;
     });
-    let secondCloneEnteredResolve;
-    const secondCloneEntered = new Promise((resolve) => {
+    let secondCloneEnteredResolve!: () => void;
+    const secondCloneEntered = new Promise<void>((resolve) => {
       secondCloneEnteredResolve = resolve;
     });
-    let releaseSecondClone;
-    const secondCloneRelease = new Promise((resolve) => {
+    let releaseSecondClone!: () => void;
+    const secondCloneRelease = new Promise<void>((resolve) => {
       releaseSecondClone = resolve;
     });
     let cloneCalls = 0;
     let generated = 0;
-    const store = {
+    const store: DocumentFileStore = {
       ...documentFileStore,
       stageSourceFile: async (sourcePath) => {
         const handle = await documentFileStore.stageSourceFile(sourcePath);
@@ -745,7 +787,7 @@ test("concurrent Planview publications keep compensation invocation-local", asyn
       },
     };
     const publication = coordinator(store, metadataStore, {
-      generateId: () => [firstId, secondId][generated++],
+      generateId: () => idAt([firstId, secondId], generated++),
     });
 
     const first = publication.publish(firstSource);
@@ -769,8 +811,8 @@ test("concurrent Planview publications keep compensation invocation-local", asyn
   }));
 
 test("retries a live target-lock collision instead of retaining the peer lock as an orphan", () => {
-  let targetLockEnteredResolve;
-  const targetLockEntered = new Promise((resolve) => {
+  let targetLockEnteredResolve!: () => void;
+  const targetLockEntered = new Promise<void>((resolve) => {
     targetLockEnteredResolve = resolve;
   });
   let holdWinnerTargetLock = true;
@@ -785,10 +827,10 @@ test("retries a live target-lock collision instead of retaining the peer lock as
       let winnerGenerated = 0;
       let contenderGenerated = 0;
       const winner = coordinator(documentFileStore, metadataStore, {
-        generateId: () => [firstId, thirdId][winnerGenerated++],
+        generateId: () => idAt([firstId, thirdId], winnerGenerated++),
       });
       const contender = coordinator(documentFileStore, metadataStore, {
-        generateId: () => [firstId, secondId][contenderGenerated++],
+        generateId: () => idAt([firstId, secondId], contenderGenerated++),
       });
 
       const winnerPublication = winner.publish(firstSource);
@@ -822,7 +864,7 @@ test("retries a live target-lock collision instead of retaining the peer lock as
         // Deliberately exceed the historical 32ms target-lock wait. The
         // contender must classify this as a retryable collision, not own the
         // winner's lock in its recovery report.
-        await new Promise((resolve) => setTimeout(resolve, 64));
+        await new Promise<void>((resolve) => setTimeout(resolve, 64));
       },
     }
   );

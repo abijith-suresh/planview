@@ -307,8 +307,14 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     storagePackageJson.scripts,
     "test",
-    'npm run build && node --test "test/**/*.test.mjs"',
+    'npm run build && npm run typecheck:test && node --test "test/**/*.test.mts"',
     "storage test script"
+  );
+  expectProperty(
+    storagePackageJson.scripts,
+    "typecheck:test",
+    "tsc --project tsconfig.test.json",
+    "storage test typecheck script"
   );
   expectProperty(
     storagePackageJson.scripts,

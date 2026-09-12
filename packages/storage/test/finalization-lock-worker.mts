@@ -2,6 +2,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 
 const [lockPath] = process.argv.slice(2);
+if (lockPath === undefined) {
+  throw new Error("The finalization lock worker requires a lock path.");
+}
 const now = Date.now();
 await mkdir(lockPath);
 await writeFile(

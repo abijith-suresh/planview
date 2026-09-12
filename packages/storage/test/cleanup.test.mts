@@ -4,6 +4,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { Effect } from "effect";
+import type { DocumentId } from "@planview/core";
 import {
   createDocumentCleanupCoordinator,
   createDocumentPublicationCoordinator,
@@ -13,11 +14,41 @@ import {
   V1_CLEANUP_ITEM_BUDGET,
   V1_ORPHAN_RECONCILIATION_GRACE_MILLISECONDS,
 } from "../dist/index.js";
+import type {
+  DocumentCleanupResult,
+  DocumentFileStore,
+  DocumentFileStoreOptions,
+  MetadataStore,
+} from "../dist/index.js";
 
 const DAY = 24 * 60 * 60 * 1000;
-const id = (character) => character.repeat(21);
+const id = (character: string): DocumentId => character.repeat(21) as DocumentId;
 
-const withEnvironment = async (callback, options = {}) => {
+type CleanupEnvironment = Readonly<{
+  readonly directory: string;
+  readonly documentsDir: string;
+  readonly stagingDir: string;
+  readonly documentFileStore: DocumentFileStore;
+  readonly metadataStore: MetadataStore;
+}>;
+type CleanupStoreOptions = Omit<DocumentFileStoreOptions, "documentsDir" | "stagingDir">;
+type CleanupTotalField =
+  | "removedDocuments"
+  | "removedDocumentFiles"
+  | "removedMetadataRows"
+  | "reclaimedBytes";
+type CleanupTotals = Record<CleanupTotalField, number>;
+const cleanupTotalFields: readonly CleanupTotalField[] = [
+  "removedDocuments",
+  "removedDocumentFiles",
+  "removedMetadataRows",
+  "reclaimedBytes",
+];
+
+const withEnvironment = async <T,>(
+  callback: (environment: CleanupEnvironment) => T | PromiseLike<T>,
+  options: CleanupStoreOptions = {}
+): Promise<T> => {
   const directory = await mkdtemp(join(tmpdir(), "planview-cleanup-"));
   const documentFileStore = Effect.runSync(
     openDocumentFileStore({
@@ -42,7 +73,11 @@ const withEnvironment = async (callback, options = {}) => {
   }
 };
 
-const publishPhysical = async (environment, documentId, contents) => {
+const publishPhysical = async (
+  environment: Pick<CleanupEnvironment, "directory" | "documentFileStore" | "metadataStore">,
+  documentId: string,
+  contents: string
+): Promise<void> => {
   const source = join(environment.directory, `${documentId}.source.html`);
   await writeFile(source, contents);
   const handle = await environment.documentFileStore.stageSourceFile(source);
@@ -88,7 +123,7 @@ test("does not remove an active read and removes it after the stream closes", as
     assert.equal(retained.removedDocuments, 0);
     assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
     stream.destroy();
-    await new Promise((resolve) => stream.once("close", resolve));
+    await new Promise<void>((resolve) => stream.once("close", resolve));
 
     const removed = await cleanup.clean();
     assert.equal(removed.removedDocuments, 1);
@@ -141,7 +176,7 @@ test("cross-store active reads remain protected by a filesystem reference", asyn
         assert.equal(retained.removedDocuments, 0);
         assert.equal(retained.failures.length, 1);
         stream.resume();
-        await new Promise((resolve) => stream.once("close", resolve));
+        await new Promise<void>((resolve) => stream.once("close", resolve));
         assert.equal((await cleanup.clean()).removedDocuments, 1);
       } finally {
         await secondStore.close();
@@ -169,16 +204,16 @@ test("cleanup handles roughly 500 expired documents and reports physical bytes",
       metadataStore,
       now: () => DAY * 31 + 1,
     });
-    const totals = {
+    const totals: CleanupTotals = {
       removedDocuments: 0,
       removedDocumentFiles: 0,
       removedMetadataRows: 0,
       reclaimedBytes: 0,
     };
-    let result;
+    let result: DocumentCleanupResult;
     do {
       result = await cleanup.clean();
-      for (const field of Object.keys(totals)) {
+      for (const field of cleanupTotalFields) {
         totals[field] += result[field];
       }
     } while (result.resumable);
@@ -308,23 +343,25 @@ test("retains a fresh uncommitted target for an in-flight publisher window", () 
   ));
 
 test("cleanup cannot delete a hard-linked target while publication commits metadata", () => {
-  let cleanup;
-  let publication;
-  let publicationPromise;
-  let targetLinkReadyResolve;
-  const targetLinkReady = new Promise((resolve) => {
+  let cleanup!: ReturnType<typeof createDocumentCleanupCoordinator>;
+  let publication!: ReturnType<typeof createDocumentPublicationCoordinator>;
+  let publicationPromise!: ReturnType<
+    ReturnType<typeof createDocumentPublicationCoordinator>["publish"]
+  >;
+  let targetLinkReadyResolve!: () => void;
+  const targetLinkReady = new Promise<void>((resolve) => {
     targetLinkReadyResolve = resolve;
   });
-  let releaseTargetLink;
-  const targetLinkRelease = new Promise((resolve) => {
+  let releaseTargetLink!: () => void;
+  const targetLinkRelease = new Promise<void>((resolve) => {
     releaseTargetLink = resolve;
   });
-  let sizeEnteredResolve;
-  const sizeEntered = new Promise((resolve) => {
+  let sizeEnteredResolve!: () => void;
+  const sizeEntered = new Promise<void>((resolve) => {
     sizeEnteredResolve = resolve;
   });
-  let releaseSize;
-  const sizeRelease = new Promise((resolve) => {
+  let releaseSize!: () => void;
+  const sizeRelease = new Promise<void>((resolve) => {
     releaseSize = resolve;
   });
   return withEnvironment(
@@ -472,7 +509,7 @@ test("defers a post-start file with a coarse birth-time fence without skipping",
   const firstId = id("a");
   const candidateId = id("b");
   const upperId = id("z");
-  let documentsDirectory;
+  let documentsDirectory = "";
   let inserted = false;
   return withEnvironment(
     async ({ documentFileStore, documentsDir }) => {
@@ -583,7 +620,7 @@ test("keeps reconciliation inside the cleanup item budget", () =>
         getDocumentMetadataScanWatermark: () => 0,
         listDocumentMetadataCandidates: () => ({ rows: [], hasMore: false }),
         listDocumentMetadataPage: () => ({ rows: [], hasMore: false }),
-      },
+      } as unknown as MetadataStore,
       now: () => Date.now() + DAY,
     });
     const first = await cleanup.clean();
