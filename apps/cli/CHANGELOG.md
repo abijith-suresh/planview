@@ -1,5 +1,20 @@
 # @abijith-suresh/planview
 
+## 0.1.3
+
+### Patch Changes
+
+- dc770c3: Support publishing a page folder as one immutable bundle and serving its root page and assets.
+- 83ea311: Typecheck CLI tests with Node TypeScript.
+- 2c3b84c: Typecheck core package tests with Node TypeScript.
+- adc3486: Keep local publishing and bundled skill installation working with native macOS and Windows paths.
+- 3ed3dbf: Typecheck daemon package tests with Node TypeScript.
+- b9e2f70: Add a `preview` command that publishes a file or page folder and opens its URL in the default browser.
+- dc6d2b5: Harden detached daemon environment handling, request cancellation, and source-file staging.
+- 26501b7: Reject daemon descriptor and lifecycle-lock reads when the opened file is not the file that was observed.
+- 09ab8ea: Typecheck storage package tests with Node TypeScript.
+- 2bc3a86: Discover repository tests from their workspace globs.
+
 ## 0.1.2
 
 ### Patch Changes
