@@ -21,6 +21,6 @@
   },
   "dependencies": {
     "@planview/core": "0.1.0",
-    "effect": "4.0.0-beta.107"
+    "effect": "4.0.0-rc.115"
   }
 }

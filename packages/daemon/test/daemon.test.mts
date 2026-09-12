@@ -34,6 +34,8 @@ import type { MetadataStore } from "@planview/storage";
 import { Effect } from "effect";
 import * as daemon from "../dist/index.js";
 
+const runEffect = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
+
 const packageRoot = new URL("..", import.meta.url);
 const entry = fileURLToPath(new URL("./dist/entry.js", packageRoot));
 
@@ -367,9 +369,11 @@ test("a detached child failure is observed and the starter releases its lifecycl
 
   try {
     await assert.rejects(
-      daemon.startDetachedDaemon(config, {
-        daemonScriptPath: join(fixture, "missing-daemon-entry.js"),
-      }),
+      runEffect(
+        daemon.startDetachedDaemon(config, {
+          daemonScriptPath: join(fixture, "missing-daemon-entry.js"),
+        })
+      ),
       (error) =>
         isTaggedError(error, "DaemonRequestError") && /failed before readiness/.test(error.message)
     );
@@ -487,10 +491,10 @@ test("status and stop surface corrupt and insecure descriptors as typed errors",
 
   try {
     writeFileSync(descriptorPath, "{not-json", { encoding: "utf8", mode: 0o600 });
-    await assert.rejects(daemon.inspectDaemon(config), (error) =>
+    await assert.rejects(runEffect(daemon.inspectDaemon(config)), (error) =>
       isTaggedError(error, "DaemonDescriptorError")
     );
-    await assert.rejects(daemon.stopDaemon(config), (error) =>
+    await assert.rejects(runEffect(daemon.stopDaemon(config)), (error) =>
       isTaggedError(error, "DaemonDescriptorError")
     );
 
@@ -508,10 +512,10 @@ test("status and stop surface corrupt and insecure descriptors as typed errors",
         { encoding: "utf8", mode: 0o600 }
       );
       chmodSync(descriptorPath, 0o644);
-      await assert.rejects(daemon.inspectDaemon(config), (error) =>
+      await assert.rejects(runEffect(daemon.inspectDaemon(config)), (error) =>
         isTaggedError(error, "DaemonDescriptorError")
       );
-      await assert.rejects(daemon.stopDaemon(config), (error) =>
+      await assert.rejects(runEffect(daemon.stopDaemon(config)), (error) =>
         isTaggedError(error, "DaemonDescriptorError")
       );
     }
@@ -541,10 +545,10 @@ test("lifecycle and status reject a descriptor endpoint mismatch with a typed er
 
   try {
     for (const operation of [
-      () => daemon.inspectDaemon(config),
-      () => daemon.startDetachedDaemon(config, { daemonScriptPath: entry }),
-      () => daemon.stopDaemon(config),
-      () => daemon.restartDaemon(config, { daemonScriptPath: entry }),
+      () => runEffect(daemon.inspectDaemon(config)),
+      () => runEffect(daemon.startDetachedDaemon(config, { daemonScriptPath: entry })),
+      () => runEffect(daemon.stopDaemon(config)),
+      () => runEffect(daemon.restartDaemon(config, { daemonScriptPath: entry })),
     ]) {
       await assert.rejects(
         operation(),
@@ -708,22 +712,24 @@ test("concurrent starts, stops, and restarts share one lifecycle lock", async ()
 
   try {
     const starts = await Promise.all(
-      Array.from({ length: 20 }, () => daemon.startDetachedDaemon(config, options))
+      Array.from({ length: 20 }, () => runEffect(daemon.startDetachedDaemon(config, options)))
     );
     assert.equal(starts.filter((result) => result.reused === false).length, 1);
     assert.equal(new Set(starts.map((result) => result.descriptor.pid)).size, 1);
 
-    const stops = await Promise.all(Array.from({ length: 20 }, () => daemon.stopDaemon(config)));
+    const stops = await Promise.all(
+      Array.from({ length: 20 }, () => runEffect(daemon.stopDaemon(config)))
+    );
     assert.ok(stops.every((result) => result.state === "stopped"));
     assert.equal(descriptorAt(runtimeDir), undefined);
 
     const restarts = await Promise.all(
-      Array.from({ length: 20 }, () => daemon.restartDaemon(config, options))
+      Array.from({ length: 20 }, () => runEffect(daemon.restartDaemon(config, options)))
     );
     assert.ok(restarts.every((result) => result.state === "running"));
     assert.ok(descriptorAt(runtimeDir));
   } finally {
-    await daemon.stopDaemon(config).catch(() => undefined);
+    await runEffect(daemon.stopDaemon(config)).catch(() => undefined);
     await removeFixture(fixture);
   }
 });
@@ -803,8 +809,8 @@ test("shutdown aborts a stalled document read before closing storage", async () 
     });
     socket = await openStalledDocument(port, documentId);
     const startedAt = Date.now();
-    const result = await daemon.stopDaemon(
-      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    const result = await runEffect(
+      daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }))
     );
     assert.equal(result.state, "stopped");
     assert.ok(Date.now() - startedAt < daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 2_000);
@@ -856,8 +862,8 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
       const remaining = currentMetadataStore.getDocumentAggregate().count;
       return remaining > 0 && remaining < documents ? remaining : undefined;
     });
-    const result = await daemon.stopDaemon(
-      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    const result = await runEffect(
+      daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }))
     );
     const cleanResponse = await cleanResponsePromise;
     assert.equal(cleanResponse.status, 200);
@@ -908,8 +914,8 @@ test("shutdown cancels a slow request-originated publication before staging", as
     publishPromise.catch(() => undefined);
     await new Promise((resolve) => setTimeout(resolve, 100));
     const startedAt = Date.now();
-    const result = await daemon.stopDaemon(
-      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    const result = await runEffect(
+      daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }))
     );
     assert.equal(result.state, "stopped");
     assert.ok(Date.now() - startedAt < daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 2_000);
@@ -1021,8 +1027,8 @@ test("an uncooperative operation is terminated before descriptor recovery", asyn
     publishPromise.catch(() => undefined);
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
     const startedAt = Date.now();
-    const result = await daemon.stopDaemon(
-      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    const result = await runEffect(
+      daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }))
     );
     assert.equal(result.state, "stopped");
     assert.ok(Date.now() - startedAt < daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 2_000);
@@ -1075,8 +1081,8 @@ test("shutdown cancels a large cleanup at a deterministic fault seam", async () 
     cleanPromise.catch(() => undefined);
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
     const startedAt = Date.now();
-    const result = await daemon.stopDaemon(
-      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    const result = await runEffect(
+      daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }))
     );
     assert.equal(result.state, "stopped");
     assert.ok(Date.now() - startedAt < daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 2_000);
@@ -1131,7 +1137,9 @@ test("automatic cleanup drains resumable work after a bounded manual slice", asy
       () => (currentMetadataStore.getDocumentAggregate().count === 0 ? true : undefined),
       15_000
     );
-    await daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }));
+    await runEffect(
+      daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }))
+    );
     await waitForExit(child);
   } finally {
     metadataStore?.close();
@@ -1157,8 +1165,8 @@ test("shutdown force-closes an idle connection by its deadline", async () => {
       connection.once("connect", () => resolve());
     });
     const startedAt = Date.now();
-    const result = await daemon.stopDaemon(
-      daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
+    const result = await runEffect(
+      daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }))
     );
     assert.equal(result.state, "stopped");
     const exit = await waitForExit(child, daemon.DAEMON_SHUTDOWN_TIMEOUT_MS + 5_000);

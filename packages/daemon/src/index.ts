@@ -260,6 +260,15 @@ export class DaemonRequestError extends Data.TaggedError("DaemonRequestError")<{
   readonly message: string;
 }> {}
 
+export type DaemonError =
+  | DaemonPathError
+  | DaemonStartupBusyError
+  | DaemonAlreadyRunningError
+  | DaemonPortInUseError
+  | DaemonDescriptorError
+  | DaemonDescriptorEndpointMismatchError
+  | DaemonRequestError;
+
 export type DaemonState =
   | Readonly<{ readonly state: "stopped" }>
   | Readonly<{
@@ -2509,7 +2518,7 @@ const wait = (milliseconds: number, signal?: AbortSignal) => {
   });
 };
 
-export const inspectDaemon = async (config: DaemonConfig): Promise<DaemonState> => {
+const inspectDaemonPromise = async (config: DaemonConfig): Promise<DaemonState> => {
   const paths = resolveDaemonPaths(config);
   const descriptor = await readDaemonDescriptor(paths);
   if (descriptor === undefined) {
@@ -2696,7 +2705,7 @@ const startWithLock = async (
   lock: LifecycleLock,
   startupTimeoutMs: number
 ) => {
-  const current = await inspectDaemon(config);
+  const current = await inspectDaemonPromise(config);
   if (current.state === "running") {
     return { ...current, reused: true };
   }
@@ -2724,7 +2733,7 @@ const startWithLock = async (
   return waitForReady(config, startupTimeoutMs, child);
 };
 
-export const startDetachedDaemon = async (config: DaemonConfig, options: StartDaemonOptions) => {
+const startDetachedDaemonPromise = async (config: DaemonConfig, options: StartDaemonOptions) => {
   const paths = await prepareLifecyclePaths(config);
   const startupTimeoutMs = estimateCleanupTimeout(config);
   const lock = await createLock(paths);
@@ -2841,8 +2850,10 @@ const cleanupResultFromPayload = (payload: Record<string, unknown>) => {
   } satisfies DocumentCleanupResult;
 };
 
-export const publishDocument = async (config: DaemonConfig, options: PublishDaemonOptions) => {
-  const running = await startDetachedDaemon(config, { daemonScriptPath: options.daemonScriptPath });
+const publishDocumentPromise = async (config: DaemonConfig, options: PublishDaemonOptions) => {
+  const running = await startDetachedDaemonPromise(config, {
+    daemonScriptPath: options.daemonScriptPath,
+  });
   const answer = await request(
     running.descriptor,
     "POST",
@@ -2863,8 +2874,8 @@ export const publishDocument = async (config: DaemonConfig, options: PublishDaem
   }
 };
 
-export const cleanDaemon = async (config: DaemonConfig, options: StartDaemonOptions) => {
-  const running = await startDetachedDaemon(config, options);
+const cleanDaemonPromise = async (config: DaemonConfig, options: StartDaemonOptions) => {
+  const running = await startDetachedDaemonPromise(config, options);
   const payload = await requestClean(running.descriptor, estimateCleanupTimeout(config));
   return {
     descriptor: running.descriptor,
@@ -2873,15 +2884,17 @@ export const cleanDaemon = async (config: DaemonConfig, options: StartDaemonOpti
   } satisfies CleanedDaemonDocuments;
 };
 
-export const retrieveDocument = async (config: DaemonConfig, options: RetrieveDaemonOptions) => {
+const retrieveDocumentPromise = async (config: DaemonConfig, options: RetrieveDaemonOptions) => {
   const documentId = validateDocumentId(options.documentId);
-  const running = await startDetachedDaemon(config, { daemonScriptPath: options.daemonScriptPath });
+  const running = await startDetachedDaemonPromise(config, {
+    daemonScriptPath: options.daemonScriptPath,
+  });
   await streamDocument(running.descriptor, documentId, options.onChunk);
   return { descriptor: running.descriptor, reused: running.reused };
 };
 
 const stopWithLock = async (config: DaemonConfig) => {
-  const current = await inspectDaemon(config);
+  const current = await inspectDaemonPromise(config);
   if (current.state === "stopped") {
     return current;
   }
@@ -2910,7 +2923,7 @@ const stopWithLock = async (config: DaemonConfig) => {
   });
 };
 
-export const stopDaemon = async (config: DaemonConfig) => {
+const stopDaemonPromise = async (config: DaemonConfig) => {
   const paths = await prepareLifecyclePaths(config);
   const lock = await createLock(paths);
   try {
@@ -2920,7 +2933,7 @@ export const stopDaemon = async (config: DaemonConfig) => {
   }
 };
 
-export const restartDaemon = async (config: DaemonConfig, options: StartDaemonOptions) => {
+const restartDaemonPromise = async (config: DaemonConfig, options: StartDaemonOptions) => {
   const paths = await prepareLifecyclePaths(config);
   const lock = await createLock(paths);
   try {
@@ -2951,6 +2964,49 @@ const daemonLifecycle = (config: DaemonConfig) =>
 
 export const runDaemon = (config: DaemonConfig = resolveDaemonConfig()) => daemonLifecycle(config);
 
-export const runDaemonProcess = async (config: DaemonConfig = resolveDaemonConfig()) => {
-  await Effect.runPromise(runDaemon(config));
-};
+const isDaemonError = (cause: unknown): cause is DaemonError =>
+  cause instanceof DaemonPathError ||
+  cause instanceof DaemonStartupBusyError ||
+  cause instanceof DaemonAlreadyRunningError ||
+  cause instanceof DaemonPortInUseError ||
+  cause instanceof DaemonDescriptorError ||
+  cause instanceof DaemonDescriptorEndpointMismatchError ||
+  cause instanceof DaemonRequestError;
+
+const daemonFailure = (path: string, cause: unknown): DaemonError =>
+  isDaemonError(cause)
+    ? cause
+    : new DaemonRequestError({
+        path,
+        cause,
+        message: `The Planview daemon operation at ${path} failed: ${describe(cause)}`,
+      });
+
+const daemonEffect = <Value>(path: string, operation: () => Promise<Value>) =>
+  Effect.tryPromise({
+    try: operation,
+    catch: (cause) => daemonFailure(path, cause),
+  });
+
+export const inspectDaemon = (config: DaemonConfig) =>
+  daemonEffect(DAEMON_STATUS_PATH, () => inspectDaemonPromise(config));
+
+export const startDetachedDaemon = (config: DaemonConfig, options: StartDaemonOptions) =>
+  daemonEffect(DAEMON_READY_PATH, () => startDetachedDaemonPromise(config, options));
+
+export const publishDocument = (config: DaemonConfig, options: PublishDaemonOptions) =>
+  daemonEffect(DAEMON_PUBLISH_PATH, () => publishDocumentPromise(config, options));
+
+export const cleanDaemon = (config: DaemonConfig, options: StartDaemonOptions) =>
+  daemonEffect(DAEMON_CLEAN_PATH, () => cleanDaemonPromise(config, options));
+
+export const retrieveDocument = (config: DaemonConfig, options: RetrieveDaemonOptions) =>
+  daemonEffect(`/${options.documentId}`, () => retrieveDocumentPromise(config, options));
+
+export const stopDaemon = (config: DaemonConfig) =>
+  daemonEffect(DAEMON_SHUTDOWN_PATH, () => stopDaemonPromise(config));
+
+export const restartDaemon = (config: DaemonConfig, options: StartDaemonOptions) =>
+  daemonEffect(DAEMON_READY_PATH, () => restartDaemonPromise(config, options));
+
+export const runDaemonProcess = (config: DaemonConfig = resolveDaemonConfig()) => runDaemon(config);
