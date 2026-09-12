@@ -38,6 +38,10 @@ const packageJson = JSON.parse(readFileSync(resolve(packageRoot, "package.json")
 type OutputMessage = string | Uint8Array;
 type ChildExit = { readonly code: number | null; readonly signal: NodeJS.Signals | null };
 type DocumentMetadata = { readonly createdAt: number; readonly lastAccessedAt: number };
+type SqliteRow = Readonly<{
+  readonly createdAt?: unknown;
+  readonly lastAccessedAt?: unknown;
+}>;
 type PipedChild = ChildProcessByStdio<null, Readable, Readable>;
 
 const removeFixture = (path: string): Promise<void> =>
@@ -97,7 +101,7 @@ const execute = (...args: string[]) =>
 const readDocumentMetadata = (database: DatabaseSync, id: string): DocumentMetadata | undefined => {
   const row = database
     .prepare("SELECT createdAt, lastAccessedAt FROM documents WHERE id = :id")
-    .get({ ":id": id });
+    .get({ ":id": id }) as SqliteRow | undefined;
   if (row === undefined) {
     return undefined;
   }
