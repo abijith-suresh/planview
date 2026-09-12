@@ -375,7 +375,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     storagePackageJson.dependencies,
     "effect",
-    "4.0.0-beta.107",
+    "4.0.0-rc.115",
     "storage Effect dependency"
   );
 
