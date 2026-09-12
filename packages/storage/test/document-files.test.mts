@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { renameSync, symlinkSync } from "node:fs";
+import type { ReadStream } from "node:fs";
 import {
   appendFile,
   mkdir,
@@ -18,10 +19,18 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { BUNDLE_HEADER_BYTES, createBundleHeader, encodeBundleManifest } from "@planview/core";
+import {
+  BUNDLE_HEADER_BYTES,
+  createBundleHeader,
+  encodeBundleManifest,
+  type BundleManifestEntry,
+  type DocumentId,
+} from "@planview/core";
 import { Effect } from "effect";
 import {
   DocumentFileAlreadyExistsError,
+  DocumentFileCloneError,
+  DocumentFileDeleteError,
   DocumentFileFinalizeError,
   DocumentFileNotBundleError,
   DocumentFileNotRegularError,
@@ -31,11 +40,39 @@ import {
   InvalidStagedDocumentFileHandleError,
   openDocumentFileStore,
 } from "../dist/index.js";
+import type { DocumentFileStore, StagedDocumentFileHandle } from "../dist/index.js";
 
 const V1_MAX_HTML_SIZE_BYTES = 10 * 1024 * 1024;
 const execFileAsync = promisify(execFile);
 
-const withTempDirectory = async (callback) => {
+type StoreEnvironment = Readonly<{
+  readonly directory: string;
+  readonly store: DocumentFileStore;
+}>;
+type BundleFile = Readonly<{
+  readonly path: string;
+  readonly contents: Uint8Array;
+}>;
+type ChildResult = Readonly<{
+  readonly error?: Error;
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+  readonly timedOut: boolean;
+}>;
+
+const errorName = (error: unknown): string | undefined =>
+  error instanceof Error ? error.name : undefined;
+
+const errorCode = (error: unknown): string | undefined => {
+  if (!(error instanceof Error) || !("code" in error) || typeof error.code !== "string") {
+    return undefined;
+  }
+  return error.code;
+};
+
+const withTempDirectory = async <T,>(
+  callback: (directory: string) => T | PromiseLike<T>
+): Promise<T> => {
   const directory = await mkdtemp(join(tmpdir(), "planview-document-files-"));
   try {
     return await callback(directory);
@@ -44,10 +81,10 @@ const withTempDirectory = async (callback) => {
   }
 };
 
-const validId = "a".repeat(21);
-const otherId = "b".repeat(21);
+const validId = "a".repeat(21) as DocumentId;
+const otherId = "b".repeat(21) as DocumentId;
 
-const withStore = (callback) =>
+const withStore = <T,>(callback: (environment: StoreEnvironment) => T | PromiseLike<T>) =>
   withTempDirectory(async (directory) => {
     const store = Effect.runSync(
       openDocumentFileStore({
@@ -62,11 +99,12 @@ const withStore = (callback) =>
     }
   });
 
-const readStream = async (stream) => Buffer.concat(await stream.toArray());
+const readStream = async (stream: ReadStream): Promise<Buffer> =>
+  Buffer.concat(await stream.toArray());
 
-const makeBundle = (files) => {
+const makeBundle = (files: readonly BundleFile[]): Buffer => {
   let offset = 0;
-  const entries = files.map(({ path, contents }) => {
+  const entries: BundleManifestEntry[] = files.map(({ path, contents }) => {
     const entry = { path, offset, size: contents.byteLength };
     offset += contents.byteLength;
     return entry;
@@ -81,24 +119,24 @@ const makeBundle = (files) => {
   ]);
 };
 
-const waitForChild = (child, timeoutMs) =>
-  new Promise((resolve) => {
+const waitForChild = (child: ChildProcess, timeoutMs: number): Promise<ChildResult> =>
+  new Promise<ChildResult>((resolve) => {
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill("SIGKILL");
     }, timeoutMs);
-    child.once("error", (error) => {
+    child.once("error", (error: Error) => {
       clearTimeout(timer);
-      resolve({ error, code: null, timedOut });
+      resolve({ error, code: null, signal: null, timedOut });
     });
-    child.once("exit", (code, signal) => {
+    child.once("exit", (code: number | null, signal: NodeJS.Signals | null) => {
       clearTimeout(timer);
       resolve({ code, signal, timedOut });
     });
   });
 
-const createFifo = async (path) => {
+const createFifo = async (path: string): Promise<boolean> => {
   if (process.platform === "win32") {
     return false;
   }
@@ -106,7 +144,8 @@ const createFifo = async (path) => {
     await execFileAsync("mkfifo", [path]);
     return true;
   } catch (error) {
-    if (error?.code === "ENOENT" || error?.code === "EPERM" || error?.code === "EACCES") {
+    const code = errorCode(error);
+    if (code === "ENOENT" || code === "EPERM" || code === "EACCES") {
       return false;
     }
     throw error;
@@ -158,7 +197,7 @@ test("rejects a same-size source mutation after the copy completes", () =>
         stagingDir,
         afterStagedSourceCopy: async (sourcePath) => {
           const contents = await readFile(sourcePath);
-          contents[0] ^= 0xff;
+          contents[0] = (contents[0] ?? 0) ^ 0xff;
           await writeFile(sourcePath, contents);
         },
       })
@@ -166,7 +205,7 @@ test("rejects a same-size source mutation after the copy completes", () =>
     try {
       await assert.rejects(
         store.stageSourceFile(source),
-        (error) => error.name === "DocumentFileSourceError"
+        (error) => errorName(error) === "DocumentFileSourceError"
       );
       assert.deepEqual(await readdir(stagingDir), []);
     } finally {
@@ -188,7 +227,7 @@ test("accepts exactly 10 MiB and rejects oversize sources with staging cleanup",
     await truncate(oversized, V1_MAX_HTML_SIZE_BYTES + 1);
     await assert.rejects(
       store.stageSourceFile(oversized),
-      (error) => error.name === "SourceFileTooLargeError"
+      (error) => errorName(error) === "SourceFileTooLargeError"
     );
     assert.deepEqual(await readdir(join(directory, "staging")), []);
   }));
@@ -214,7 +253,8 @@ test("rejects malformed extensions, directories, and symlinks", () =>
         (error) => error instanceof DocumentFileNotRegularError
       );
     } catch (error) {
-      if (error?.code !== "EPERM" && error?.code !== "EACCES") {
+      const code = errorCode(error);
+      if (code !== "EPERM" && code !== "EACCES") {
         throw error;
       }
     }
@@ -240,7 +280,7 @@ test("rejects a FIFO in a bounded child process without opening it blocking", as
     const child = spawn(
       process.execPath,
       [
-        fileURLToPath(new URL("./fifo-stage-worker.mjs", import.meta.url)),
+        fileURLToPath(new URL("./fifo-stage-worker.mts", import.meta.url)),
         fifo,
         documentsDir,
         stagingDir,
@@ -264,9 +304,9 @@ test("out-of-model hostile external source replacement fails closed during stagi
     await assert.rejects(
       staging,
       (error) =>
-        error.name === "DocumentFileSourceError" ||
-        error.name === "DocumentFileNotRegularError" ||
-        error.name === "SourceFileTooLargeError"
+        errorName(error) === "DocumentFileSourceError" ||
+        errorName(error) === "DocumentFileNotRegularError" ||
+        errorName(error) === "SourceFileTooLargeError"
     );
     assert.deepEqual(await readdir(join(directory, "staging")), []);
   }));
@@ -280,7 +320,8 @@ test("out-of-model concurrent source mutation above the limit cleans up", () =>
     await assert.rejects(
       staging,
       (error) =>
-        error.name === "SourceFileTooLargeError" || error.name === "DocumentFileSourceError"
+        errorName(error) === "SourceFileTooLargeError" ||
+        errorName(error) === "DocumentFileSourceError"
     );
     assert.deepEqual(await readdir(join(directory, "staging")), []);
   }));
@@ -289,7 +330,7 @@ test("out-of-model hostile external staged-path replacement is retained during c
   withTempDirectory(async (directory) => {
     const documentsDir = join(directory, "documents");
     const stagingDir = join(directory, "staging");
-    let replacedPath;
+    let replacedPath = "";
     const store = Effect.runSync(
       openDocumentFileStore({
         documentsDir,
@@ -309,7 +350,8 @@ test("out-of-model hostile external staged-path replacement is retained during c
       await assert.rejects(
         staging,
         (error) =>
-          error.name === "DocumentFileSourceError" || error.name === "SourceFileTooLargeError"
+          errorName(error) === "DocumentFileSourceError" ||
+          errorName(error) === "SourceFileTooLargeError"
       );
       assert.equal(await readFile(replacedPath, "utf8"), "replacement staged owner");
       assert.equal((await stat(`${replacedPath}.original`)).isFile(), true);
@@ -405,7 +447,7 @@ test("recovers a crash-stale finalization lock", () =>
     const lockPath = join(directory, "staging", `.${handle}.lock`);
     const child = spawn(
       process.execPath,
-      [fileURLToPath(new URL("./finalization-lock-worker.mjs", import.meta.url)), lockPath],
+      [fileURLToPath(new URL("./finalization-lock-worker.mts", import.meta.url)), lockPath],
       { stdio: "ignore" }
     );
     const result = await waitForChild(child, 1_000);
@@ -421,8 +463,8 @@ test("concurrent Planview stale-lock recovery has one atomic winner", async () =
     const documentsDir = join(directory, "documents");
     const stagingDir = join(directory, "staging");
     let arrived = 0;
-    let releaseBarrier;
-    const barrier = new Promise((resolve) => {
+    let releaseBarrier!: () => void;
+    const barrier = new Promise<void>((resolve) => {
       releaseBarrier = resolve;
     });
     const openRacingStore = () =>
@@ -448,7 +490,7 @@ test("concurrent Planview stale-lock recovery has one atomic winner", async () =
       const lockPath = join(stagingDir, `.${handle}.lock`);
       const child = spawn(
         process.execPath,
-        [fileURLToPath(new URL("./finalization-lock-worker.mjs", import.meta.url)), lockPath],
+        [fileURLToPath(new URL("./finalization-lock-worker.mts", import.meta.url)), lockPath],
         { stdio: "ignore" }
       );
       const childResult = await waitForChild(child, 1_000);
@@ -506,8 +548,8 @@ test("does not recover an expired lock whose owner is still active", () =>
 
 test("out-of-model hostile external lock replacement is retained", async () => {
   await withTempDirectory(async (directory) => {
-    let lockPath;
-    let replacedLockPath;
+    let lockPath = "";
+    let replacedLockPath = "";
     let replaced = false;
     const documentsDir = join(directory, "documents");
     const stagingDir = join(directory, "staging");
@@ -543,7 +585,7 @@ test("out-of-model hostile external lock replacement is retained", async () => {
       lockPath = join(stagingDir, `.${handle}.lock`);
       const child = spawn(
         process.execPath,
-        [fileURLToPath(new URL("./finalization-lock-worker.mjs", import.meta.url)), lockPath],
+        [fileURLToPath(new URL("./finalization-lock-worker.mts", import.meta.url)), lockPath],
         { stdio: "ignore" }
       );
       const result = await waitForChild(child, 1_000);
@@ -573,7 +615,7 @@ test("out-of-model hostile external source replacement cannot change clone bytes
   withTempDirectory(async (directory) => {
     const documentsDir = join(directory, "documents");
     const stagingDir = join(directory, "staging");
-    let handle;
+    let handle!: StagedDocumentFileHandle;
     let raced = false;
     const store = Effect.runSync(
       openDocumentFileStore({
@@ -596,7 +638,7 @@ test("out-of-model hostile external source replacement cannot change clone bytes
       await assert.rejects(
         store.cloneStagedFile(handle),
         (error) =>
-          error.name === "DocumentFileCloneError" &&
+          error instanceof DocumentFileCloneError &&
           error.sourceFileState === "unknown" &&
           error.clonedFileState === "absent" &&
           error.finalizationLockState === "absent"
@@ -613,7 +655,7 @@ test("out-of-model hostile external clone-path replacement is retained", () =>
     const documentsDir = join(directory, "documents");
     const stagingDir = join(directory, "staging");
     let replaced = false;
-    let clonedPath;
+    let clonedPath = "";
     const store = Effect.runSync(
       openDocumentFileStore({
         documentsDir,
@@ -636,7 +678,7 @@ test("out-of-model hostile external clone-path replacement is retained", () =>
       await assert.rejects(
         store.cloneStagedFile(handle),
         (error) =>
-          error.name === "DocumentFileCloneError" &&
+          error instanceof DocumentFileCloneError &&
           error.clonedFileState === "unknown" &&
           error.finalizationLockState === "absent"
       );
@@ -779,7 +821,7 @@ test("out-of-model hostile external target replacement is retained during deleti
       const capability = await store.finalizeStagedFile(handle, validId);
       await assert.rejects(
         store.deleteDocumentFile(validId, capability),
-        (error) => error.name === "DocumentFileDeleteError" && error.targetState === "unknown"
+        (error) => error instanceof DocumentFileDeleteError && error.targetState === "unknown"
       );
       assert.equal(
         await readFile(join(documentsDir, `${validId}.html`), "utf8"),
@@ -814,6 +856,7 @@ test("concurrent Planview finalization of one id has one atomic winner", () =>
       assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
       assert.equal(results.filter((result) => result.status === "rejected").length, 1);
       const rejected = results.find((result) => result.status === "rejected");
+      assert.ok(rejected);
       assert.equal(
         rejected.reason instanceof DocumentFileAlreadyExistsError ||
           rejected.reason instanceof DocumentFileTargetBusyError,
@@ -837,8 +880,8 @@ test("bounds a live target-lock wait as a collision without claiming the peer lo
   withTempDirectory(async (directory) => {
     const documentsDir = join(directory, "documents");
     const stagingDir = join(directory, "staging");
-    let targetLockEnteredResolve;
-    const targetLockEntered = new Promise((resolve) => {
+    let targetLockEnteredResolve!: () => void;
+    const targetLockEntered = new Promise<void>((resolve) => {
       targetLockEnteredResolve = resolve;
     });
     let holdTargetLock = true;
@@ -852,7 +895,7 @@ test("bounds a live target-lock wait as a collision without claiming the peer lo
           }
           holdTargetLock = false;
           targetLockEnteredResolve();
-          await new Promise((resolve) => setTimeout(resolve, 64));
+          await new Promise<void>((resolve) => setTimeout(resolve, 64));
         },
       })
     );
@@ -887,7 +930,7 @@ test("finalization uses a validated id, consumes the handle, and never replaces 
     await store.finalizeStagedFile(handle, validId);
     await assert.rejects(store.readDocument("../escape"), /Document id must be exactly/);
     await assert.rejects(
-      store.finalizeStagedFile("../escape", otherId),
+      store.finalizeStagedFile("../escape" as StagedDocumentFileHandle, otherId),
       (error) => error instanceof InvalidStagedDocumentFileHandleError
     );
 
@@ -960,7 +1003,7 @@ test("inspects bundles and reads only the requested entry range", () =>
     }
     await assert.rejects(
       store.readDocumentEntryLease(validId, "../secret"),
-      (error) => error.name === "InvalidBundleError"
+      (error) => errorName(error) === "InvalidBundleError"
     );
   }));
 

@@ -17,8 +17,19 @@ import {
   StorageOpenError,
   StoragePathError,
 } from "../dist/index.js";
+import type { DocumentMetadata, MetadataStore } from "../dist/index.js";
 
-const withTempDirectory = async (prefix, callback) => {
+type SqliteRow = Record<string, unknown>;
+type StorageEnvironment = Readonly<{
+  readonly databasePath: string;
+  readonly directory: string;
+  readonly storage: MetadataStore;
+}>;
+
+const withTempDirectory = async <T,>(
+  prefix: string,
+  callback: (directory: string) => T | PromiseLike<T>
+): Promise<T> => {
   const directory = mkdtempSync(join(tmpdir(), prefix));
   try {
     return await callback(directory);
@@ -27,10 +38,10 @@ const withTempDirectory = async (prefix, callback) => {
   }
 };
 
-const withStorage = (callback) =>
+const withStorage = <T,>(callback: (environment: StorageEnvironment) => T | PromiseLike<T>) =>
   withTempDirectory("planview-storage-", async (directory) => {
     const databasePath = join(directory, "metadata.sqlite");
-    let storage;
+    let storage: MetadataStore | undefined;
     try {
       storage = Effect.runSync(openStorage(databasePath));
       return await callback({ databasePath, directory, storage });
@@ -39,38 +50,48 @@ const withStorage = (callback) =>
     }
   });
 
-const metadata = (id, createdAt, size, lastAccessedAt = createdAt) => ({
+const metadata = (
+  id: string,
+  createdAt: number,
+  size: number,
+  lastAccessedAt = createdAt
+): DocumentMetadata => ({
   id,
   createdAt,
   lastAccessedAt,
   size,
 });
 
-const generationCount = (databasePath) => {
+const generationCount = (databasePath: string): number => {
   const database = new DatabaseSync(databasePath);
   try {
-    return database.prepare("SELECT COUNT(*) AS count FROM document_generations").get().count;
+    const count = (
+      database.prepare("SELECT COUNT(*) AS count FROM document_generations").get() as SqliteRow
+    )["count"];
+    if (typeof count !== "number") {
+      throw new TypeError("SQLite returned a non-numeric generation count.");
+    }
+    return count;
   } finally {
     database.close();
   }
 };
 
-const inspectSchema = (databasePath) => {
+const inspectSchema = (databasePath: string) => {
   const database = new DatabaseSync(databasePath);
   try {
+    const version = (database.prepare("PRAGMA user_version").get() as SqliteRow)["user_version"];
+    const columns = database.prepare("PRAGMA table_info(documents)").all() as SqliteRow[];
     return {
-      version: database.prepare("PRAGMA user_version").get().user_version,
-      columns: database
-        .prepare("PRAGMA table_info(documents)")
-        .all()
-        .map((row) => row.name),
+      version,
+      columns: columns.map((row) => row["name"]),
     };
   } finally {
     database.close();
   }
 };
 
-const createDatabase = (databasePath, schema, version = 1) => {
+const createDatabase = (databasePath: string, schema: string, version = 1) => {
   const database = new DatabaseSync(databasePath);
   try {
     database.exec(schema);
@@ -80,15 +101,15 @@ const createDatabase = (databasePath, schema, version = 1) => {
   }
 };
 
-const waitForWorkerMessage = (worker, expected) =>
-  new Promise((resolve, reject) => {
-    const onMessage = (message) => {
+const waitForWorkerMessage = (worker: Worker, expected: string): Promise<void> =>
+  new Promise<void>((resolve, reject) => {
+    const onMessage = (message: unknown) => {
       if (message === expected) {
         worker.off("error", onError);
         resolve();
       }
     };
-    const onError = (error) => {
+    const onError = (error: Error) => {
       worker.off("message", onMessage);
       reject(error);
     };
@@ -96,8 +117,8 @@ const waitForWorkerMessage = (worker, expected) =>
     worker.once("error", onError);
   });
 
-const openWorker = (databasePath) => {
-  const worker = new Worker(new URL("./concurrent-opener-worker.mjs", import.meta.url), {
+const openWorker = (databasePath: string) => {
+  const worker = new Worker(new URL("./concurrent-opener-worker.mts", import.meta.url), {
     workerData: { databasePath },
   });
   return { worker, ready: waitForWorkerMessage(worker, "ready") };
@@ -141,7 +162,7 @@ test("serializes concurrent quota admission across storage instances", () =>
     const databasePath = join(directory, "metadata.sqlite");
     const workers = ["left", "right"].map(
       (id) =>
-        new Worker(new URL("./quota-insert-worker.mjs", import.meta.url), {
+        new Worker(new URL("./quota-insert-worker.mts", import.meta.url), {
           workerData: { databasePath, id },
         })
     );
@@ -203,8 +224,8 @@ test("serializes concurrent v0 openers and lets both observe the committed migra
     const databasePath = join(directory, "metadata.sqlite");
     createDatabase(databasePath, "", 0);
 
-    let blocker;
-    const openers = [];
+    let blocker: DatabaseSync | undefined;
+    const openers: Array<ReturnType<typeof openWorker>> = [];
     try {
       blocker = new DatabaseSync(databasePath);
       blocker.exec("BEGIN IMMEDIATE");
@@ -255,10 +276,15 @@ test("rejects a claimed v1 database whose schema omits required semantics withou
     );
     const database = new DatabaseSync(databasePath);
     try {
-      assert.equal(database.prepare("PRAGMA user_version").get().user_version, 1);
-      const actualSchema = database
-        .prepare("SELECT sql FROM sqlite_schema WHERE name = 'documents'")
-        .get().sql;
+      assert.equal((database.prepare("PRAGMA user_version").get() as SqliteRow)["user_version"], 1);
+      const actualSchema = (
+        database
+          .prepare("SELECT sql FROM sqlite_schema WHERE name = 'documents'")
+          .get() as SqliteRow
+      )["sql"];
+      if (typeof actualSchema !== "string") {
+        throw new TypeError("SQLite returned no documents schema.");
+      }
       assert.equal(
         actualSchema.replace(/\s+/g, " ").trim(),
         incompatibleSchema.replace(/\s+/g, " ").trim()
@@ -329,10 +355,9 @@ test("uses the access-order index for bounded 1k candidate and reconciliation pa
     try {
       const database = new DatabaseSync(databasePath);
       try {
-        const indexes = database
-          .prepare("PRAGMA index_list(documents)")
-          .all()
-          .map((row) => row.name);
+        const indexes = (database.prepare("PRAGMA index_list(documents)").all() as SqliteRow[]).map(
+          (row) => row["name"]
+        );
         assert.equal(indexes.includes("documents_last_accessed_at_idx"), true);
       } finally {
         database.close();
@@ -342,12 +367,15 @@ test("uses the access-order index for bounded 1k candidate and reconciliation pa
       assert.equal(first.rows.length, 128);
       assert.equal(first.hasMore, true);
       const lastFirst = first.rows.at(-1);
+      assert.ok(lastFirst);
       const second = storage.listDocumentMetadataCandidates(2, 128, {
         lastAccessedAt: lastFirst.lastAccessedAt,
         id: lastFirst.id,
       });
       assert.equal(second.rows.length, 128);
-      assert.equal(second.rows[0].id > lastFirst.id, true);
+      const firstSecond = second.rows[0];
+      assert.ok(firstSecond);
+      assert.equal(firstSecond.id > lastFirst.id, true);
 
       const reconciliationPage = storage.listDocumentMetadataPage(128);
       assert.equal(reconciliationPage.rows.length, 128);
@@ -408,11 +436,13 @@ test("deletes only the generation belonging to the deleted document", () =>
   withStorage(({ databasePath, storage }) => {
     storage.insertDocumentMetadata(metadata("reusable", 1, 1));
     const original = storage.listDocumentMetadataCandidates(2, 1).rows[0];
+    assert.ok(original);
     assert.equal(storage.deleteDocumentIfMatches(original), true);
     assert.equal(generationCount(databasePath), 0);
 
     storage.insertDocumentMetadata(metadata("reusable", 2, 2));
     const replacement = storage.listDocumentMetadataCandidates(3, 1).rows[0];
+    assert.ok(replacement);
     assert.notEqual(replacement.generation, original.generation);
     assert.equal(storage.deleteDocumentIfMatches(original), false);
     assert.equal(generationCount(databasePath), 1);
