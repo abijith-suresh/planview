@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -12,25 +12,69 @@ import {
   writeFileSync,
 } from "node:fs";
 import { rm } from "node:fs/promises";
-import { createConnection, createServer } from "node:net";
+import { createConnection, createServer, type Socket } from "node:net";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { createBundleHeader, encodeBundleManifest, validateDocumentId } from "@planview/core";
+import {
+  createBundleHeader,
+  encodeBundleManifest,
+  validateDocumentId,
+  type BundleManifestEntry,
+  type DocumentId,
+} from "@planview/core";
 import {
   createDocumentPublicationCoordinator,
   openDocumentFileStore,
   openStorage,
   V1_CLEANUP_ITEM_BUDGET,
 } from "@planview/storage";
+import type { MetadataStore } from "@planview/storage";
 import { Effect } from "effect";
+import * as daemon from "../dist/index.js";
 
 const packageRoot = new URL("..", import.meta.url);
 const entry = fileURLToPath(new URL("./dist/entry.js", packageRoot));
-const daemon = await import(new URL("./dist/index.js", packageRoot));
 
-const waitFor = async (condition, timeout = 5_000) => {
+type DaemonDescriptor = Readonly<{
+  readonly version: number;
+  readonly pid: number;
+  readonly host: string;
+  readonly port: number;
+  readonly secret: string;
+  readonly startedAt: number;
+}>;
+type BundleFile = Readonly<{
+  readonly path: string;
+  readonly contents: Uint8Array;
+}>;
+type ChildExit = Readonly<{
+  readonly code: number | null;
+  readonly signal: NodeJS.Signals | null;
+}>;
+type TaggedError = Readonly<{
+  readonly _tag: unknown;
+  readonly message: string;
+  readonly configHost?: unknown;
+  readonly configPort?: unknown;
+  readonly descriptorHost?: unknown;
+  readonly descriptorPort?: unknown;
+  readonly [key: string]: unknown;
+}>;
+
+const isTaggedError = (error: unknown, tag: string): error is TaggedError => {
+  if (typeof error !== "object" || error === null) {
+    return false;
+  }
+  const record = error as TaggedError;
+  return record._tag === tag && typeof record.message === "string";
+};
+
+const waitFor = async <T,>(
+  condition: () => T | false | undefined | PromiseLike<T | false | undefined>,
+  timeout = 5_000
+): Promise<T> => {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     try {
@@ -41,13 +85,13 @@ const waitFor = async (condition, timeout = 5_000) => {
     } catch {
       // The fixture may not have been created yet.
     }
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
   }
   throw new Error("Timed out waiting for daemon process state.");
 };
 
-const waitForExit = (child, timeout = 10_000) =>
-  new Promise((resolve, reject) => {
+const waitForExit = (child: ChildProcess, timeout = 10_000): Promise<ChildExit> =>
+  new Promise<ChildExit>((resolve, reject) => {
     if (child.exitCode !== null || child.signalCode !== null) {
       resolve({ code: child.exitCode, signal: child.signalCode });
       return;
@@ -56,11 +100,11 @@ const waitForExit = (child, timeout = 10_000) =>
       cleanup();
       reject(new Error("Timed out waiting for daemon process exit."));
     }, timeout);
-    const onExit = (code, signal) => {
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
       cleanup();
       resolve({ code, signal });
     };
-    const onError = (error) => {
+    const onError = (error: Error) => {
       cleanup();
       reject(error);
     };
@@ -73,7 +117,7 @@ const waitForExit = (child, timeout = 10_000) =>
     child.once("error", onError);
   });
 
-const stopChild = async (child) => {
+const stopChild = async (child: ChildProcess | undefined): Promise<void> => {
   if (child === undefined) {
     return;
   }
@@ -88,26 +132,31 @@ const stopChild = async (child) => {
   await waitForExit(child);
 };
 
-const removeFixture = async (fixture) => {
+const removeFixture = async (fixture: string): Promise<void> => {
   await rm(fixture, { force: true, recursive: true, maxRetries: 10, retryDelay: 50 });
 };
 
 const freePort = async () => {
   const server = createServer();
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(0, "127.0.0.1", () => resolve());
   });
   const address = server.address();
   assert.ok(address && typeof address !== "string");
   const port = address.port;
-  await new Promise((resolve, reject) =>
+  await new Promise<void>((resolve, reject) =>
     server.close((error) => (error ? reject(error) : resolve()))
   );
   return port;
 };
 
-const startChild = (appDataDir, runtimeDir, port, environment = {}) =>
+const startChild = (
+  appDataDir: string,
+  runtimeDir: string,
+  port: number,
+  environment: Record<string, string> = {}
+): ChildProcess =>
   spawn(process.execPath, [entry], {
     env: {
       ...process.env,
@@ -120,7 +169,12 @@ const startChild = (appDataDir, runtimeDir, port, environment = {}) =>
     stdio: "ignore",
   });
 
-const seedPublishedDocument = async (appDataDir, fixture, documentId, contents) => {
+const seedPublishedDocument = async (
+  appDataDir: string,
+  fixture: string,
+  documentId: DocumentId,
+  contents: string | Uint8Array
+): Promise<string> => {
   const sourcePath = join(fixture, `${documentId}.source.html`);
   const documentsDir = join(appDataDir, "documents");
   const stagingDir = join(appDataDir, "staging");
@@ -142,9 +196,9 @@ const seedPublishedDocument = async (appDataDir, fixture, documentId, contents) 
   return sourcePath;
 };
 
-const makeBundle = (files) => {
+const makeBundle = (files: readonly BundleFile[]): Buffer => {
   let offset = 0;
-  const entries = files.map(({ path, contents }) => {
+  const entries: BundleManifestEntry[] = files.map(({ path, contents }) => {
     const entry = { path, offset, size: contents.byteLength };
     offset += contents.byteLength;
     return entry;
@@ -157,7 +211,12 @@ const makeBundle = (files) => {
   ]);
 };
 
-const seedPublishedBundle = async (appDataDir, fixture, documentId, files) => {
+const seedPublishedBundle = async (
+  appDataDir: string,
+  fixture: string,
+  documentId: DocumentId,
+  files: readonly BundleFile[]
+): Promise<string> => {
   const sourcePath = join(fixture, `${documentId}.source.html`);
   mkdirSync(appDataDir, { recursive: true, mode: 0o700 });
   writeFileSync(sourcePath, makeBundle(files));
@@ -182,15 +241,15 @@ const seedPublishedBundle = async (appDataDir, fixture, documentId, files) => {
   return sourcePath;
 };
 
-const openStalledDocument = async (port, documentId) => {
+const openStalledDocument = async (port: number, documentId: string): Promise<Socket> => {
   const socket = createConnection({ host: "127.0.0.1", port });
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     socket.once("error", reject);
     socket.once("connect", resolve);
   });
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     let received = Buffer.alloc(0);
-    const onData = (chunk) => {
+    const onData = (chunk: Buffer) => {
       received = Buffer.concat([received, chunk]);
       if (received.includes(Buffer.from("\r\n\r\n"))) {
         socket.off("error", reject);
@@ -207,12 +266,12 @@ const openStalledDocument = async (port, documentId) => {
   return socket;
 };
 
-const within = async (promise, milliseconds) => {
-  let timer;
+const within = async <T,>(promise: PromiseLike<T>, milliseconds: number): Promise<T> => {
+  let timer!: NodeJS.Timeout;
   try {
     return await Promise.race([
       promise,
-      new Promise((_, reject) => {
+      new Promise<never>((_, reject) => {
         timer = setTimeout(
           () => reject(new Error(`operation exceeded ${milliseconds}ms`)),
           milliseconds
@@ -224,15 +283,15 @@ const within = async (promise, milliseconds) => {
   }
 };
 
-const descriptorAt = (runtimeDir) => {
+const descriptorAt = (runtimeDir: string): DaemonDescriptor | undefined => {
   try {
-    return JSON.parse(readFileSync(join(runtimeDir, "daemon.json"), "utf8"));
+    return JSON.parse(readFileSync(join(runtimeDir, "daemon.json"), "utf8")) as DaemonDescriptor;
   } catch {
     return undefined;
   }
 };
 
-const waitForReady = async (port, secret) =>
+const waitForReady = async (port: number, secret: string) =>
   waitFor(async () => {
     const response = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
       headers: { "x-planview-secret": secret },
@@ -240,7 +299,7 @@ const waitForReady = async (port, secret) =>
     if (response.status !== 200) {
       return undefined;
     }
-    const payload = await response.json();
+    const payload = (await response.json()) as Readonly<{ readonly ready?: unknown }>;
     return payload.ready === true ? payload : undefined;
   });
 
@@ -312,7 +371,7 @@ test("a detached child failure is observed and the starter releases its lifecycl
         daemonScriptPath: join(fixture, "missing-daemon-entry.js"),
       }),
       (error) =>
-        error?._tag === "DaemonRequestError" && /failed before readiness/.test(error.message)
+        isTaggedError(error, "DaemonRequestError") && /failed before readiness/.test(error.message)
     );
     assert.equal(existsSync(join(runtimeDir, daemon.DAEMON_LOCK_NAME)), false);
   } finally {
@@ -405,7 +464,7 @@ test("does not reclaim an old well-formed lock whose local owner is alive", asyn
   const child = startChild(appDataDir, runtimeDir, port);
 
   try {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise<void>((resolve) => setTimeout(resolve, 500));
     assert.equal(descriptorAt(runtimeDir), undefined);
     assert.equal(JSON.parse(readFileSync(lockPath, "utf8")).pid, process.pid);
   } finally {
@@ -428,13 +487,11 @@ test("status and stop surface corrupt and insecure descriptors as typed errors",
 
   try {
     writeFileSync(descriptorPath, "{not-json", { encoding: "utf8", mode: 0o600 });
-    await assert.rejects(
-      daemon.inspectDaemon(config),
-      (error) => error?._tag === "DaemonDescriptorError"
+    await assert.rejects(daemon.inspectDaemon(config), (error) =>
+      isTaggedError(error, "DaemonDescriptorError")
     );
-    await assert.rejects(
-      daemon.stopDaemon(config),
-      (error) => error?._tag === "DaemonDescriptorError"
+    await assert.rejects(daemon.stopDaemon(config), (error) =>
+      isTaggedError(error, "DaemonDescriptorError")
     );
 
     if (process.platform !== "win32") {
@@ -451,13 +508,11 @@ test("status and stop surface corrupt and insecure descriptors as typed errors",
         { encoding: "utf8", mode: 0o600 }
       );
       chmodSync(descriptorPath, 0o644);
-      await assert.rejects(
-        daemon.inspectDaemon(config),
-        (error) => error?._tag === "DaemonDescriptorError"
+      await assert.rejects(daemon.inspectDaemon(config), (error) =>
+        isTaggedError(error, "DaemonDescriptorError")
       );
-      await assert.rejects(
-        daemon.stopDaemon(config),
-        (error) => error?._tag === "DaemonDescriptorError"
+      await assert.rejects(daemon.stopDaemon(config), (error) =>
+        isTaggedError(error, "DaemonDescriptorError")
       );
     }
   } finally {
@@ -494,7 +549,7 @@ test("lifecycle and status reject a descriptor endpoint mismatch with a typed er
       await assert.rejects(
         operation(),
         (error) =>
-          error?._tag === "DaemonDescriptorEndpointMismatchError" &&
+          isTaggedError(error, "DaemonDescriptorEndpointMismatchError") &&
           error.descriptorHost === "localhost" &&
           error.descriptorPort === 4776 &&
           error.configHost === "127.0.0.1" &&
@@ -532,6 +587,12 @@ test("exact management paths do not shadow a published id beginning with __planv
   const child = startChild(appDataDir, runtimeDir, port);
   try {
     const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    await waitFor(async () => {
+      const ready = await fetch(`http://127.0.0.1:${port}/__planview/ready`, {
+        headers: { "x-planview-secret": descriptor.secret },
+      });
+      return ready.status === 200 ? true : undefined;
+    });
     const document = await fetch(`http://127.0.0.1:${port}/${documentId}`);
     assert.equal(document.status, 200);
     assert.equal(await document.text(), "<!doctype html><p>private-looking id</p>");
@@ -554,7 +615,7 @@ test("serves a page bundle root and its asset entries", async () => {
   const runtimeDir = join(appDataDir, "runtime");
   const port = await freePort();
   const documentId = validateDocumentId("e".repeat(21));
-  let child;
+  let child: ChildProcess | undefined;
   try {
     await seedPublishedBundle(appDataDir, fixture, documentId, [
       { path: "index.html", contents: Buffer.from("<h1>bundle home</h1>") },
@@ -604,7 +665,9 @@ test("the daemon is a private, graceful process with POSIX ownership checks", as
       assert.equal(statSync(appDataDir).mode & 0o077, 0);
       assert.equal(statSync(runtimeDir).mode & 0o077, 0);
       assert.equal(statSync(join(runtimeDir, "daemon.json")).mode & 0o077, 0);
-      assert.equal(statSync(join(runtimeDir, "daemon.json")).uid, process.getuid());
+      const getuid = process.getuid;
+      assert.ok(getuid);
+      assert.equal(statSync(join(runtimeDir, "daemon.json")).uid, getuid());
     }
 
     await waitForReady(port, descriptor.secret);
@@ -618,7 +681,8 @@ test("the daemon is a private, graceful process with POSIX ownership checks", as
       headers: { "x-planview-secret": descriptor.secret },
     });
     assert.equal(ready.status, 200);
-    assert.equal((await ready.json()).ready, true);
+    const readyPayload = (await ready.json()) as Readonly<{ readonly ready?: unknown }>;
+    assert.equal(readyPayload.ready, true);
 
     child.kill("SIGTERM");
     const exit = await waitForExit(child);
@@ -670,8 +734,8 @@ test("a stalled raw-socket read does not block publish or clean", async () => {
   const runtimeDir = join(appDataDir, "runtime");
   const port = await freePort();
   const documentId = validateDocumentId("c".repeat(21));
-  let socket;
-  let child;
+  let socket: Socket | undefined;
+  let child: ChildProcess | undefined;
   try {
     await seedPublishedDocument(
       appDataDir,
@@ -725,8 +789,8 @@ test("shutdown aborts a stalled document read before closing storage", async () 
   const runtimeDir = join(appDataDir, "runtime");
   const port = await freePort();
   const documentId = validateDocumentId("d".repeat(21));
-  let socket;
-  let child;
+  let socket: Socket | undefined;
+  let child: ChildProcess | undefined;
   try {
     await seedPublishedDocument(appDataDir, fixture, documentId, "shutdown read");
     child = startChild(appDataDir, runtimeDir, port);
@@ -760,7 +824,7 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
   const documentsDir = join(appDataDir, "documents");
   const port = await freePort();
   const child = startChild(appDataDir, runtimeDir, port);
-  let metadataStore;
+  let metadataStore: MetadataStore | undefined;
   try {
     const descriptor = await waitFor(() => descriptorAt(runtimeDir));
     await waitFor(async () => {
@@ -770,6 +834,8 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
       return ready.status === 200 ? true : undefined;
     });
     metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    const currentMetadataStore = metadataStore;
+    assert.ok(currentMetadataStore);
     // One bounded cleanup slice must leave work for shutdown to overlap.
     const documents = V1_CLEANUP_ITEM_BUDGET + 1;
     for (let index = 0; index < documents; index += 1) {
@@ -787,7 +853,7 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
       headers: { "x-planview-secret": descriptor.secret },
     });
     await waitFor(() => {
-      const remaining = metadataStore.getDocumentAggregate().count;
+      const remaining = currentMetadataStore.getDocumentAggregate().count;
       return remaining > 0 && remaining < documents ? remaining : undefined;
     });
     const result = await daemon.stopDaemon(
@@ -795,7 +861,10 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
     );
     const cleanResponse = await cleanResponsePromise;
     assert.equal(cleanResponse.status, 200);
-    const cleanupResult = await cleanResponse.json();
+    const cleanupResult = (await cleanResponse.json()) as Readonly<{
+      readonly removedDocuments: number;
+      readonly resumable: boolean;
+    }>;
     assert.equal(cleanupResult.removedDocuments > 0, true);
     assert.equal(cleanupResult.removedDocuments < documents, true);
     assert.equal(cleanupResult.resumable, true);
@@ -819,7 +888,7 @@ test("shutdown cancels a slow request-originated publication before staging", as
   const child = startChild(appDataDir, runtimeDir, port, {
     PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "10000",
   });
-  let metadataStore;
+  let metadataStore: MetadataStore | undefined;
   try {
     const descriptor = await waitFor(() => descriptorAt(runtimeDir));
     await waitFor(async () => {
@@ -866,8 +935,8 @@ test("closing a publish response cancels the request before it reaches the gate"
     PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "10000",
     PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_ONCE: "1",
   });
-  let metadataStore;
-  let socket;
+  let metadataStore: MetadataStore | undefined;
+  let socket: Socket | undefined;
   try {
     const descriptor = await waitFor(() => descriptorAt(runtimeDir));
     await waitFor(async () => {
@@ -877,22 +946,23 @@ test("closing a publish response cancels the request before it reaches the gate"
       return ready.status === 200 ? true : undefined;
     });
     const body = JSON.stringify({ sourcePath });
-    socket = createConnection({ host: "127.0.0.1", port });
-    socket.on("error", () => undefined);
-    await new Promise((resolve, reject) => {
-      socket.once("connect", resolve);
-      socket.once("error", reject);
+    const connection = createConnection({ host: "127.0.0.1", port });
+    socket = connection;
+    connection.on("error", () => undefined);
+    await new Promise<void>((resolve, reject) => {
+      connection.once("connect", () => resolve());
+      connection.once("error", reject);
     });
-    await new Promise((resolve, reject) => {
-      socket.write(
+    await new Promise<void>((resolve, reject) => {
+      connection.write(
         `POST /__planview/publish HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\n` +
           `x-planview-secret: ${descriptor.secret}\r\ncontent-type: application/json\r\n` +
           `content-length: ${Buffer.byteLength(body)}\r\nConnection: keep-alive\r\n\r\n${body}`,
-        (error) => (error ? reject(error) : resolve())
+        (error?: Error | null) => (error ? reject(error) : resolve())
       );
     });
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    socket.destroy();
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    connection.destroy();
 
     const sourceForSecondPublish = join(fixture, "second.html");
     writeFileSync(sourceForSecondPublish, "second publication");
@@ -909,6 +979,8 @@ test("closing a publish response cancels the request before it reaches the gate"
     );
     assert.equal(second.status, 201);
     metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    const currentMetadataStore = metadataStore;
+    assert.ok(currentMetadataStore);
     assert.equal(metadataStore.getDocumentAggregate().count, 1);
   } finally {
     socket?.destroy();
@@ -929,7 +1001,7 @@ test("an uncooperative operation is terminated before descriptor recovery", asyn
     PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "10000",
     PLANVIEW_TEST_DAEMON_UNCOOPERATIVE_PUBLISH: "1",
   });
-  let metadataStore;
+  let metadataStore: MetadataStore | undefined;
   try {
     const descriptor = await waitFor(() => descriptorAt(runtimeDir));
     await waitFor(async () => {
@@ -947,7 +1019,7 @@ test("an uncooperative operation is terminated before descriptor recovery", asyn
       body: JSON.stringify({ sourcePath }),
     });
     publishPromise.catch(() => undefined);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
     const startedAt = Date.now();
     const result = await daemon.stopDaemon(
       daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
@@ -976,7 +1048,7 @@ test("shutdown cancels a large cleanup at a deterministic fault seam", async () 
   const child = startChild(appDataDir, runtimeDir, port, {
     PLANVIEW_TEST_DAEMON_CLEANUP_PAUSE_MS: "10000",
   });
-  let metadataStore;
+  let metadataStore: MetadataStore | undefined;
   try {
     const descriptor = await waitFor(() => descriptorAt(runtimeDir));
     await waitFor(async () => {
@@ -1001,7 +1073,7 @@ test("shutdown cancels a large cleanup at a deterministic fault seam", async () 
       headers: { "x-planview-secret": descriptor.secret },
     });
     cleanPromise.catch(() => undefined);
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
     const startedAt = Date.now();
     const result = await daemon.stopDaemon(
       daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port })
@@ -1025,7 +1097,7 @@ test("automatic cleanup drains resumable work after a bounded manual slice", asy
   const documentsDir = join(appDataDir, "documents");
   const port = await freePort();
   const child = startChild(appDataDir, runtimeDir, port);
-  let metadataStore;
+  let metadataStore: MetadataStore | undefined;
   try {
     const descriptor = await waitFor(() => descriptorAt(runtimeDir));
     await waitFor(async () => {
@@ -1035,6 +1107,8 @@ test("automatic cleanup drains resumable work after a bounded manual slice", asy
       return ready.status === 200 ? true : undefined;
     });
     metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    const currentMetadataStore = metadataStore;
+    assert.ok(currentMetadataStore);
     const documents = 700;
     for (let index = 0; index < documents; index += 1) {
       const documentId = `a${index.toString(36).padStart(20, "0")}`;
@@ -1054,7 +1128,7 @@ test("automatic cleanup drains resumable work after a bounded manual slice", asy
     assert.equal(cleanResponse.status, 200);
     assert.equal(Date.now() - startedAt < 4_000, true);
     await waitFor(
-      () => (metadataStore.getDocumentAggregate().count === 0 ? true : undefined),
+      () => (currentMetadataStore.getDocumentAggregate().count === 0 ? true : undefined),
       15_000
     );
     await daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }));
@@ -1072,14 +1146,15 @@ test("shutdown force-closes an idle connection by its deadline", async () => {
   const runtimeDir = join(appDataDir, "runtime");
   const port = await freePort();
   const child = startChild(appDataDir, runtimeDir, port);
-  let socket;
+  let socket: Socket | undefined;
 
   try {
     await waitFor(() => descriptorAt(runtimeDir));
-    socket = createConnection({ host: "127.0.0.1", port });
-    await new Promise((resolve, reject) => {
-      socket.once("error", reject);
-      socket.once("connect", resolve);
+    const connection = createConnection({ host: "127.0.0.1", port });
+    socket = connection;
+    await new Promise<void>((resolve, reject) => {
+      connection.once("error", reject);
+      connection.once("connect", () => resolve());
     });
     const startedAt = Date.now();
     const result = await daemon.stopDaemon(

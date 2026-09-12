@@ -251,6 +251,21 @@ test("repository foundation has the expected configuration", () => {
     "CLI test script"
   );
 
+  const daemonPackageJson = readJson("packages/daemon/package.json");
+  expectEqual(daemonPackageJson.name, "@planview/daemon", "daemon package name");
+  expectProperty(
+    daemonPackageJson.scripts,
+    "test",
+    'npm run build && npm run typecheck:test && node --test "test/**/*.test.mts"',
+    "daemon test script"
+  );
+  expectProperty(
+    daemonPackageJson.scripts,
+    "typecheck:test",
+    "tsc --project tsconfig.test.json",
+    "daemon test typecheck script"
+  );
+
   const corePackageJson = readJson("packages/core/package.json");
   expectEqual(corePackageJson.name, "@planview/core", "core package name");
   expectEqual(corePackageJson.private, true, "core package privacy");
