@@ -19,7 +19,12 @@ import {
 } from "../dist/index.js";
 import type { DocumentMetadata, MetadataStore } from "../dist/index.js";
 
-type SqliteRow = Record<string, unknown>;
+type SqliteRow = Readonly<{
+  readonly count?: unknown;
+  readonly name?: unknown;
+  readonly sql?: unknown;
+  readonly user_version?: unknown;
+}>;
 type StorageEnvironment = Readonly<{
   readonly databasePath: string;
   readonly directory: string;
