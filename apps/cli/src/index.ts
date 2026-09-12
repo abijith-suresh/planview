@@ -261,31 +261,43 @@ const formatRunning = (status: {
   readonly port: number;
 }) => `Planview daemon is running at http://${status.host}:${status.port}/ (pid ${status.pid}).\n`;
 
+const publishFailure = (sourcePath: string, cause: unknown) =>
+  new PublishCommandError({
+    sourcePath,
+    cause,
+    message: `Could not publish ${sourcePath}: ${describe(cause)}`,
+  });
+
 const publishSource = (sourcePath: string) =>
-  Effect.tryPromise({
-    try: async () => {
-      const prepared = await preparePublishSource(sourcePath);
-      try {
-        const config = resolveCliDaemonConfig();
-        const published = await Effect.runPromise(
+  Effect.acquireUseRelease(
+    Effect.tryPromise({
+      try: () => preparePublishSource(sourcePath),
+      catch: (cause) => publishFailure(sourcePath, cause),
+    }),
+    (prepared) =>
+      Effect.tryPromise({
+        try: () => Promise.resolve(resolveCliDaemonConfig()),
+        catch: (cause) => publishFailure(sourcePath, cause),
+      }).pipe(
+        Effect.flatMap((config) =>
           publishDocument(config, {
             daemonScriptPath: daemonScriptPath(),
             sourcePath: prepared.sourcePath,
             sourceSizeBytes: prepared.sourceSizeBytes,
-          })
-        );
-        return `http://localhost:${published.descriptor.port}/${published.id}`;
-      } finally {
-        await prepared.cleanup();
-      }
-    },
-    catch: (cause) =>
-      new PublishCommandError({
-        sourcePath,
-        cause,
-        message: `Could not publish ${sourcePath}: ${describe(cause)}`,
-      }),
-  });
+          }).pipe(
+            Effect.map(
+              (published) => `http://localhost:${published.descriptor.port}/${published.id}`
+            ),
+            Effect.mapError((cause) => publishFailure(sourcePath, cause))
+          )
+        )
+      ),
+    (prepared) =>
+      Effect.tryPromise({
+        try: () => prepared.cleanup(),
+        catch: (cause) => publishFailure(sourcePath, cause),
+      })
+  );
 
 const runPublishCommand = (sourcePath: string, stdout: StdoutWriter) =>
   publishSource(sourcePath).pipe(
@@ -338,25 +350,36 @@ const runPreviewCommand = (sourcePath: string, stdout: StdoutWriter) =>
 
 const runGetCommand = (reference: string, stdout: StdoutWriter) =>
   Effect.tryPromise({
-    try: async () => {
-      const config = resolveCliDaemonConfig();
-      const documentId = parseDocumentReference(reference, config.port);
-      await Effect.runPromise(
-        retrieveDocument(config, {
-          daemonScriptPath: daemonScriptPath(),
-          documentId,
-          onChunk: (chunk) => stdout(chunk),
-        })
-      );
-      return 0;
-    },
+    try: () =>
+      Promise.resolve().then(() => {
+        const config = resolveCliDaemonConfig();
+        return { config, documentId: parseDocumentReference(reference, config.port) };
+      }),
     catch: (cause) =>
       new GetCommandError({
         reference,
         cause,
         message: `Could not retrieve ${reference}: ${describe(cause)}`,
       }),
-  });
+  }).pipe(
+    Effect.flatMap(({ config, documentId }) =>
+      retrieveDocument(config, {
+        daemonScriptPath: daemonScriptPath(),
+        documentId,
+        onChunk: (chunk) => stdout(chunk),
+      }).pipe(
+        Effect.map(() => 0),
+        Effect.mapError(
+          (cause) =>
+            new GetCommandError({
+              reference,
+              cause,
+              message: `Could not retrieve ${reference}: ${describe(cause)}`,
+            })
+        )
+      )
+    )
+  );
 
 const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
   Effect.tryPromise({
@@ -377,73 +400,85 @@ const runDaemonCommand = (
   stdout: StdoutWriter
 ) =>
   Effect.tryPromise({
-    try: async () => {
-      const config = resolveCliDaemonConfig();
-      if (command === "status") {
-        const result = await Effect.runPromise(inspectDaemon(config));
-        await stdout(
-          result.state === "running"
-            ? formatRunning(result.status)
-            : "Planview daemon is not running.\n"
-        );
-        return 0;
-      }
-
-      if (command === "stop") {
-        await Effect.runPromise(stopDaemon(config));
-        await stdout("Planview daemon stopped.\n");
-        return 0;
-      }
-
-      if (command === "restart") {
-        const result = await Effect.runPromise(
-          restartDaemon(config, { daemonScriptPath: daemonScriptPath() })
-        );
-        await stdout(
-          `Planview daemon restarted at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
-        );
-        return 0;
-      }
-
-      if (command === "clean") {
-        const result = await Effect.runPromise(
-          cleanDaemon(config, { daemonScriptPath: daemonScriptPath() })
-        );
-        const failures = result.result.failures.length;
-        const summary =
-          result.result.removedDocuments === 0 &&
-          result.result.removedDocumentFiles === 0 &&
-          result.result.removedMetadataRows === 0 &&
-          result.result.removedStagedFiles === 0 &&
-          result.result.removedReadReferences === 0 &&
-          result.result.removedFinalizationLocks === 0 &&
-          result.result.retainedEntries === 0
-            ? "Planview cleanup found no expired or inconsistent snapshots."
-            : `Planview cleanup removed ${result.result.removedDocuments} expired snapshot${result.result.removedDocuments === 1 ? "" : "s"}, reconciled ${result.result.removedMetadataRows} metadata row${result.result.removedMetadataRows === 1 ? "" : "s"} and ${result.result.removedDocumentFiles} document file${result.result.removedDocumentFiles === 1 ? "" : "s"}, reclaimed ${result.result.reclaimedBytes} bytes, and removed ${result.result.removedStagedFiles} staged file${result.result.removedStagedFiles === 1 ? "" : "s"}, ${result.result.removedReadReferences} crashed-read marker${result.result.removedReadReferences === 1 ? "" : "s"}, and ${result.result.removedFinalizationLocks} finalization lock${result.result.removedFinalizationLocks === 1 ? "" : "s"}.`;
-        const retained = result.result.retainedEntries;
-        await stdout(
-          `${summary}${retained === 0 ? "" : ` ${retained} state${retained === 1 ? "" : "s"} retained for retry.`}\n`
-        );
-        return failures === 0 ? 0 : 1;
-      }
-
-      const result = await Effect.runPromise(
-        startDetachedDaemon(config, { daemonScriptPath: daemonScriptPath() })
-      );
-      await stdout(
-        result.reused
-          ? `Planview daemon is already running at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
-          : `Planview daemon started at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
-      );
-      return 0;
-    },
+    try: () => Promise.resolve(resolveCliDaemonConfig()),
     catch: (cause) =>
       new DaemonCommandError({
         command,
         cause,
         message: `Could not ${command} the Planview daemon: ${describe(cause)}`,
       }),
-  });
+  }).pipe(
+    Effect.flatMap((config) =>
+      Effect.gen(function* () {
+        const write = (message: string) =>
+          Effect.tryPromise({
+            try: () => Promise.resolve(stdout(message)),
+            catch: (cause) => cause,
+          });
+
+        if (command === "status") {
+          const result = yield* inspectDaemon(config);
+          yield* write(
+            result.state === "running"
+              ? formatRunning(result.status)
+              : "Planview daemon is not running.\n"
+          );
+          return 0;
+        }
+
+        if (command === "stop") {
+          yield* stopDaemon(config);
+          yield* write("Planview daemon stopped.\n");
+          return 0;
+        }
+
+        if (command === "restart") {
+          const result = yield* restartDaemon(config, { daemonScriptPath: daemonScriptPath() });
+          yield* write(
+            `Planview daemon restarted at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
+          );
+          return 0;
+        }
+
+        if (command === "clean") {
+          const result = yield* cleanDaemon(config, { daemonScriptPath: daemonScriptPath() });
+          const failures = result.result.failures.length;
+          const summary =
+            result.result.removedDocuments === 0 &&
+            result.result.removedDocumentFiles === 0 &&
+            result.result.removedMetadataRows === 0 &&
+            result.result.removedStagedFiles === 0 &&
+            result.result.removedReadReferences === 0 &&
+            result.result.removedFinalizationLocks === 0 &&
+            result.result.retainedEntries === 0
+              ? "Planview cleanup found no expired or inconsistent snapshots."
+              : `Planview cleanup removed ${result.result.removedDocuments} expired snapshot${result.result.removedDocuments === 1 ? "" : "s"}, reconciled ${result.result.removedMetadataRows} metadata row${result.result.removedMetadataRows === 1 ? "" : "s"} and ${result.result.removedDocumentFiles} document file${result.result.removedDocumentFiles === 1 ? "" : "s"}, reclaimed ${result.result.reclaimedBytes} bytes, and removed ${result.result.removedStagedFiles} staged file${result.result.removedStagedFiles === 1 ? "" : "s"}, ${result.result.removedReadReferences} crashed-read marker${result.result.removedReadReferences === 1 ? "" : "s"}, and ${result.result.removedFinalizationLocks} finalization lock${result.result.removedFinalizationLocks === 1 ? "" : "s"}.`;
+          const retained = result.result.retainedEntries;
+          yield* write(
+            `${summary}${retained === 0 ? "" : ` ${retained} state${retained === 1 ? "" : "s"} retained for retry.`}\n`
+          );
+          return failures === 0 ? 0 : 1;
+        }
+
+        const result = yield* startDetachedDaemon(config, { daemonScriptPath: daemonScriptPath() });
+        yield* write(
+          result.reused
+            ? `Planview daemon is already running at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
+            : `Planview daemon started at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
+        );
+        return 0;
+      })
+    ),
+    Effect.mapError((cause) =>
+      cause instanceof DaemonCommandError
+        ? cause
+        : new DaemonCommandError({
+            command,
+            cause,
+            message: `Could not ${command} the Planview daemon: ${describe(cause)}`,
+          })
+    )
+  );
 
 const parseDocumentReference = (reference: string, port: number) => {
   if (isValidDocumentId(reference)) {
