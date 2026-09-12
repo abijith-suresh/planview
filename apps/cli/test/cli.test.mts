@@ -101,8 +101,8 @@ const readDocumentMetadata = (database: DatabaseSync, id: string): DocumentMetad
   if (row === undefined) {
     return undefined;
   }
-  const createdAt = row["createdAt"];
-  const lastAccessedAt = row["lastAccessedAt"];
+  const createdAt = row.createdAt;
+  const lastAccessedAt = row.lastAccessedAt;
   return typeof createdAt === "number" && typeof lastAccessedAt === "number"
     ? { createdAt, lastAccessedAt }
     : undefined;
