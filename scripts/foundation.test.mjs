@@ -160,7 +160,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     packageJson.scripts,
     "test",
-    "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs scripts/changeset-presence.test.mjs scripts/publish-verified.test.mjs scripts/version-packages.test.mjs scripts/release-workflow.test.mjs scripts/actionlint.test.mjs && npm run test --workspaces --if-present",
+    "node --test scripts/foundation.test.mjs scripts/release-policy.test.mjs scripts/changeset-presence.test.mjs scripts/publish-verified.test.mjs scripts/version-packages.test.mjs scripts/release-workflow.test.mjs scripts/cross-platform-workflow.test.mjs scripts/actionlint.test.mjs && npm run test --workspaces --if-present",
     "test script"
   );
   expectProperty(

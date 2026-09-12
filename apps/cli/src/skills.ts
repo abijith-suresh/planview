@@ -29,6 +29,23 @@ const TEST_PAUSE_AT_ENV = "PLANVIEW_TEST_SKILLS_PAUSE_AT";
 const NO_FOLLOW = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
 const DIRECTORY = process.platform === "win32" ? 0 : constants.O_DIRECTORY;
 const LOCAL_HOSTNAME = hostname();
+const MACOS_SYSTEM_PATH_ALIASES = [
+  ["/etc", "/private/etc"],
+  ["/tmp", "/private/tmp"],
+  ["/var", "/private/var"],
+] as const;
+
+const normalizeHomePath = (path: string) => {
+  if (process.platform !== "darwin") {
+    return path;
+  }
+  for (const [alias, target] of MACOS_SYSTEM_PATH_ALIASES) {
+    if (path === alias || path.startsWith(`${alias}/`)) {
+      return `${target}${path.slice(alias.length)}`;
+    }
+  }
+  return path;
+};
 
 const errorCode = (cause: unknown) =>
   typeof cause === "object" && cause !== null && "code" in cause
@@ -106,7 +123,7 @@ const assertOwnedAndStableDirectory = async (path: string, label: string, privat
   if (isWritableByOtherUsers(stats)) {
     throw new Error(`Refusing to use ${label} because it is writable by another user: ${path}`);
   }
-  if ((stats.mode & 0o700) !== 0o700) {
+  if (process.platform !== "win32" && (stats.mode & 0o700) !== 0o700) {
     throw new Error(
       `Refusing to use ${label} because it is not writable by the current user: ${path}`
     );
@@ -198,7 +215,7 @@ const assertSafeAncestor = (path: string, stats: Stats, isHome: boolean) => {
 };
 
 const ensureHomePath = async (homePath: string) => {
-  const absolute = resolve(homePath);
+  const absolute = normalizeHomePath(resolve(homePath));
   const root = parse(absolute).root;
   const segments = relative(root, absolute)
     .split(sep)
@@ -1096,12 +1113,12 @@ const readExistingSkills = async (skillsDirectory: string) => {
   return existing;
 };
 
-export const skillsInstallPath = () => join(homedir(), ".agents", "skills");
+export const skillsInstallPath = () => join(normalizeHomePath(homedir()), ".agents", "skills");
 
 export const installSkills = async ({ force = false } = {}) => {
   await validateBundle();
 
-  const home = homedir();
+  const home = normalizeHomePath(homedir());
   await ensureHomePath(home);
   const agentsDirectory = join(home, ".agents");
   const skillsDirectory = join(agentsDirectory, "skills");
