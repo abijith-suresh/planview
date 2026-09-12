@@ -160,7 +160,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     packageJson.scripts,
     "test",
-    "node --test \"scripts/**/*.test.mjs\" && npm run test --workspaces --if-present",
+    'node --test "scripts/**/*.test.mjs" && npm run test --workspaces --if-present',
     "test script"
   );
   expectProperty(
@@ -247,7 +247,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     cliPackageJson.scripts,
     "test",
-    "npm run build && node --test \"test/**/*.test.mjs\"",
+    'npm run build && node --test "test/**/*.test.mjs"',
     "CLI test script"
   );
 
@@ -264,7 +264,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     corePackageJson.scripts,
     "test",
-    "npm run build && node --test \"test/**/*.test.mjs\"",
+    'npm run build && node --test "test/**/*.test.mjs"',
     "core test script"
   );
   expectProperty(
@@ -301,7 +301,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     storagePackageJson.scripts,
     "test",
-    "npm run build && node --test \"test/**/*.test.mjs\"",
+    'npm run build && node --test "test/**/*.test.mjs"',
     "storage test script"
   );
   expectProperty(
