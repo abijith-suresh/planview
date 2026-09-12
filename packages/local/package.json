@@ -1,0 +1,27 @@
+{
+  "name": "@planview/local",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build tsconfig.json",
+    "typecheck": "tsc --project tsconfig.typecheck.json",
+    "test": "npm run build && npm run typecheck:test && node --test \"test/**/*.test.mts\"",
+    "typecheck:test": "tsc --project tsconfig.test.json"
+  },
+  "dependencies": {
+    "@planview/core": "0.1.0",
+    "@planview/daemon": "0.1.0",
+    "@planview/storage": "0.1.0",
+    "effect": "4.0.0-rc.115"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1"
+  }
+}
