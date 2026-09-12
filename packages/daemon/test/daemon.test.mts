@@ -546,10 +546,10 @@ test("lifecycle and status reject a descriptor endpoint mismatch with a typed er
         operation(),
         (error) =>
           isTaggedError(error, "DaemonDescriptorEndpointMismatchError") &&
-          error.descriptorHost === "localhost" &&
-          error.descriptorPort === 4776 &&
-          error.configHost === "127.0.0.1" &&
-          error.configPort === 4777
+          error["descriptorHost"] === "localhost" &&
+          error["descriptorPort"] === 4776 &&
+          error["configHost"] === "127.0.0.1" &&
+          error["configPort"] === 4777
       );
     }
   } finally {
@@ -1097,6 +1097,8 @@ test("automatic cleanup drains resumable work after a bounded manual slice", asy
       return ready.status === 200 ? true : undefined;
     });
     metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    const currentMetadataStore = metadataStore;
+    assert.ok(currentMetadataStore);
     const documents = 700;
     for (let index = 0; index < documents; index += 1) {
       const documentId = `a${index.toString(36).padStart(20, "0")}`;
