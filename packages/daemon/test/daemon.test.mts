@@ -30,7 +30,7 @@ import {
   openStorage,
   V1_CLEANUP_ITEM_BUDGET,
 } from "@planview/storage";
-import type { DocumentMetadata, MetadataStore } from "@planview/storage";
+import type { MetadataStore } from "@planview/storage";
 import { Effect } from "effect";
 import * as daemon from "../dist/index.js";
 
@@ -63,8 +63,8 @@ const isTaggedError = (error: unknown, tag: string): error is TaggedError => {
   if (typeof error !== "object" || error === null) {
     return false;
   }
-  const record = error as Record<string, unknown>;
-  return record["_tag"] === tag && typeof record["message"] === "string";
+  const record = error as TaggedError;
+  return record._tag === tag && typeof record.message === "string";
 };
 
 const waitFor = async <T,>(
@@ -546,10 +546,10 @@ test("lifecycle and status reject a descriptor endpoint mismatch with a typed er
         operation(),
         (error) =>
           isTaggedError(error, "DaemonDescriptorEndpointMismatchError") &&
-          error["descriptorHost"] === "localhost" &&
-          error["descriptorPort"] === 4776 &&
-          error["configHost"] === "127.0.0.1" &&
-          error["configPort"] === 4777
+          error.descriptorHost === "localhost" &&
+          error.descriptorPort === 4776 &&
+          error.configHost === "127.0.0.1" &&
+          error.configPort === 4777
       );
     }
   } finally {
@@ -605,7 +605,7 @@ test("serves a page bundle root and its asset entries", async () => {
   const runtimeDir = join(appDataDir, "runtime");
   const port = await freePort();
   const documentId = validateDocumentId("e".repeat(21));
-  let child;
+  let child: ChildProcess | undefined;
   try {
     await seedPublishedBundle(appDataDir, fixture, documentId, [
       { path: "index.html", contents: Buffer.from("<h1>bundle home</h1>") },
@@ -824,6 +824,8 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
       return ready.status === 200 ? true : undefined;
     });
     metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    const currentMetadataStore = metadataStore;
+    assert.ok(currentMetadataStore);
     // One bounded cleanup slice must leave work for shutdown to overlap.
     const documents = V1_CLEANUP_ITEM_BUDGET + 1;
     for (let index = 0; index < documents; index += 1) {
@@ -841,7 +843,7 @@ test("shutdown waits for a manual cleanup before closing storage", async () => {
       headers: { "x-planview-secret": descriptor.secret },
     });
     await waitFor(() => {
-      const remaining = metadataStore!.getDocumentAggregate().count;
+      const remaining = currentMetadataStore.getDocumentAggregate().count;
       return remaining > 0 && remaining < documents ? remaining : undefined;
     });
     const result = await daemon.stopDaemon(
@@ -934,7 +936,8 @@ test("closing a publish response cancels the request before it reaches the gate"
       return ready.status === 200 ? true : undefined;
     });
     const body = JSON.stringify({ sourcePath });
-    const connection = (socket = createConnection({ host: "127.0.0.1", port }));
+    const connection = createConnection({ host: "127.0.0.1", port });
+    socket = connection;
     connection.on("error", () => undefined);
     await new Promise<void>((resolve, reject) => {
       connection.once("connect", () => resolve());
@@ -966,6 +969,8 @@ test("closing a publish response cancels the request before it reaches the gate"
     );
     assert.equal(second.status, 201);
     metadataStore = Effect.runSync(openStorage(join(appDataDir, "metadata.sqlite")));
+    const currentMetadataStore = metadataStore;
+    assert.ok(currentMetadataStore);
     assert.equal(metadataStore.getDocumentAggregate().count, 1);
   } finally {
     socket?.destroy();
@@ -1111,7 +1116,7 @@ test("automatic cleanup drains resumable work after a bounded manual slice", asy
     assert.equal(cleanResponse.status, 200);
     assert.equal(Date.now() - startedAt < 4_000, true);
     await waitFor(
-      () => (metadataStore!.getDocumentAggregate().count === 0 ? true : undefined),
+      () => (currentMetadataStore.getDocumentAggregate().count === 0 ? true : undefined),
       15_000
     );
     await daemon.stopDaemon(daemon.resolveDaemonConfigForTest({ appDataDir, runtimeDir, port }));
@@ -1133,7 +1138,8 @@ test("shutdown force-closes an idle connection by its deadline", async () => {
 
   try {
     await waitFor(() => descriptorAt(runtimeDir));
-    const connection = (socket = createConnection({ host: "127.0.0.1", port }));
+    const connection = createConnection({ host: "127.0.0.1", port });
+    socket = connection;
     await new Promise<void>((resolve, reject) => {
       connection.once("error", reject);
       connection.once("connect", () => resolve());
