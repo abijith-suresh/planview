@@ -270,6 +270,21 @@ test("recognized options reject trailing arguments", () => {
   assert.match(result.stderr, /^Unexpected argument: unexpected\n/);
 });
 
+test("publish and preview explain that they need a source path", async () => {
+  for (const command of ["publish", "preview"] as const) {
+    const stderr: string[] = [];
+    assert.equal(
+      await main(
+        [command],
+        () => undefined,
+        (message) => stderr.push(message)
+      ),
+      1
+    );
+    assert.match(stderr[0] ?? "", /^Missing source file or folder:/);
+  }
+});
+
 test("the installed bin invokes the built CLI", () => {
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const result = spawnSync(

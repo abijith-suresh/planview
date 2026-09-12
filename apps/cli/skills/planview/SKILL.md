@@ -8,14 +8,20 @@ metadata:
 
 # Planview
 
-Use Planview when an HTML artifact needs a stable, shareable URL on the local machine.
+Use Planview when an HTML artifact needs a stable URL on the local machine.
 A publication is an immutable snapshot: changing the source file never changes a URL
 that was already printed.
 
 ## Workflow
 
 1. Confirm the input is a complete `.html` or `.htm` file no larger than 10 MiB.
-2. Publish it and capture the URL:
+2. Preview it when you need to inspect the result in a browser:
+
+   ```sh
+   planview preview ./report.html
+   ```
+
+   Use `publish` when you only need the URL:
 
    ```sh
    planview publish ./report.html
