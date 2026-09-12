@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  type AppDataPlatform,
   resolveAppDataPaths,
   V1_CLEANUP_INTERVAL_HOURS,
   V1_MAX_HTML_SIZE_BYTES,
@@ -11,9 +12,17 @@ import {
   V1_STORAGE_QUOTA_BYTES,
 } from "../dist/index.js";
 
-const dependencies = (platform, homeDir, env = {}) => ({ platform, homeDir, env });
+const dependencies = (
+  platform: AppDataPlatform,
+  homeDir: string,
+  env: Record<string, string> = {}
+) => ({
+  platform,
+  homeDir,
+  env,
+});
 
-const paths = (appDataDir, separator = "/") => ({
+const paths = (appDataDir: string, separator = "/") => ({
   appDataDir,
   databasePath: `${appDataDir}${separator}metadata.sqlite`,
   documentsDir: `${appDataDir}${separator}documents`,

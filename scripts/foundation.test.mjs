@@ -264,7 +264,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     corePackageJson.scripts,
     "test",
-    'npm run build && node --test "test/**/*.test.mjs"',
+    'npm run build && npm run typecheck:test && node --test "test/**/*.test.mts"',
     "core test script"
   );
   expectProperty(
@@ -272,6 +272,12 @@ test("repository foundation has the expected configuration", () => {
     "typecheck",
     "tsc --project tsconfig.typecheck.json",
     "core typecheck script"
+  );
+  expectProperty(
+    corePackageJson.scripts,
+    "typecheck:test",
+    "tsc --project tsconfig.test.json",
+    "core test typecheck script"
   );
   const coreTsConfig = readJson("packages/core/tsconfig.json");
   expectProperty(coreTsConfig.compilerOptions, "composite", true, "core composite build setting");
