@@ -6,6 +6,11 @@ The public `@abijith-suresh/planview` command-line package. It publishes immutab
 ```sh
 npx @abijith-suresh/planview publish ./report.html
 # http://localhost:4777/<id>
+
+# A folder publishes index.html and its assets as one snapshot
+npx @abijith-suresh/planview publish ./site
+# http://localhost:4777/<id>
+
 ```
 
 The daemon can also be managed directly:
@@ -22,6 +27,8 @@ The daemon is detached, bound only to the fixed `127.0.0.1:4777`, and stores
 its protected runtime descriptor below the durable Planview app-data
 directory. `publish` validates the `.html`/`.htm` source and inclusive 10 MiB
 limit before starting the daemon, then prints only the resulting localhost URL.
+When the input is a folder, it must contain `index.html`; the folder is packed
+into one immutable snapshot, with asset paths available below `/<id>/`.
 `get` accepts a document id or exact local Planview URL and writes only the
 stored HTML bytes to stdout; invalid references and missing documents fail on
 stderr. `clean` starts or reuses the daemon and invokes its authenticated

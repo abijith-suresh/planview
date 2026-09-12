@@ -1339,12 +1339,66 @@ const PRIVATE_MANAGEMENT_PATHS = new Set([
   "/internal/shutdown",
 ]);
 
-const documentIdFromPath = (url: string) => {
+type PublishedDocumentRoute = Readonly<{
+  readonly id: string;
+  readonly entryPath?: string;
+}>;
+
+const documentRouteFromPath = (url: string): PublishedDocumentRoute | undefined => {
   if (!url.startsWith("/") || url.length < 2) {
     return undefined;
   }
-  const candidate = url.slice(1);
-  return candidate.includes("/") ? undefined : candidate;
+  const segments = url.slice(1).split("/");
+  const id = segments.shift();
+  if (id === undefined || id.length === 0) {
+    return undefined;
+  }
+  if (segments.length === 0) {
+    return { id };
+  }
+  const decoded = [];
+  for (const segment of segments) {
+    try {
+      const value = decodeURIComponent(segment);
+      if (value.includes("/") || value.includes("\\") || value.includes("\0")) {
+        return undefined;
+      }
+      decoded.push(value);
+    } catch {
+      return undefined;
+    }
+  }
+  return {
+    id,
+    entryPath: decoded.length === 1 && decoded[0] === "" ? "index.html" : decoded.join("/"),
+  };
+};
+
+const contentTypeForPath = (path: string) => {
+  const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
+  return (
+    {
+      ".html": "text/html",
+      ".htm": "text/html",
+      ".css": "text/css",
+      ".js": "text/javascript",
+      ".mjs": "text/javascript",
+      ".json": "application/json",
+      ".svg": "image/svg+xml",
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".gif": "image/gif",
+      ".webp": "image/webp",
+      ".avif": "image/avif",
+      ".ico": "image/x-icon",
+      ".woff": "font/woff",
+      ".woff2": "font/woff2",
+      ".ttf": "font/ttf",
+      ".otf": "font/otf",
+      ".wasm": "application/wasm",
+    }[extension] ?? "application/octet-stream"
+  );
 };
 
 const handlePublishedDocument = async (
@@ -1353,6 +1407,7 @@ const handlePublishedDocument = async (
   publicationCoordinator: DocumentPublicationCoordinator,
   metadataStore: MetadataStore,
   permit: DocumentReadPermit,
+  entryPath?: string,
   requestSignal?: AbortSignal
 ) => {
   const id = (() => {
@@ -1373,7 +1428,10 @@ const handlePublishedDocument = async (
     return;
   }
 
-  const document = await publicationCoordinator.readPublishedDocumentLease(id).catch((cause) => {
+  const document = await (entryPath === undefined
+    ? publicationCoordinator.readPublishedDocumentLease(id)
+    : publicationCoordinator.readPublishedDocumentEntryLease(id, entryPath)
+  ).catch((cause) => {
     if (
       cause instanceof DocumentPublicationNotFoundError ||
       cause instanceof DocumentPublicationReadError
@@ -1394,7 +1452,15 @@ const handlePublishedDocument = async (
   }
 
   res.statusCode = 200;
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  const contentType = entryPath === undefined ? "text/html" : contentTypeForPath(entryPath);
+  res.setHeader(
+    "Content-Type",
+    contentType.startsWith("text/") ||
+      contentType === "application/json" ||
+      contentType === "image/svg+xml"
+      ? `${contentType}; charset=utf-8`
+      : contentType
+  );
   res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
   const controller = new AbortController();
   const resettableSignal = AbortSignal.any(
@@ -1510,12 +1576,50 @@ const handleRequest = async (
   // remains public without weakening authentication on management endpoints.
   const privatePath = PRIVATE_MANAGEMENT_PATHS.has(url);
   if (!privatePath) {
-    const documentId = documentIdFromPath(url);
-    if (documentId !== undefined) {
+    const documentRoute = documentRouteFromPath(url);
+    if (documentRoute !== undefined) {
       if (request.method === "GET") {
         if (!isReady()) {
           response(res, 503, JSON.stringify({ error: "not_ready" }));
           return;
+        }
+        let documentId: import("@planview/core").DocumentId;
+        try {
+          documentId = validateDocumentId(documentRoute.id);
+        } catch {
+          response(
+            res,
+            404,
+            htmlError(404, "Not found", "That Planview document does not exist."),
+            "text/html"
+          );
+          return;
+        }
+        if (documentRoute.entryPath === undefined) {
+          try {
+            const format = await publicationCoordinator.inspectPublishedDocument(documentId);
+            if (format.kind === "bundle") {
+              res.statusCode = 308;
+              res.setHeader("Location", `/${documentId}/`);
+              res.setHeader("Content-Length", "0");
+              res.end();
+              return;
+            }
+          } catch (cause) {
+            if (
+              cause instanceof DocumentPublicationNotFoundError ||
+              cause instanceof DocumentPublicationReadError
+            ) {
+              response(
+                res,
+                404,
+                htmlError(404, "Not found", "That Planview document does not exist."),
+                "text/html"
+              );
+              return;
+            }
+            throw cause;
+          }
         }
         let permit: DocumentReadPermit | undefined;
         try {
@@ -1537,6 +1641,7 @@ const handleRequest = async (
             publicationCoordinator,
             metadataStore,
             permit,
+            documentRoute.entryPath,
             requestSignal
           );
         } catch (cause) {

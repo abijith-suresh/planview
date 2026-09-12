@@ -15,8 +15,10 @@ requires them to be owned by the current UID, and writes the descriptor and
 single lifecycle lock as `0600` files owned by that UID. Runtime state must remain below
 the Planview app-data directory. The loopback listener also requires its random
 secret for lifecycle, publish, and cleanup management endpoints. Published
-document ids are served directly as HTML without an application wrapper; missing
-documents return HTML 404 responses and other methods return 405. Startup
+document ids are served directly as HTML without an application wrapper. A page
+bundle redirects `/<id>` to `/<id>/`, serves its root `index.html`, and serves
+validated asset paths below that URL. Missing documents or bundle entries return
+HTML 404 responses and other methods return 405. Startup
 reconciles interrupted publication state and metadata/file inconsistencies before
 readiness. The same authenticated cleanup policy removes snapshots whose
 `lastAccessedAt` is older than the fixed 30-day retention window at startup and

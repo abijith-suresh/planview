@@ -18,10 +18,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { BUNDLE_HEADER_BYTES, createBundleHeader, encodeBundleManifest } from "@planview/core";
 import { Effect } from "effect";
 import {
   DocumentFileAlreadyExistsError,
   DocumentFileFinalizeError,
+  DocumentFileNotBundleError,
   DocumentFileNotRegularError,
   DocumentFileStoreClosedError,
   DocumentFileStorePathError,
@@ -61,6 +63,23 @@ const withStore = (callback) =>
   });
 
 const readStream = async (stream) => Buffer.concat(await stream.toArray());
+
+const makeBundle = (files) => {
+  let offset = 0;
+  const entries = files.map(({ path, contents }) => {
+    const entry = { path, offset, size: contents.byteLength };
+    offset += contents.byteLength;
+    return entry;
+  });
+  const manifest = encodeBundleManifest(entries);
+  const header = createBundleHeader(manifest);
+  assert.equal(BUNDLE_HEADER_BYTES, header.byteLength);
+  return Buffer.concat([
+    Buffer.from(header),
+    Buffer.from(manifest),
+    ...files.map(({ contents }) => contents),
+  ]);
+};
 
 const waitForChild = (child, timeoutMs) =>
   new Promise((resolve) => {
@@ -898,6 +917,60 @@ test("reads and deletes safely, including missing documents", () =>
     assert.equal(await store.deleteDocumentFile(otherId), true);
     assert.equal(await store.deleteDocumentFile(otherId), false);
     assert.deepEqual(await readdir(join(directory, "documents")), []);
+  }));
+
+test("inspects bundles and reads only the requested entry range", () =>
+  withStore(async ({ directory, store }) => {
+    const bundle = makeBundle([
+      { path: "index.html", contents: Buffer.from("<h1>home</h1>") },
+      { path: "assets/app.css", contents: Buffer.from("body { color: red; }") },
+      { path: "empty.txt", contents: Buffer.alloc(0) },
+    ]);
+    const source = join(directory, "bundle.html");
+    await writeFile(source, bundle);
+    const handle = await store.stageSourceFile(source);
+    await store.finalizeStagedFile(handle, validId);
+
+    const format = await store.inspectDocumentFormat(validId);
+    assert.equal(format.kind, "bundle");
+    assert.deepEqual(
+      format.manifest.entries.map(({ path, size }) => ({ path, size })),
+      [
+        { path: "index.html", size: 13 },
+        { path: "assets/app.css", size: 20 },
+        { path: "empty.txt", size: 0 },
+      ]
+    );
+
+    const cssLease = await store.readDocumentEntryLease(validId, "assets/app.css");
+    try {
+      assert.equal((await readStream(cssLease.stream)).toString(), "body { color: red; }");
+    } finally {
+      cssLease.release();
+    }
+    const emptyLease = await store.readDocumentEntryLease(validId, "empty.txt");
+    try {
+      assert.equal((await readStream(emptyLease.stream)).byteLength, 0);
+    } finally {
+      emptyLease.release();
+    }
+    await assert.rejects(
+      store.readDocumentEntryLease(validId, "../secret"),
+      (error) => error.name === "InvalidBundleError"
+    );
+  }));
+
+test("does not treat a raw HTML document as a page bundle", () =>
+  withStore(async ({ directory, store }) => {
+    const source = join(directory, "raw.html");
+    await writeFile(source, "<p>raw</p>");
+    const handle = await store.stageSourceFile(source);
+    await store.finalizeStagedFile(handle, validId);
+    assert.deepEqual(await store.inspectDocumentFormat(validId), { kind: "html" });
+    await assert.rejects(
+      store.readDocumentEntryLease(validId, "index.html"),
+      (error) => error instanceof DocumentFileNotBundleError
+    );
   }));
 
 test("cleans a failed finalization and reports path initialization errors", async () => {

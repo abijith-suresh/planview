@@ -1,4 +1,19 @@
 export {
+  BUNDLE_HEADER_BYTES,
+  BUNDLE_MAGIC_BYTES,
+  BundleEntryNotFoundError,
+  type BundleManifest,
+  type BundleManifestEntry,
+  createBundleHeader,
+  encodeBundleManifest,
+  findBundleEntry,
+  InvalidBundleError,
+  isBundleHeader,
+  parseBundleHeader,
+  parseBundleManifest,
+  validateBundlePath,
+} from "./bundle-format.js";
+export {
   DOCUMENT_ID_ALPHABET,
   DOCUMENT_ID_LENGTH,
   type DocumentId,
@@ -18,12 +33,15 @@ export {
 } from "./paths.js";
 export {
   V1_CLEANUP_INTERVAL_HOURS,
+  V1_MAX_BUNDLE_FILES,
+  V1_MAX_BUNDLE_MANIFEST_BYTES,
+  V1_MAX_BUNDLE_PATH_BYTES,
   V1_MAX_HTML_SIZE_BYTES,
   V1_POLICY,
-  V1_STORAGE_METADATA_BYTES_PER_DOCUMENT,
-  V1_STORAGE_QUOTA_BYTES,
   V1_PORT,
   V1_RETENTION_DAYS,
+  V1_STORAGE_METADATA_BYTES_PER_DOCUMENT,
+  V1_STORAGE_QUOTA_BYTES,
 } from "./policy.js";
 export {
   InvalidSourceFileSizeError,

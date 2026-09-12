@@ -496,6 +496,47 @@ test("publish starts or reuses the daemon, serves raw immutable HTML, and record
   }
 });
 
+test("publish accepts a page folder and serves its root and assets", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-page-folder-test-"));
+  const appDataDir = join(runtimeRoot, "data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: appDataDir,
+    PLANVIEW_RUNTIME_DIR: runtimeDir,
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  };
+  const executeInFixture = (...args) =>
+    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const site = join(runtimeRoot, "site");
+  mkdirSync(join(site, "assets"), { recursive: true });
+  writeFileSync(join(site, "index.html"), "<h1>folder home</h1>");
+  writeFileSync(join(site, "assets", "app.css"), "body { color: blue; }");
+
+  try {
+    const published = executeInFixture("publish", site);
+    assert.equal(published.status, 0, published.stderr);
+    assert.equal(published.stderr, "");
+    const url = published.stdout.trim();
+    const id = url.split("/").at(-1);
+    assert.match(id, /^[A-Za-z0-9_-]{21}$/);
+
+    const page = await fetch(url.replace("localhost", "127.0.0.1"));
+    assert.equal(page.status, 200);
+    assert.equal(await page.text(), "<h1>folder home</h1>");
+    const stylesheet = await fetch(`http://127.0.0.1:${port}/${id}/assets/app.css`);
+    assert.equal(stylesheet.status, 200);
+    assert.equal(stylesheet.headers.get("content-type"), "text/css; charset=utf-8");
+    assert.equal(await stylesheet.text(), "body { color: blue; }");
+    assert.equal(readFileSync(join(site, "index.html"), "utf8"), "<h1>folder home</h1>");
+  } finally {
+    executeInFixture("stop");
+    await removeFixture(runtimeRoot);
+  }
+});
+
 test("get accepts ids and exact local URLs but rejects ambiguous references before startup", async () => {
   const port = 49123;
   const id = "a".repeat(21);

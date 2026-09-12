@@ -17,13 +17,22 @@ import {
 import { link, lstat, mkdir, open, readdir, rmdir, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { isAbsolute, join, normalize, parse, relative, resolve, sep } from "node:path";
-import { Transform } from "node:stream";
+import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
+  BUNDLE_HEADER_BYTES,
+  BundleEntryNotFoundError,
+  type BundleManifest,
+  findBundleEntry,
+  InvalidBundleError,
   InvalidSourceFileSizeError,
+  isBundleHeader,
+  parseBundleHeader,
+  parseBundleManifest,
   SourceFileTooLargeError,
   UnsupportedSourceExtensionError,
   V1_MAX_HTML_SIZE_BYTES,
+  validateBundlePath,
   validateDocumentId,
   validateSourceFileExtension,
   validateSourceFileSize,
@@ -149,6 +158,10 @@ export type DocumentFileTargetCommit = (
 
 export type DocumentFileResourceState = "absent" | "retained" | "unknown";
 export type DocumentFileTargetRecoveryPolicy = "delete" | "retain";
+
+export type DocumentFileFormat =
+  | Readonly<{ readonly kind: "html" }>
+  | Readonly<{ readonly kind: "bundle"; readonly manifest: BundleManifest }>;
 
 export type DocumentFileIdentity = Readonly<Pick<Stats, "dev" | "ino" | "birthtimeMs">>;
 
@@ -304,6 +317,11 @@ export class DocumentFileReadError extends Data.TaggedError("DocumentFileReadErr
   readonly message: string;
 }> {}
 
+export class DocumentFileNotBundleError extends Data.TaggedError("DocumentFileNotBundleError")<{
+  readonly id: string;
+  readonly message: string;
+}> {}
+
 export class DocumentFileReadActiveError extends Data.TaggedError("DocumentFileReadActiveError")<{
   readonly id: string;
   readonly message: string;
@@ -332,6 +350,8 @@ export interface DocumentFileStore {
   readonly readDocument: (id: string) => Promise<ReadStream>;
   readonly readDocumentLease: (id: string) => Promise<DocumentFileReadLease>;
   readonly readDocumentFile: (id: string) => Promise<ReadStream>;
+  readonly inspectDocumentFormat: (id: string) => Promise<DocumentFileFormat>;
+  readonly readDocumentEntryLease: (id: string, path: string) => Promise<DocumentFileReadLease>;
   readonly deleteDocumentFile: (
     id: string,
     expectedTarget?: DocumentFileTargetCapability
@@ -407,6 +427,42 @@ const normalizeStoragePath = (path: string) => {
     }
   }
   return path;
+};
+
+const readFileRange = async (
+  file: Awaited<ReturnType<typeof open>>,
+  position: number,
+  length: number
+) => {
+  const buffer = Buffer.alloc(length);
+  let offset = 0;
+  while (offset < length) {
+    const result = await file.read(buffer, offset, length - offset, position + offset);
+    if (result.bytesRead === 0) {
+      break;
+    }
+    offset += result.bytesRead;
+  }
+  return buffer.subarray(0, offset);
+};
+
+const readDocumentFormat = async (
+  file: Awaited<ReturnType<typeof open>>,
+  totalSize: number
+): Promise<DocumentFileFormat> => {
+  const header = await readFileRange(file, 0, BUNDLE_HEADER_BYTES);
+  if (!isBundleHeader(header)) {
+    return { kind: "html" };
+  }
+  const { manifestBytes } = parseBundleHeader(header);
+  const manifest = await readFileRange(file, BUNDLE_HEADER_BYTES, manifestBytes);
+  if (manifest.byteLength !== manifestBytes) {
+    throw new InvalidBundleError("The bundle manifest is truncated.");
+  }
+  return {
+    kind: "bundle",
+    manifest: parseBundleManifest(manifest, BUNDLE_HEADER_BYTES + manifestBytes, totalSize),
+  };
 };
 
 const validateDirectoryPath = (path: unknown, label: string) => {
@@ -2734,7 +2790,12 @@ const createStore = ({
     }
   };
 
-  const readDocumentLease = async (id: string) => {
+  type DocumentStreamFactory = (
+    file: Awaited<ReturnType<typeof open>>,
+    totalSize: number
+  ) => Promise<ReadStream>;
+
+  const readDocumentLeaseWith = async (id: string, createStream: DocumentStreamFactory) => {
     const releaseOperation = beginOperation();
     try {
       ensureTrustedRoots();
@@ -2754,9 +2815,10 @@ const createStore = ({
           await syncDirectory(stagingDir);
           file = await openWithoutFollowingLinks(path, constants.O_RDONLY, path, false);
           ensureTrustedRoots();
+          const totalSize = (await file.stat()).size;
           readReference = await createReadReference(stagingDir, documentId, now);
           await syncDirectory(stagingDir);
-          stream = file.createReadStream({ autoClose: true });
+          stream = await createStream(file, totalSize);
           let released = false;
           const releaseRead = () => {
             if (released) {
@@ -2789,7 +2851,12 @@ const createStore = ({
               () => undefined
             );
           }
-          if (cause instanceof DocumentFileNotRegularError) {
+          if (
+            cause instanceof DocumentFileNotRegularError ||
+            cause instanceof DocumentFileNotBundleError ||
+            cause instanceof BundleEntryNotFoundError ||
+            cause instanceof InvalidBundleError
+          ) {
             throw cause;
           }
           throw new DocumentFileReadError({
@@ -2802,6 +2869,69 @@ const createStore = ({
     } finally {
       releaseOperation();
     }
+  };
+
+  const readDocumentLease = (id: string) =>
+    readDocumentLeaseWith(id, async (file) => file.createReadStream({ autoClose: true }));
+
+  const inspectDocumentFormat = async (id: string) => {
+    const releaseOperation = beginOperation();
+    try {
+      ensureTrustedRoots();
+      const documentId = validateDocumentId(id);
+      return await withDocumentMutex(documentId, async () => {
+        const path = documentPath(documentId);
+        let file: Awaited<ReturnType<typeof open>> | undefined;
+        let targetLease: FinalizationLockLease | undefined;
+        try {
+          targetLease = await acquireTargetLock(documentId);
+          file = await openWithoutFollowingLinks(path, constants.O_RDONLY, path, false);
+          ensureTrustedRoots();
+          const format = await readDocumentFormat(file, (await file.stat()).size);
+          await releaseTargetLock(documentId, targetLease);
+          targetLease = undefined;
+          return format;
+        } catch (cause) {
+          if (targetLease !== undefined) {
+            await removeFinalizationLockDirectory(targetLockPath(documentId), targetLease).catch(
+              () => undefined
+            );
+          }
+          if (cause instanceof InvalidBundleError || cause instanceof DocumentFileNotRegularError) {
+            throw cause;
+          }
+          throw new DocumentFileReadError({
+            id: documentId,
+            cause,
+            message: `Could not inspect document file ${documentId}: ${describe(cause)}`,
+          });
+        } finally {
+          await file?.close().catch(() => undefined);
+        }
+      });
+    } finally {
+      releaseOperation();
+    }
+  };
+
+  const readDocumentEntryLease = async (id: string, path: string) => {
+    const entryPathValue = validateBundlePath(path);
+    return readDocumentLeaseWith(id, async (file, totalSize) => {
+      const format = await readDocumentFormat(file, totalSize);
+      if (format.kind === "html") {
+        throw new DocumentFileNotBundleError({
+          id,
+          message: `Document ${id} is a single HTML file, not a page bundle.`,
+        });
+      }
+      const entry = findBundleEntry(format.manifest, entryPathValue);
+      const start = format.manifest.dataOffset + entry.offset;
+      if (entry.size === 0) {
+        await file.close();
+        return Readable.from([]) as unknown as ReadStream;
+      }
+      return file.createReadStream({ autoClose: true, start, end: start + entry.size - 1 });
+    });
   };
 
   const readDocument = async (id: string) => {
@@ -3566,6 +3696,8 @@ const createStore = ({
     cloneStagedFile,
     discardStagedFile,
     readDocumentLease,
+    inspectDocumentFormat,
+    readDocumentEntryLease,
   };
 };
 
