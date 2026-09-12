@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "astro build",
-    "test": "node --test test/site.test.mjs",
+    "test": "node --test \"test/**/*.test.mjs\"",
     "typecheck": "astro check"
   },
   "devDependencies": {
