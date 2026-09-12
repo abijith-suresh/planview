@@ -267,11 +267,13 @@ const publishSource = (sourcePath: string) =>
       const prepared = await preparePublishSource(sourcePath);
       try {
         const config = resolveCliDaemonConfig();
-        const published = await publishDocument(config, {
-          daemonScriptPath: daemonScriptPath(),
-          sourcePath: prepared.sourcePath,
-          sourceSizeBytes: prepared.sourceSizeBytes,
-        });
+        const published = await Effect.runPromise(
+          publishDocument(config, {
+            daemonScriptPath: daemonScriptPath(),
+            sourcePath: prepared.sourcePath,
+            sourceSizeBytes: prepared.sourceSizeBytes,
+          })
+        );
         return `http://localhost:${published.descriptor.port}/${published.id}`;
       } finally {
         await prepared.cleanup();
@@ -339,11 +341,13 @@ const runGetCommand = (reference: string, stdout: StdoutWriter) =>
     try: async () => {
       const config = resolveCliDaemonConfig();
       const documentId = parseDocumentReference(reference, config.port);
-      await retrieveDocument(config, {
-        daemonScriptPath: daemonScriptPath(),
-        documentId,
-        onChunk: (chunk) => stdout(chunk),
-      });
+      await Effect.runPromise(
+        retrieveDocument(config, {
+          daemonScriptPath: daemonScriptPath(),
+          documentId,
+          onChunk: (chunk) => stdout(chunk),
+        })
+      );
       return 0;
     },
     catch: (cause) =>
@@ -376,7 +380,7 @@ const runDaemonCommand = (
     try: async () => {
       const config = resolveCliDaemonConfig();
       if (command === "status") {
-        const result = await inspectDaemon(config);
+        const result = await Effect.runPromise(inspectDaemon(config));
         await stdout(
           result.state === "running"
             ? formatRunning(result.status)
@@ -386,13 +390,15 @@ const runDaemonCommand = (
       }
 
       if (command === "stop") {
-        await stopDaemon(config);
+        await Effect.runPromise(stopDaemon(config));
         await stdout("Planview daemon stopped.\n");
         return 0;
       }
 
       if (command === "restart") {
-        const result = await restartDaemon(config, { daemonScriptPath: daemonScriptPath() });
+        const result = await Effect.runPromise(
+          restartDaemon(config, { daemonScriptPath: daemonScriptPath() })
+        );
         await stdout(
           `Planview daemon restarted at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
         );
@@ -400,7 +406,9 @@ const runDaemonCommand = (
       }
 
       if (command === "clean") {
-        const result = await cleanDaemon(config, { daemonScriptPath: daemonScriptPath() });
+        const result = await Effect.runPromise(
+          cleanDaemon(config, { daemonScriptPath: daemonScriptPath() })
+        );
         const failures = result.result.failures.length;
         const summary =
           result.result.removedDocuments === 0 &&
@@ -419,7 +427,9 @@ const runDaemonCommand = (
         return failures === 0 ? 0 : 1;
       }
 
-      const result = await startDetachedDaemon(config, { daemonScriptPath: daemonScriptPath() });
+      const result = await Effect.runPromise(
+        startDetachedDaemon(config, { daemonScriptPath: daemonScriptPath() })
+      );
       await stdout(
         result.reused
           ? `Planview daemon is already running at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
