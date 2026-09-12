@@ -29,6 +29,7 @@ import type {
 } from "../dist/index.js";
 
 const id = (character: string): DocumentId => character.repeat(21) as DocumentId;
+const runEffect = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
 const firstId = id("a");
 const secondId = id("b");
 const thirdId = id("c");
@@ -110,8 +111,10 @@ test("rejects a publication at the fixed quota and compensates its finalized fil
       await writeFile(source, "x");
 
       await assert.rejects(
-        coordinator(documentFileStore, metadataStore, { generateId: () => secondId }).publish(
-          source
+        runEffect(
+          coordinator(documentFileStore, metadataStore, { generateId: () => secondId }).publish(
+            source
+          )
         ),
         (error) =>
           error instanceof DocumentPublicationError &&
@@ -130,7 +133,7 @@ test("publishes one durable immutable result without changing source input", () 
       const original = Buffer.from("<p>snapshot</p>");
       await writeFile(source, original);
 
-      const result = await coordinator(documentFileStore, metadataStore).publish(source);
+      const result = await runEffect(coordinator(documentFileStore, metadataStore).publish(source));
 
       assert.equal(Object.isFrozen(result), true);
       assert.equal(Object.isFrozen(result.metadata), true);
@@ -156,7 +159,7 @@ test("rechecks cancellation before the metadata publication commit", () =>
       });
 
       await assert.rejects(
-        publication.publish(source, controller.signal),
+        runEffect(publication.publish(source, controller.signal)),
         (error) => error instanceof DocumentPublicationError
       );
       assert.equal(metadataStore.getDocumentMetadata(firstId), undefined);
@@ -174,7 +177,7 @@ test("metadata-gated reads reject a physically finalized file without a row", ()
     const reader = coordinator(documentFileStore, metadataStore);
 
     await assert.rejects(
-      reader.readPublishedDocument(firstId),
+      runEffect(reader.readPublishedDocument(firstId)),
       (error) => error instanceof DocumentPublicationNotFoundError
     );
     metadataStore.insertDocumentMetadata({
@@ -183,7 +186,7 @@ test("metadata-gated reads reject a physically finalized file without a row", ()
       lastAccessedAt: 1,
       size: 13,
     });
-    const stream = await reader.readPublishedDocument(firstId);
+    const stream = await runEffect(reader.readPublishedDocument(firstId));
     assert.equal((await stream.toArray()).toString(), "not committed");
   }));
 
@@ -199,7 +202,7 @@ test("metadata-gated reads fail closed when metadata lookup is ambiguous", () =>
     });
 
     await assert.rejects(
-      reader.readPublishedDocument(firstId),
+      runEffect(reader.readPublishedDocument(firstId)),
       (error) => error instanceof DocumentPublicationReadError
     );
   }));
@@ -221,9 +224,11 @@ test("keeps a staged snapshot across file collisions even when input is deleted 
           return handle;
         },
       };
-      const result = await coordinator(wrappedStore, metadataStore, {
-        generateId: () => idAt([firstId, secondId], generated++),
-      }).publish(source);
+      const result = await runEffect(
+        coordinator(wrappedStore, metadataStore, {
+          generateId: () => idAt([firstId, secondId], generated++),
+        }).publish(source)
+      );
 
       assert.equal(result.id, secondId);
       assert.equal(
@@ -252,9 +257,11 @@ test("does not treat matching metadata fields as ownership after a unique error"
       };
 
       await assert.rejects(
-        coordinator(documentFileStore, throwingMetadata, {
-          generateId: () => idAt([firstId, secondId], generated++),
-        }).publish(source),
+        runEffect(
+          coordinator(documentFileStore, throwingMetadata, {
+            generateId: () => idAt([firstId, secondId], generated++),
+          }).publish(source)
+        ),
         (error) =>
           error instanceof DocumentPublicationError &&
           error.orphan?.kind === "document-file-and-metadata-row" &&
@@ -294,9 +301,11 @@ test("retains an ambiguous unique publication pair instead of silently retrying"
       };
 
       await assert.rejects(
-        coordinator(documentFileStore, ambiguousMetadata, {
-          generateId: () => idAt([firstId, secondId], generated++),
-        }).publish(source),
+        runEffect(
+          coordinator(documentFileStore, ambiguousMetadata, {
+            generateId: () => idAt([firstId, secondId], generated++),
+          }).publish(source)
+        ),
         (error) =>
           error instanceof DocumentPublicationError &&
           error.orphan?.kind === "document-file-and-metadata-row" &&
@@ -329,9 +338,11 @@ test("retries a unique error only after metadata proves the id is absent", () =>
         metadataStore.insertDocumentMetadata(metadata);
       },
     };
-    const result = await coordinator(documentFileStore, throwingMetadata, {
-      generateId: () => idAt([firstId, secondId], generated++),
-    }).publish(source);
+    const result = await runEffect(
+      coordinator(documentFileStore, throwingMetadata, {
+        generateId: () => idAt([firstId, secondId], generated++),
+      }).publish(source)
+    );
     assert.equal(result.id, secondId);
     assert.equal(generated, 2);
     assert.deepEqual(await readdir(stagingDir), []);
@@ -351,9 +362,11 @@ test("retries file and SQLite metadata uniqueness collisions without exposing pa
       });
 
       let generated = 0;
-      const result = await coordinator(documentFileStore, metadataStore, {
-        generateId: () => idAt([firstId, thirdId, secondId], generated++),
-      }).publish(source);
+      const result = await runEffect(
+        coordinator(documentFileStore, metadataStore, {
+          generateId: () => idAt([firstId, thirdId, secondId], generated++),
+        }).publish(source)
+      );
 
       assert.equal(result.id, secondId);
       assert.equal(metadataStore.getDocumentMetadata(firstId), undefined);
@@ -380,7 +393,7 @@ test("retains anonymous staged recovery state when stage fails after creating an
     };
 
     await assert.rejects(
-      coordinator(adapter, metadataStore, { generateId: () => firstId }).publish(source),
+      runEffect(coordinator(adapter, metadataStore, { generateId: () => firstId }).publish(source)),
       (error) =>
         error instanceof DocumentPublicationError &&
         error.orphan?.kind === "staged-file" &&
@@ -460,13 +473,15 @@ test("compensates file and staging state at each normal failure boundary", () =>
         const store = failure.store ?? documentFileStore;
         const metadata = failure.metadata ?? metadataStore;
         await assert.rejects(
-          coordinator(store, metadata, {
-            generateId: failure.generateId ?? (() => documentId),
-            ...(failure.readPublishedSize === undefined
-              ? {}
-              : { readPublishedSize: failure.readPublishedSize }),
-            ...(failure.now === undefined ? {} : { now: failure.now }),
-          }).publish(source),
+          runEffect(
+            coordinator(store, metadata, {
+              generateId: failure.generateId ?? (() => documentId),
+              ...(failure.readPublishedSize === undefined
+                ? {}
+                : { readPublishedSize: failure.readPublishedSize }),
+              ...(failure.now === undefined ? {} : { now: failure.now }),
+            }).publish(source)
+          ),
           (error) =>
             error instanceof DocumentPublicationError &&
             (failure.name !== "snapshot clone" ||
@@ -504,8 +519,10 @@ test("preserves a durable target after post-publication staging fsync failure", 
       await writeFile(source, "durable before staging sync");
 
       await assert.rejects(
-        coordinator(documentFileStore, metadataStore, { generateId: () => firstId }).publish(
-          source
+        runEffect(
+          coordinator(documentFileStore, metadataStore, { generateId: () => firstId }).publish(
+            source
+          )
         ),
         (error) =>
           error instanceof DocumentPublicationError &&
@@ -544,12 +561,14 @@ test("reports a recoverable orphan when file compensation fails", () =>
     };
 
     await assert.rejects(
-      coordinator(failingDeleteStore, metadataStore, {
-        generateId: () => firstId,
-        readPublishedSize: async () => {
-          throw new Error("read fault");
-        },
-      }).publish(source),
+      runEffect(
+        coordinator(failingDeleteStore, metadataStore, {
+          generateId: () => firstId,
+          readPublishedSize: async () => {
+            throw new Error("read fault");
+          },
+        }).publish(source)
+      ),
       (error) =>
         error instanceof DocumentPublicationError &&
         error.orphan?.kind === "document-file" &&
@@ -580,12 +599,14 @@ test("propagates typed target and lock cleanup states into recovery", () =>
     };
 
     await assert.rejects(
-      coordinator(failingDeleteStore, metadataStore, {
-        generateId: () => firstId,
-        readPublishedSize: async () => {
-          throw new Error("publication failed after finalization");
-        },
-      }).publish(source),
+      runEffect(
+        coordinator(failingDeleteStore, metadataStore, {
+          generateId: () => firstId,
+          readPublishedSize: async () => {
+            throw new Error("publication failed after finalization");
+          },
+        }).publish(source)
+      ),
       (error) =>
         error instanceof DocumentPublicationError &&
         error.orphan?.resources.documentFiles[0]?.state === "retained" &&
@@ -618,12 +639,14 @@ test("out-of-model hostile external target replacement survives delayed compensa
     };
 
     await assert.rejects(
-      coordinator(racingStore, metadataStore, {
-        generateId: () => firstId,
-        readPublishedSize: async () => {
-          throw new Error("publication failed after finalization");
-        },
-      }).publish(source),
+      runEffect(
+        coordinator(racingStore, metadataStore, {
+          generateId: () => firstId,
+          readPublishedSize: async () => {
+            throw new Error("publication failed after finalization");
+          },
+        }).publish(source)
+      ),
       (error) =>
         error instanceof DocumentPublicationError &&
         error.orphan?.resources.documentFiles[0]?.state === "unknown"
@@ -645,12 +668,14 @@ test("reports a recoverable orphan when staging compensation fails", () =>
       };
 
       await assert.rejects(
-        coordinator(failingDiscardStore, metadataStore, {
-          generateId: () => firstId,
-          readPublishedSize: async () => {
-            throw new Error("read fault");
-          },
-        }).publish(source),
+        runEffect(
+          coordinator(failingDiscardStore, metadataStore, {
+            generateId: () => firstId,
+            readPublishedSize: async () => {
+              throw new Error("read fault");
+            },
+          }).publish(source)
+        ),
         (error) =>
           error instanceof DocumentPublicationError &&
           error.orphan?.kind === "staged-file" &&
@@ -674,8 +699,10 @@ test("compensates a committed pair when final snapshot cleanup fails", () =>
       };
 
       await assert.rejects(
-        coordinator(failingDiscardStore, metadataStore, { generateId: () => firstId }).publish(
-          source
+        runEffect(
+          coordinator(failingDiscardStore, metadataStore, { generateId: () => firstId }).publish(
+            source
+          )
         ),
         (error) => error instanceof DocumentPublicationError && error.orphan?.kind === "staged-file"
       );
@@ -703,7 +730,7 @@ test("does not report success when cleanup rolls back a committed publication", 
       };
 
       await assert.rejects(
-        coordinator(store, metadataStore, { generateId: () => firstId }).publish(source),
+        runEffect(coordinator(store, metadataStore, { generateId: () => firstId }).publish(source)),
         (error) =>
           error instanceof DocumentPublicationError &&
           error.orphan?.kind === "staged-file" &&
@@ -723,10 +750,12 @@ test("bounds repeated collisions and leaves no staged state", () =>
       await writeFile(publicationFile(documentsDir, firstId), "occupied");
 
       await assert.rejects(
-        coordinator(documentFileStore, metadataStore, {
-          generateId: () => firstId,
-          maxAttempts: 2,
-        }).publish(source),
+        runEffect(
+          coordinator(documentFileStore, metadataStore, {
+            generateId: () => firstId,
+            maxAttempts: 2,
+          }).publish(source)
+        ),
         (error) => error instanceof DocumentPublicationRetryLimitError && error.attempts === 2
       );
       assert.deepEqual(await readdir(stagingDir), []);
@@ -790,10 +819,10 @@ test("concurrent Planview publications keep compensation invocation-local", asyn
       generateId: () => idAt([firstId, secondId], generated++),
     });
 
-    const first = publication.publish(firstSource);
+    const first = runEffect(publication.publish(firstSource));
     await firstStaged;
     await firstCloneDone;
-    const second = publication.publish(secondSource);
+    const second = runEffect(publication.publish(secondSource));
     await secondCloneEntered;
     await assert.rejects(
       first,
@@ -833,9 +862,9 @@ test("retries a live target-lock collision instead of retaining the peer lock as
         generateId: () => idAt([firstId, secondId], contenderGenerated++),
       });
 
-      const winnerPublication = winner.publish(firstSource);
+      const winnerPublication = runEffect(winner.publish(firstSource));
       await targetLockEntered;
-      const contenderPublication = contender.publish(secondSource);
+      const contenderPublication = runEffect(contender.publish(secondSource));
       const [winnerResult, contenderResult] = await Promise.all([
         winnerPublication,
         contenderPublication,
@@ -894,8 +923,8 @@ test("concurrent Planview publishes have atomic file winners", () =>
     });
 
     const [firstResult, secondResult] = await Promise.all([
-      first.publish(firstSource),
-      second.publish(secondSource),
+      runEffect(first.publish(firstSource)),
+      runEffect(second.publish(secondSource)),
     ]);
     assert.equal(firstResult.id === firstId || secondResult.id === firstId, true);
     assert.notEqual(firstResult.id, secondResult.id);

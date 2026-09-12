@@ -8,6 +8,7 @@ export {
   createCleanupCoordinator,
   createDocumentCleanupCoordinator,
   type DocumentCleanupCoordinatorOptions,
+  type DocumentCleanupCoordinator,
   DocumentCleanupError,
   type DocumentCleanupFailure,
   type DocumentCleanupResult,

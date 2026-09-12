@@ -23,6 +23,7 @@ import type {
 
 const DAY = 24 * 60 * 60 * 1000;
 const id = (character: string): DocumentId => character.repeat(21) as DocumentId;
+const runEffect = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
 
 type CleanupEnvironment = Readonly<{
   readonly directory: string;
@@ -101,7 +102,7 @@ test("retains the exact 30-day boundary and deletes only older lastAccessed rows
       now: () => DAY * 31 + 1,
     });
 
-    const result = await cleanup.clean();
+    const result = await runEffect(cleanup.clean());
     assert.equal(result.removedDocuments, 1);
     assert.equal(metadataStore.getDocumentMetadata(id("a")), undefined);
     assert.notEqual(metadataStore.getDocumentMetadata(id("b")), undefined);
@@ -112,20 +113,20 @@ test("does not remove an active read and removes it after the stream closes", as
     const documentId = id("c");
     await publishPhysical({ documentFileStore, metadataStore, directory }, documentId, "active");
     const reader = createMetadataGatedDocumentReader({ documentFileStore, metadataStore });
-    const stream = await reader.readPublishedDocument(documentId);
+    const stream = await runEffect(reader.readPublishedDocument(documentId));
     const cleanup = createDocumentCleanupCoordinator({
       documentFileStore,
       metadataStore,
       now: () => DAY * 31 + 1,
     });
 
-    const retained = await cleanup.clean();
+    const retained = await runEffect(cleanup.clean());
     assert.equal(retained.removedDocuments, 0);
     assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
     stream.destroy();
     await new Promise<void>((resolve) => stream.once("close", resolve));
 
-    const removed = await cleanup.clean();
+    const removed = await runEffect(cleanup.clean());
     assert.equal(removed.removedDocuments, 1);
     assert.equal(metadataStore.getDocumentMetadata(documentId), undefined);
   }));
@@ -142,12 +143,12 @@ test("a read lease remains active after full transfer until its post-transfer wo
       metadataStore,
       now: () => DAY * 31 + 1,
     });
-    const retained = await cleanup.clean();
+    const retained = await runEffect(cleanup.clean());
     assert.equal(retained.removedDocuments, 0);
     assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
 
     lease.release();
-    const removed = await cleanup.clean();
+    const removed = await runEffect(cleanup.clean());
     assert.equal(removed.removedDocuments, 1);
   }));
 
@@ -166,18 +167,18 @@ test("cross-store active reads remain protected by a filesystem reference", asyn
           documentFileStore,
           metadataStore,
         });
-        const stream = await reader.readPublishedDocument(documentId);
+        const stream = await runEffect(reader.readPublishedDocument(documentId));
         const cleanup = createDocumentCleanupCoordinator({
           documentFileStore: secondStore,
           metadataStore,
           now: () => DAY * 31 + 1,
         });
-        const retained = await cleanup.clean();
+        const retained = await runEffect(cleanup.clean());
         assert.equal(retained.removedDocuments, 0);
         assert.equal(retained.failures.length, 1);
         stream.resume();
         await new Promise<void>((resolve) => stream.once("close", resolve));
-        assert.equal((await cleanup.clean()).removedDocuments, 1);
+        assert.equal((await runEffect(cleanup.clean())).removedDocuments, 1);
       } finally {
         await secondStore.close();
       }
@@ -212,7 +213,7 @@ test("cleanup handles roughly 500 expired documents and reports physical bytes",
     };
     let result: DocumentCleanupResult;
     do {
-      result = await cleanup.clean();
+      result = await runEffect(cleanup.clean());
       for (const field of cleanupTotalFields) {
         totals[field] += result[field];
       }
@@ -257,7 +258,7 @@ test("startup reconciliation removes orphan files, missing rows, mismatches, and
         metadataStore,
         now: () => DAY,
       });
-      const result = await cleanup.clean();
+      const result = await runEffect(cleanup.clean());
 
       assert.equal(result.removedDocumentFiles, 2);
       assert.equal(result.removedMetadataRows, 2);
@@ -331,7 +332,7 @@ test("retains a fresh uncommitted target for an in-flight publisher window", () 
         now: () => Date.now(),
       });
 
-      const result = await cleanup.clean();
+      const result = await runEffect(cleanup.clean());
       assert.equal(result.removedDocumentFiles, 0);
       assert.equal(result.retainedEntries, 1);
       assert.equal(
@@ -345,9 +346,6 @@ test("retains a fresh uncommitted target for an in-flight publisher window", () 
 test("cleanup cannot delete a hard-linked target while publication commits metadata", () => {
   let cleanup!: ReturnType<typeof createDocumentCleanupCoordinator>;
   let publication!: ReturnType<typeof createDocumentPublicationCoordinator>;
-  let publicationPromise!: ReturnType<
-    ReturnType<typeof createDocumentPublicationCoordinator>["publish"]
-  >;
   let targetLinkReadyResolve!: () => void;
   const targetLinkReady = new Promise<void>((resolve) => {
     targetLinkReadyResolve = resolve;
@@ -386,9 +384,9 @@ test("cleanup cannot delete a hard-linked target while publication commits metad
         },
       });
 
-      publicationPromise = publication.publish(source);
+      const publicationPromise = runEffect(publication.publish(source));
       await targetLinkReady;
-      const cleanupRun = cleanup.clean();
+      const cleanupRun = runEffect(cleanup.clean());
       const cleanupResult = await cleanupRun;
       releaseSize();
       const result = await publicationPromise;
@@ -433,7 +431,7 @@ test("faults are reported without deleting a candidate", () =>
         throw new Error("injected cleanup fault");
       },
     });
-    const result = await cleanup.clean();
+    const result = await runEffect(cleanup.clean());
     assert.equal(result.failures.length, 1);
     assert.equal(result.resumable, false);
     assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
@@ -457,12 +455,12 @@ test("canceled cleanup returns a resumable cursor without skipping the active ro
       },
     });
 
-    const canceled = await cleanup.clean(controller.signal);
+    const canceled = await runEffect(cleanup.clean(controller.signal));
     assert.equal(canceled.resumable, true);
     assert.equal(canceled.removedDocuments, 0);
     assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
 
-    const resumed = await cleanup.clean();
+    const resumed = await runEffect(cleanup.clean());
     assert.equal(resumed.removedDocuments, 1);
     assert.equal(metadataStore.getDocumentMetadata(documentId), undefined);
     assert.deepEqual(await readdir(join(directory, "documents")), []);
@@ -623,12 +621,12 @@ test("keeps reconciliation inside the cleanup item budget", () =>
       } as unknown as MetadataStore,
       now: () => Date.now() + DAY,
     });
-    const first = await cleanup.clean();
+    const first = await runEffect(cleanup.clean());
     assert.equal(first.processedItems <= V1_CLEANUP_ITEM_BUDGET, true);
     assert.equal(first.resumable, true);
     let result = first;
     while (result.resumable) {
-      result = await cleanup.clean();
+      result = await runEffect(cleanup.clean());
     }
     assert.deepEqual(await readdir(stagingDir), []);
   }));
@@ -655,14 +653,14 @@ test("does not delete an ABA-replaced metadata row", () =>
         }
       },
     });
-    const first = await cleanup.clean();
+    const first = await runEffect(cleanup.clean());
     assert.equal(first.removedDocuments, 0);
     assert.notEqual(metadataStore.getDocumentMetadata(documentId), undefined);
     assert.equal(
       (await readFile(join(directory, "documents", `${documentId}.html`))).toString(),
       "aba"
     );
-    assert.equal((await cleanup.clean()).removedDocuments, 1);
+    assert.equal((await runEffect(cleanup.clean())).removedDocuments, 1);
   }));
 
 test("defers rows inserted during a cleanup pass to the next watermark", () =>
@@ -689,8 +687,8 @@ test("defers rows inserted during a cleanup pass to the next watermark", () =>
         });
       },
     });
-    await cleanup.clean();
+    await runEffect(cleanup.clean());
     assert.notEqual(metadataStore.getDocumentMetadata(insertedId), undefined);
-    assert.equal((await cleanup.clean()).removedDocuments, 1);
+    assert.equal((await runEffect(cleanup.clean())).removedDocuments, 1);
     assert.equal(metadataStore.getDocumentMetadata(insertedId), undefined);
   }));

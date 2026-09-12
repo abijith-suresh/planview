@@ -9,7 +9,7 @@ import {
   validateDocumentId,
   validateSourceFileSize,
 } from "@planview/core";
-import { Data } from "effect";
+import { Data, Effect } from "effect";
 import {
   DocumentFileAlreadyExistsError,
   DocumentFileCloneError,
@@ -129,25 +129,46 @@ export type MetadataGatedDocumentReaderOptions = Readonly<{
 }>;
 
 export interface MetadataGatedDocumentReader {
-  readonly readPublishedDocument: (id: DocumentId) => Promise<ReadStream>;
+  readonly readPublishedDocument: (
+    id: DocumentId
+  ) => Effect.Effect<ReadStream, DocumentPublicationReadError | DocumentPublicationNotFoundError>;
   /** Holds active-read protection until a post-transfer action is complete. */
-  readonly readPublishedDocumentLease: (id: DocumentId) => Promise<DocumentFileReadLease>;
-  readonly inspectPublishedDocument: (id: DocumentId) => Promise<DocumentFileFormat>;
+  readonly readPublishedDocumentLease: (
+    id: DocumentId
+  ) => Effect.Effect<
+    DocumentFileReadLease,
+    DocumentPublicationReadError | DocumentPublicationNotFoundError
+  >;
+  readonly inspectPublishedDocument: (
+    id: DocumentId
+  ) => Effect.Effect<
+    DocumentFileFormat,
+    DocumentPublicationReadError | DocumentPublicationNotFoundError
+  >;
   readonly readPublishedDocumentEntryLease: (
     id: DocumentId,
     path: string
-  ) => Promise<DocumentFileReadLease>;
+  ) => Effect.Effect<
+    DocumentFileReadLease,
+    DocumentPublicationReadError | DocumentPublicationNotFoundError
+  >;
 }
 
 export interface DocumentPublicationCoordinator extends MetadataGatedDocumentReader {
   readonly publish: (
     sourcePath: string,
     signal?: AbortSignal
-  ) => Promise<DocumentPublicationResult>;
+  ) => Effect.Effect<
+    DocumentPublicationResult,
+    DocumentPublicationError | DocumentPublicationRetryLimitError
+  >;
   readonly publishDocument: (
     sourcePath: string,
     signal?: AbortSignal
-  ) => Promise<DocumentPublicationResult>;
+  ) => Effect.Effect<
+    DocumentPublicationResult,
+    DocumentPublicationError | DocumentPublicationRetryLimitError
+  >;
 }
 
 const DEFAULT_MAX_ATTEMPTS = 8;
@@ -283,7 +304,7 @@ export const createMetadataGatedDocumentReader = (
   options: MetadataGatedDocumentReaderOptions
 ): MetadataGatedDocumentReader => {
   const { documentFileStore, metadataStore } = options;
-  const readPublishedDocumentLease = async (id: DocumentId) => {
+  const readPublishedDocumentLeasePromise = async (id: DocumentId) => {
     let documentId: DocumentId;
     try {
       documentId = validateDocumentId(id);
@@ -323,14 +344,14 @@ export const createMetadataGatedDocumentReader = (
     }
   };
 
-  const readPublishedDocument = async (id: DocumentId) => {
-    const lease = await readPublishedDocumentLease(id);
+  const readPublishedDocumentPromise = async (id: DocumentId) => {
+    const lease = await readPublishedDocumentLeasePromise(id);
     lease.stream.once("close", lease.release);
     lease.stream.once("error", lease.release);
     return lease.stream;
   };
 
-  const inspectPublishedDocument = async (id: DocumentId) => {
+  const inspectPublishedDocumentPromise = async (id: DocumentId) => {
     const documentId = validateDocumentId(id);
     if (metadataStore.getDocumentMetadata(documentId) === undefined) {
       throw new DocumentPublicationNotFoundError({
@@ -349,7 +370,7 @@ export const createMetadataGatedDocumentReader = (
     }
   };
 
-  const readPublishedDocumentEntryLease = async (id: DocumentId, path: string) => {
+  const readPublishedDocumentEntryLeasePromise = async (id: DocumentId, path: string) => {
     const documentId = validateDocumentId(id);
     if (metadataStore.getDocumentMetadata(documentId) === undefined) {
       throw new DocumentPublicationNotFoundError({
@@ -367,6 +388,30 @@ export const createMetadataGatedDocumentReader = (
       });
     }
   };
+
+  const readError = (id: DocumentId, cause: unknown) =>
+    cause instanceof DocumentPublicationReadError ||
+    cause instanceof DocumentPublicationNotFoundError
+      ? cause
+      : new DocumentPublicationReadError({
+          id,
+          cause,
+          message: `Could not read published document ${id}: ${describe(cause)}`,
+        });
+  const readEffect = <Value>(id: DocumentId, operation: () => Promise<Value>) =>
+    Effect.tryPromise({
+      try: operation,
+      catch: (cause) => readError(id, cause),
+    });
+
+  const readPublishedDocumentLease = (id: DocumentId) =>
+    readEffect(id, () => readPublishedDocumentLeasePromise(id));
+  const readPublishedDocument = (id: DocumentId) =>
+    readEffect(id, () => readPublishedDocumentPromise(id));
+  const inspectPublishedDocument = (id: DocumentId) =>
+    readEffect(id, () => inspectPublishedDocumentPromise(id));
+  const readPublishedDocumentEntryLease = (id: DocumentId, path: string) =>
+    readEffect(id, () => readPublishedDocumentEntryLeasePromise(id, path));
 
   return {
     readPublishedDocument,
@@ -425,7 +470,7 @@ export const createDocumentPublicationCoordinator = (
       randomBytes === undefined ? generateDocumentId() : generateDocumentId({ randomBytes }));
   const reader = createMetadataGatedDocumentReader({ documentFileStore, metadataStore });
 
-  const publish = async (sourcePath: string, signal?: AbortSignal) => {
+  const publishPromise = async (sourcePath: string, signal?: AbortSignal) => {
     signal?.throwIfAborted();
     // This map is intentionally created per call. A coordinator can be reused
     // and concurrent calls must never compensate one another's handles.
@@ -1139,6 +1184,17 @@ export const createDocumentPublicationCoordinator = (
       throw makePublicationError({ sourcePath, cause });
     }
   };
+
+  const publish = (sourcePath: string, signal?: AbortSignal) =>
+    Effect.tryPromise({
+      try: (effectSignal) =>
+        publishPromise(sourcePath, signal === undefined ? effectSignal : signal),
+      catch: (cause) =>
+        cause instanceof DocumentPublicationError ||
+        cause instanceof DocumentPublicationRetryLimitError
+          ? cause
+          : makePublicationError({ sourcePath, cause }),
+    });
 
   return {
     publish,
