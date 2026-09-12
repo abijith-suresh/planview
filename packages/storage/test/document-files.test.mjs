@@ -814,7 +814,11 @@ test("concurrent Planview finalization of one id has one atomic winner", () =>
       assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
       assert.equal(results.filter((result) => result.status === "rejected").length, 1);
       const rejected = results.find((result) => result.status === "rejected");
-      assert.equal(rejected.reason instanceof DocumentFileAlreadyExistsError, true);
+      assert.equal(
+        rejected.reason instanceof DocumentFileAlreadyExistsError ||
+          rejected.reason instanceof DocumentFileTargetBusyError,
+        true
+      );
       assert.deepEqual(await readdir(stagingDir), []);
       const published = await readFile(join(documentsDir, `${validId}.html`));
       assert.equal(

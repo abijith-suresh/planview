@@ -511,6 +511,9 @@ const readObservation = async (
     process.platform === "win32" ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW
   );
   try {
+    if (!isSameFileIdentity(fileStats, await file.stat())) {
+      return undefined;
+    }
     const contents = await file.readFile({ encoding: "utf8" });
     if (Buffer.byteLength(contents, "utf8") > maxBytes) {
       return undefined;
@@ -590,20 +593,16 @@ const processIsAlive = (pid: number) => {
   }
 };
 
-// FileHandle.stat() and lstat() can expose different timestamp precision on
-// macOS and Windows even when they describe the same open file. Adoption also
-// re-reads and validates the lifecycle token, so identity is the portable
-// proof needed for this handoff while sameFile remains strict for cleanup.
-const sameFileIdentity = (left: Stats, right: Stats) =>
+const isSameFileIdentity = (left: Stats, right: Stats) =>
   left.dev === right.dev && left.ino === right.ino;
 
-const sameFile = (left: Stats, right: Stats) =>
-  sameFileIdentity(left, right) && left.size === right.size && left.mtimeMs === right.mtimeMs;
+const isSameFileSnapshot = (left: Stats, right: Stats) =>
+  isSameFileIdentity(left, right) && left.size === right.size && left.mtimeMs === right.mtimeMs;
 
-const removeIfSame = async (path: string, observation: FileObservation) => {
+const removeIfSameFileSnapshot = async (path: string, observation: FileObservation) => {
   try {
     const current = await lstat(path);
-    if (sameFile(observation.stats, current)) {
+    if (isSameFileSnapshot(observation.stats, current)) {
       await unlink(path);
     }
   } catch (cause) {
@@ -704,7 +703,7 @@ const removeDeadDescriptor = async (paths: DaemonPaths, descriptor: RuntimeDescr
   }
   const observation = await readObservation(paths.descriptorPath, 16 * 1024);
   if (observation !== undefined && isValidDescriptor(parseJson(observation.contents))) {
-    await removeIfSame(paths.descriptorPath, observation);
+    await removeIfSameFileSnapshot(paths.descriptorPath, observation);
   }
   return true;
 };
@@ -764,7 +763,7 @@ const releaseLock = (lockPath: string, token: string) => async () => {
   }
   const existing = parseJson(observation.contents);
   if (isValidLock(existing) && existing.token === token) {
-    await removeIfSame(lockPath, observation);
+    await removeIfSameFileSnapshot(lockPath, observation);
   }
 };
 
@@ -824,7 +823,7 @@ const createLock = async (
       // let two lifecycle operations run concurrently when the first one is
       // paused in startup or shutdown.
       if (observation !== undefined && isRecoverableLock(inspected, existing)) {
-        await removeIfSame(lockPath, observation);
+        await removeIfSameFileSnapshot(lockPath, observation);
         continue;
       }
       if (Date.now() < deadline) {
@@ -840,6 +839,7 @@ const createLock = async (
   }
 };
 
+/** Transfers the lifecycle lock only while its identity and token still match. */
 const adoptLock = async (paths: DaemonPaths, token: string) => {
   const inspected = await inspectLock(paths.lockPath);
   const observation = inspected?.observation;
@@ -873,7 +873,7 @@ const adoptLock = async (paths: DaemonPaths, token: string) => {
       constants.O_RDWR | (process.platform === "win32" ? 0 : constants.O_NOFOLLOW)
     );
     const currentStats = await file.stat();
-    if (!sameFileIdentity(observation.stats, currentStats)) {
+    if (!isSameFileIdentity(observation.stats, currentStats)) {
       throw new Error("The daemon lifecycle lock was replaced during adoption.");
     }
     const current = parseJson(await file.readFile({ encoding: "utf8" }));
@@ -934,7 +934,7 @@ const removeDescriptorFor = async (paths: DaemonPaths, descriptor: RuntimeDescri
     current.pid === descriptor.pid &&
     current.secret === descriptor.secret
   ) {
-    await removeIfSame(paths.descriptorPath, observation);
+    await removeIfSameFileSnapshot(paths.descriptorPath, observation);
   }
 };
 
