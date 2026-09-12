@@ -12,7 +12,7 @@
   "scripts": {
     "build": "tsc --build tsconfig.json",
     "typecheck": "tsc --project tsconfig.typecheck.json",
-    "test": "npm run build && node --test test/daemon.test.mjs"
+    "test": "npm run build && node --test \"test/**/*.test.mjs\""
   },
   "dependencies": {
     "@planview/core": "0.1.0",
