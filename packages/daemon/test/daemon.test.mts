@@ -190,7 +190,7 @@ const seedPublishedDocument = async (
       metadataStore,
       generateId: () => documentId,
     });
-    await publication.publish(sourcePath);
+    await runEffect(publication.publish(sourcePath));
   } finally {
     await documentFileStore.close();
     metadataStore.close();
@@ -235,7 +235,7 @@ const seedPublishedBundle = async (
       metadataStore,
       generateId: () => documentId,
     });
-    await publication.publish(sourcePath);
+    await runEffect(publication.publish(sourcePath));
   } finally {
     await documentFileStore.close();
     metadataStore.close();
@@ -584,7 +584,7 @@ test("exact management paths do not shadow a published id beginning with __planv
     metadataStore,
     generateId: () => documentId,
   });
-  await publication.publish(sourcePath);
+  await runEffect(publication.publish(sourcePath));
   await documentFileStore.close();
   metadataStore.close();
 

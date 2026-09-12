@@ -1438,8 +1438,8 @@ const handlePublishedDocument = async (
   }
 
   const document = await (entryPath === undefined
-    ? publicationCoordinator.readPublishedDocumentLease(id)
-    : publicationCoordinator.readPublishedDocumentEntryLease(id, entryPath)
+    ? Effect.runPromise(publicationCoordinator.readPublishedDocumentLease(id))
+    : Effect.runPromise(publicationCoordinator.readPublishedDocumentEntryLease(id, entryPath))
   ).catch((cause) => {
     if (
       cause instanceof DocumentPublicationNotFoundError ||
@@ -1606,7 +1606,9 @@ const handleRequest = async (
         }
         if (documentRoute.entryPath === undefined) {
           try {
-            const format = await publicationCoordinator.inspectPublishedDocument(documentId);
+            const format = await Effect.runPromise(
+              publicationCoordinator.inspectPublishedDocument(documentId)
+            );
             if (format.kind === "bundle") {
               res.statusCode = 308;
               res.setHeader("Location", `/${documentId}/`);
@@ -1797,7 +1799,7 @@ const handleRequest = async (
         }
       }
       const published = await operationGate(
-        (signal) => publicationCoordinator.publish(sourcePath, signal),
+        (signal) => Effect.runPromise(publicationCoordinator.publish(sourcePath, signal)),
         requestSignal
       );
       // Keep this response synchronous: 201 means the publication is committed
@@ -2046,7 +2048,7 @@ const openDaemon = async (config: DaemonConfig) => {
       // Manual and scheduled cleanup share the same mutation gate. Reads do
       // not enter it, so a client that stops consuming a response cannot delay
       // cleanup.
-      return operationGate((signal) => cleanup.clean(signal), requestSignal);
+      return operationGate((signal) => Effect.runPromise(cleanup.clean(signal)), requestSignal);
     };
     const scheduleCleanupDrain = () => {
       if (cleanupDrain !== undefined || shutdownInitiated) {

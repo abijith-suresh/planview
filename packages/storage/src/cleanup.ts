@@ -1,5 +1,5 @@
 import { V1_RETENTION_DAYS } from "@planview/core";
-import { Data } from "effect";
+import { Data, Effect } from "effect";
 import {
   DOCUMENT_FILE_RECOVERY_GRACE_MILLISECONDS,
   type DocumentFileObservation,
@@ -57,6 +57,12 @@ export type DocumentCleanupCoordinatorOptions = Readonly<{
   /** Private deterministic fault seam for reconciliation tests. */
   readonly beforeReconciliation?: (signal?: AbortSignal) => Promise<void>;
 }>;
+
+export interface DocumentCleanupCoordinator {
+  readonly clean: (
+    signal?: AbortSignal
+  ) => Effect.Effect<DocumentCleanupResult, DocumentCleanupError>;
+}
 
 export class DocumentCleanupError extends Data.TaggedError("DocumentCleanupError")<{
   readonly cause: unknown;
@@ -501,16 +507,28 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
     }
   };
 
-  const clean = (signal?: AbortSignal) => {
-    if (running === undefined) {
-      running = run(signal).finally(() => {
-        running = undefined;
-      });
-    }
-    return running;
-  };
+  const clean = (
+    signal?: AbortSignal
+  ): Effect.Effect<DocumentCleanupResult, DocumentCleanupError> =>
+    Effect.tryPromise({
+      try: (effectSignal) => {
+        if (running === undefined) {
+          running = run(signal ?? effectSignal).finally(() => {
+            running = undefined;
+          });
+        }
+        return running;
+      },
+      catch: (cause) =>
+        cause instanceof DocumentCleanupError
+          ? cause
+          : new DocumentCleanupError({
+              cause,
+              message: `Could not clean Planview storage: ${describe(cause)}`,
+            }),
+    });
 
-  return { clean };
+  return { clean } satisfies DocumentCleanupCoordinator;
 };
 
 /** Short daemon-internal alias. */
