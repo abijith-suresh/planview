@@ -56,6 +56,10 @@ type ChildExit = Readonly<{
 type TaggedError = Readonly<{
   readonly _tag: unknown;
   readonly message: string;
+  readonly configHost?: unknown;
+  readonly configPort?: unknown;
+  readonly descriptorHost?: unknown;
+  readonly descriptorPort?: unknown;
   readonly [key: string]: unknown;
 }>;
 
@@ -546,10 +550,10 @@ test("lifecycle and status reject a descriptor endpoint mismatch with a typed er
         operation(),
         (error) =>
           isTaggedError(error, "DaemonDescriptorEndpointMismatchError") &&
-          error["descriptorHost"] === "localhost" &&
-          error["descriptorPort"] === 4776 &&
-          error["configHost"] === "127.0.0.1" &&
-          error["configPort"] === 4777
+          error.descriptorHost === "localhost" &&
+          error.descriptorPort === 4776 &&
+          error.configHost === "127.0.0.1" &&
+          error.configPort === 4777
       );
     }
   } finally {
