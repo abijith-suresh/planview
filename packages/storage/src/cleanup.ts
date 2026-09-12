@@ -513,7 +513,9 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
     Effect.tryPromise({
       try: (effectSignal) => {
         if (running === undefined) {
-          running = run(signal ?? effectSignal).finally(() => {
+          const operationSignal =
+            signal === undefined ? effectSignal : AbortSignal.any([effectSignal, signal]);
+          running = run(operationSignal).finally(() => {
             running = undefined;
           });
         }

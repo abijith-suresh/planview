@@ -219,6 +219,7 @@ type LockObservation = Readonly<{
 
 export class DaemonPathError extends Data.TaggedError("DaemonPathError")<{
   readonly path: string;
+  readonly cause?: unknown;
   readonly message: string;
 }> {}
 
@@ -471,6 +472,7 @@ const ensurePrivateDirectory = async (path: string) => {
     }
     throw new DaemonPathError({
       path,
+      cause,
       message: `Could not prepare the daemon directory: ${describe(cause)}`,
     });
   }
@@ -494,6 +496,7 @@ const ensureRuntimeContained = async (paths: DaemonPaths) => {
     }
     throw new DaemonPathError({
       path: paths.runtimeDir,
+      cause,
       message: `Could not verify app-data containment: ${describe(cause)}`,
     });
   }
@@ -1437,18 +1440,21 @@ const handlePublishedDocument = async (
     return;
   }
 
-  const document = await (entryPath === undefined
-    ? Effect.runPromise(publicationCoordinator.readPublishedDocumentLease(id))
-    : Effect.runPromise(publicationCoordinator.readPublishedDocumentEntryLease(id, entryPath))
-  ).catch((cause) => {
-    if (
-      cause instanceof DocumentPublicationNotFoundError ||
-      cause instanceof DocumentPublicationReadError
-    ) {
-      return undefined;
+  const documentEffect =
+    entryPath === undefined
+      ? publicationCoordinator.readPublishedDocumentLease(id)
+      : publicationCoordinator.readPublishedDocumentEntryLease(id, entryPath);
+  const document = await Effect.runPromise(documentEffect, { signal: requestSignal }).catch(
+    (cause) => {
+      if (
+        cause instanceof DocumentPublicationNotFoundError ||
+        cause instanceof DocumentPublicationReadError
+      ) {
+        return undefined;
+      }
+      throw cause;
     }
-    throw cause;
-  });
+  );
   if (document === undefined) {
     response(
       res,
@@ -1607,7 +1613,8 @@ const handleRequest = async (
         if (documentRoute.entryPath === undefined) {
           try {
             const format = await Effect.runPromise(
-              publicationCoordinator.inspectPublishedDocument(documentId)
+              publicationCoordinator.inspectPublishedDocument(documentId),
+              { signal: requestSignal }
             );
             if (format.kind === "bundle") {
               res.statusCode = 308;
@@ -1799,7 +1806,10 @@ const handleRequest = async (
         }
       }
       const published = await operationGate(
-        (signal) => Effect.runPromise(publicationCoordinator.publish(sourcePath, signal)),
+        (signal) =>
+          Effect.runPromise(publicationCoordinator.publish(sourcePath, signal), {
+            signal: requestSignal,
+          }),
         requestSignal
       );
       // Keep this response synchronous: 201 means the publication is committed
@@ -2048,7 +2058,10 @@ const openDaemon = async (config: DaemonConfig) => {
       // Manual and scheduled cleanup share the same mutation gate. Reads do
       // not enter it, so a client that stops consuming a response cannot delay
       // cleanup.
-      return operationGate((signal) => Effect.runPromise(cleanup.clean(signal)), requestSignal);
+      return operationGate(
+        (signal) => Effect.runPromise(cleanup.clean(signal), { signal: requestSignal }),
+        requestSignal
+      );
     };
     const scheduleCleanupDrain = () => {
       if (cleanupDrain !== undefined || shutdownInitiated) {
@@ -2298,9 +2311,29 @@ const request = (
   method: string,
   path: string,
   body?: string,
-  timeoutMs = REQUEST_TIMEOUT_MS
+  timeoutMs = REQUEST_TIMEOUT_MS,
+  signal?: AbortSignal
 ) =>
   new Promise<DaemonResponse>((resolvePromise, rejectPromise) => {
+    let responseObject: import("node:http").IncomingMessage | undefined;
+    let settled = false;
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
+    const resolve = (value: DaemonResponse) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolvePromise(value);
+    };
+    const reject = (cause: unknown) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      rejectPromise(cause);
+    };
     const requestObject = httpRequest(
       {
         host: descriptor.host,
@@ -2320,20 +2353,34 @@ const request = (
         timeout: timeoutMs,
       },
       (res) => {
+        responseObject = res;
         const chunks: Buffer[] = [];
         res.on("data", (chunk: Buffer) => chunks.push(chunk));
         res.on("end", () => {
-          resolvePromise({
+          resolve({
             statusCode: res.statusCode ?? 0,
             body: Buffer.concat(chunks).toString("utf8"),
           });
         });
+        res.on("error", reject);
       }
     );
     requestObject.on("timeout", () =>
       requestObject.destroy(new Error("The daemon request timed out."))
     );
-    requestObject.on("error", rejectPromise);
+    requestObject.on("error", reject);
+    const onAbort = () => {
+      const cause = signal?.reason ?? new Error("The daemon request was canceled.");
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      responseObject?.destroy(error);
+      requestObject.destroy(error);
+      reject(cause);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
     if (body === undefined) {
       requestObject.end();
     } else {
@@ -2393,11 +2440,13 @@ const parseResponse = <Value>(answer: DaemonResponse, path: string, statusCode: 
 const streamDocument = (
   descriptor: RuntimeDescriptor,
   documentId: import("@planview/core").DocumentId,
-  onChunk: (chunk: Uint8Array) => void | Promise<void>
+  onChunk: (chunk: Uint8Array) => void | Promise<void>,
+  signal?: AbortSignal
 ) =>
   new Promise<void>((resolvePromise, rejectPromise) => {
     let responseObject: import("node:http").IncomingMessage | undefined;
     let settled = false;
+    const cleanup = () => signal?.removeEventListener("abort", onAbort);
 
     const abort = (cause: unknown) => {
       const error = cause instanceof Error ? cause : new Error(String(cause));
@@ -2409,6 +2458,7 @@ const streamDocument = (
         return;
       }
       settled = true;
+      cleanup();
       resolvePromise();
     };
     const fail = (cause: unknown) => {
@@ -2416,6 +2466,7 @@ const streamDocument = (
         return;
       }
       settled = true;
+      cleanup();
       abort(cause);
       rejectPromise(cause);
     };
@@ -2455,6 +2506,7 @@ const streamDocument = (
           }
 
           for await (const chunk of res) {
+            signal?.throwIfAborted();
             await onChunk(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
           }
         };
@@ -2464,40 +2516,73 @@ const streamDocument = (
     );
     requestObject.on("timeout", () => fail(new Error("The daemon request timed out.")));
     requestObject.on("error", fail);
+    const onAbort = () =>
+      fail(signal?.reason ?? new Error("The daemon document read was canceled."));
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
     requestObject.end();
   });
 
-const requestStatus = async (descriptor: RuntimeDescriptor) => {
-  const answer = await request(descriptor, "GET", DAEMON_STATUS_PATH);
+const requestStatus = async (descriptor: RuntimeDescriptor, signal?: AbortSignal) => {
+  const answer = await request(descriptor, "GET", DAEMON_STATUS_PATH, undefined, undefined, signal);
   return parseResponse<DaemonStatusPayload>(answer, DAEMON_STATUS_PATH, 200);
 };
 
-const requestReady = async (descriptor: RuntimeDescriptor) => {
-  const answer = await request(descriptor, "GET", DAEMON_READY_PATH);
+const requestReady = async (descriptor: RuntimeDescriptor, signal?: AbortSignal) => {
+  const answer = await request(descriptor, "GET", DAEMON_READY_PATH, undefined, undefined, signal);
   return parseResponse<Record<string, unknown>>(answer, DAEMON_READY_PATH, 200);
 };
 
-const acknowledgeDaemonStartup = async (descriptor: RuntimeDescriptor) => {
-  const answer = await request(descriptor, "POST", DAEMON_STARTUP_ACK_PATH);
+const acknowledgeDaemonStartup = async (descriptor: RuntimeDescriptor, signal?: AbortSignal) => {
+  const answer = await request(
+    descriptor,
+    "POST",
+    DAEMON_STARTUP_ACK_PATH,
+    undefined,
+    undefined,
+    signal
+  );
   return parseResponse<Record<string, unknown>>(answer, DAEMON_STARTUP_ACK_PATH, 202);
 };
 
-const requestClean = async (descriptor: RuntimeDescriptor, timeoutMs: number) => {
-  const answer = await request(descriptor, "POST", DAEMON_CLEAN_PATH, undefined, timeoutMs);
+const requestClean = async (
+  descriptor: RuntimeDescriptor,
+  timeoutMs: number,
+  signal?: AbortSignal
+) => {
+  const answer = await request(descriptor, "POST", DAEMON_CLEAN_PATH, undefined, timeoutMs, signal);
   return parseResponse<Record<string, unknown>>(answer, DAEMON_CLEAN_PATH, 200);
 };
 
-const portIsOpen = (host: string, port: number) =>
-  new Promise<boolean>((resolvePromise) => {
+const portIsOpen = (host: string, port: number, signal?: AbortSignal) =>
+  new Promise<boolean>((resolvePromise, rejectPromise) => {
     let settled = false;
     const socket: Socket = createConnection({ host, port });
+    const onAbort = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      socket.destroy();
+      rejectPromise(signal?.reason ?? new Error("The daemon port check was canceled."));
+    };
     const finish = (open: boolean) => {
       if (!settled) {
         settled = true;
+        signal?.removeEventListener("abort", onAbort);
         socket.destroy();
         resolvePromise(open);
       }
     };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
     socket.once("connect", () => finish(true));
     socket.once("error", () => finish(false));
     socket.setTimeout(REQUEST_TIMEOUT_MS, () => finish(false));
@@ -2520,7 +2605,10 @@ const wait = (milliseconds: number, signal?: AbortSignal) => {
   });
 };
 
-const inspectDaemonPromise = async (config: DaemonConfig): Promise<DaemonState> => {
+const inspectDaemonPromise = async (
+  config: DaemonConfig,
+  signal?: AbortSignal
+): Promise<DaemonState> => {
   const paths = resolveDaemonPaths(config);
   const descriptor = await readDaemonDescriptor(paths);
   if (descriptor === undefined) {
@@ -2528,10 +2616,11 @@ const inspectDaemonPromise = async (config: DaemonConfig): Promise<DaemonState> 
   }
   assertDescriptorEndpoint(config, descriptor, paths.descriptorPath);
   try {
-    const status = await requestStatus(descriptor);
+    const status = await requestStatus(descriptor, signal);
     assertDescriptorEndpoint(config, status, DAEMON_STATUS_PATH);
     return { state: "running", descriptor, status };
   } catch (cause) {
+    signal?.throwIfAborted();
     if (cause instanceof DaemonDescriptorEndpointMismatchError) {
       throw cause;
     }
@@ -2579,7 +2668,8 @@ const estimateCleanupTimeout = (config: DaemonConfig) => {
 const waitForReady = async (
   config: DaemonConfig,
   timeoutMs = STARTUP_TIMEOUT_MS,
-  child?: import("node:child_process").ChildProcess
+  child?: import("node:child_process").ChildProcess,
+  signal?: AbortSignal
 ) => {
   const paths = resolveDaemonPaths(config);
   const deadline = Date.now() + timeoutMs;
@@ -2636,13 +2726,24 @@ const waitForReady = async (
   if (child !== undefined && (child.exitCode !== null || child.signalCode !== null)) {
     onChildExit(child.exitCode, child.signalCode);
   }
+  const onAbort = () => {
+    if (child?.exitCode === null && child.signalCode === null) {
+      child.kill();
+    }
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) {
+    onAbort();
+  }
   try {
+    signal?.throwIfAborted();
     while (Date.now() < deadline) {
+      signal?.throwIfAborted();
       const descriptor = await raceWithChild(readDaemonDescriptor(paths));
       if (descriptor !== undefined) {
         assertDescriptorEndpoint(config, descriptor, paths.descriptorPath);
         try {
-          const ready = await raceWithChild(requestReady(descriptor));
+          const ready = await raceWithChild(requestReady(descriptor, signal));
           const readyHost = isRecord(ready) ? recordValue(ready, "host") : undefined;
           const readyPort = isRecord(ready) ? recordValue(ready, "port") : undefined;
           if (typeof readyHost !== "string" || typeof readyPort !== "number") {
@@ -2653,7 +2754,7 @@ const waitForReady = async (
             });
           }
           assertDescriptorEndpoint(config, { host: readyHost, port: readyPort }, DAEMON_READY_PATH);
-          await raceWithChild(acknowledgeDaemonStartup(descriptor));
+          await raceWithChild(acknowledgeDaemonStartup(descriptor, signal));
           readinessObserved = true;
           return { state: "running", descriptor, reused: false };
         } catch (cause) {
@@ -2673,13 +2774,14 @@ const waitForReady = async (
       // than misclassifying that normal handoff as this startup's failure. Do not
       // probe the port here: an in-flight startup owns it and a second probe must
       // never classify it as an unknown process.
-      await raceWithChild(wait(STARTUP_POLL_MS));
+      await raceWithChild(wait(STARTUP_POLL_MS, signal));
     }
   } finally {
     child?.off("error", onChildError);
     child?.off("exit", onChildExit);
     child?.stderr?.off("data", onChildStderr);
     child?.stderr?.destroy();
+    signal?.removeEventListener("abort", onAbort);
   }
   throw new DaemonRequestError({
     path: DAEMON_READY_PATH,
@@ -2705,9 +2807,10 @@ const startWithLock = async (
   options: StartDaemonOptions,
   paths: DaemonPaths,
   lock: LifecycleLock,
-  startupTimeoutMs: number
+  startupTimeoutMs: number,
+  signal?: AbortSignal
 ) => {
-  const current = await inspectDaemonPromise(config);
+  const current = await inspectDaemonPromise(config, signal);
   if (current.state === "running") {
     return { ...current, reused: true };
   }
@@ -2716,7 +2819,7 @@ const startWithLock = async (
   if (startupDescriptor !== undefined) {
     assertDescriptorEndpoint(config, startupDescriptor, paths.descriptorPath);
   }
-  if (await portIsOpen(config.host, config.port)) {
+  if (await portIsOpen(config.host, config.port, signal)) {
     throw new DaemonPortInUseError({
       host: config.host,
       port: config.port,
@@ -2732,15 +2835,19 @@ const startWithLock = async (
     env: resolveDaemonEnvironment(config, lock.token),
   });
   child.unref();
-  return waitForReady(config, startupTimeoutMs, child);
+  return waitForReady(config, startupTimeoutMs, child, signal);
 };
 
-const startDetachedDaemonPromise = async (config: DaemonConfig, options: StartDaemonOptions) => {
+const startDetachedDaemonPromise = async (
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  signal?: AbortSignal
+) => {
   const paths = await prepareLifecyclePaths(config);
   const startupTimeoutMs = estimateCleanupTimeout(config);
   const lock = await createLock(paths);
   try {
-    return await startWithLock(config, options, paths, lock, startupTimeoutMs);
+    return await startWithLock(config, options, paths, lock, startupTimeoutMs, signal);
   } finally {
     await lock.release();
   }
@@ -2852,16 +2959,25 @@ const cleanupResultFromPayload = (payload: Record<string, unknown>) => {
   } satisfies DocumentCleanupResult;
 };
 
-const publishDocumentPromise = async (config: DaemonConfig, options: PublishDaemonOptions) => {
-  const running = await startDetachedDaemonPromise(config, {
-    daemonScriptPath: options.daemonScriptPath,
-  });
+const publishDocumentPromise = async (
+  config: DaemonConfig,
+  options: PublishDaemonOptions,
+  signal?: AbortSignal
+) => {
+  const running = await startDetachedDaemonPromise(
+    config,
+    {
+      daemonScriptPath: options.daemonScriptPath,
+    },
+    signal
+  );
   const answer = await request(
     running.descriptor,
     "POST",
     DAEMON_PUBLISH_PATH,
     JSON.stringify({ sourcePath: options.sourcePath }),
-    publishRequestTimeout(options.sourceSizeBytes)
+    publishRequestTimeout(options.sourceSizeBytes),
+    signal
   );
   const payload = parseResponse<Record<string, unknown>>(answer, DAEMON_PUBLISH_PATH, 201);
   try {
@@ -2876,9 +2992,13 @@ const publishDocumentPromise = async (config: DaemonConfig, options: PublishDaem
   }
 };
 
-const cleanDaemonPromise = async (config: DaemonConfig, options: StartDaemonOptions) => {
-  const running = await startDetachedDaemonPromise(config, options);
-  const payload = await requestClean(running.descriptor, estimateCleanupTimeout(config));
+const cleanDaemonPromise = async (
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  signal?: AbortSignal
+) => {
+  const running = await startDetachedDaemonPromise(config, options, signal);
+  const payload = await requestClean(running.descriptor, estimateCleanupTimeout(config), signal);
   return {
     descriptor: running.descriptor,
     reused: running.reused,
@@ -2886,26 +3006,42 @@ const cleanDaemonPromise = async (config: DaemonConfig, options: StartDaemonOpti
   } satisfies CleanedDaemonDocuments;
 };
 
-const retrieveDocumentPromise = async (config: DaemonConfig, options: RetrieveDaemonOptions) => {
+const retrieveDocumentPromise = async (
+  config: DaemonConfig,
+  options: RetrieveDaemonOptions,
+  signal?: AbortSignal
+) => {
   const documentId = validateDocumentId(options.documentId);
-  const running = await startDetachedDaemonPromise(config, {
-    daemonScriptPath: options.daemonScriptPath,
-  });
-  await streamDocument(running.descriptor, documentId, options.onChunk);
+  const running = await startDetachedDaemonPromise(
+    config,
+    {
+      daemonScriptPath: options.daemonScriptPath,
+    },
+    signal
+  );
+  await streamDocument(running.descriptor, documentId, options.onChunk, signal);
   return { descriptor: running.descriptor, reused: running.reused };
 };
 
-const stopWithLock = async (config: DaemonConfig) => {
-  const current = await inspectDaemonPromise(config);
+const stopWithLock = async (config: DaemonConfig, signal?: AbortSignal) => {
+  const current = await inspectDaemonPromise(config, signal);
   if (current.state === "stopped") {
     return current;
   }
   const paths = resolveDaemonPaths(config);
-  const answer = await request(current.descriptor, "POST", DAEMON_SHUTDOWN_PATH);
+  const answer = await request(
+    current.descriptor,
+    "POST",
+    DAEMON_SHUTDOWN_PATH,
+    undefined,
+    undefined,
+    signal
+  );
   parseResponse<Record<string, unknown>>(answer, DAEMON_SHUTDOWN_PATH, 202);
   const deadline =
     Date.now() + DAEMON_SHUTDOWN_TIMEOUT_MS + REQUEST_TIMEOUT_MS + SHUTDOWN_POLL_GRACE_MS;
   while (Date.now() < deadline) {
+    signal?.throwIfAborted();
     const descriptor = await readDaemonDescriptor(paths);
     if (descriptor !== undefined) {
       assertDescriptorEndpoint(config, descriptor, paths.descriptorPath);
@@ -2916,7 +3052,7 @@ const stopWithLock = async (config: DaemonConfig) => {
       }
       return { state: "stopped" } as const;
     }
-    await wait(STARTUP_POLL_MS);
+    await wait(STARTUP_POLL_MS, signal);
   }
   throw new DaemonRequestError({
     path: DAEMON_SHUTDOWN_PATH,
@@ -2925,46 +3061,37 @@ const stopWithLock = async (config: DaemonConfig) => {
   });
 };
 
-const stopDaemonPromise = async (config: DaemonConfig) => {
+const stopDaemonPromise = async (config: DaemonConfig, signal?: AbortSignal) => {
   const paths = await prepareLifecyclePaths(config);
   const lock = await createLock(paths);
   try {
-    return await stopWithLock(config);
+    return await stopWithLock(config, signal);
   } finally {
     await lock.release();
   }
 };
 
-const restartDaemonPromise = async (config: DaemonConfig, options: StartDaemonOptions) => {
+const restartDaemonPromise = async (
+  config: DaemonConfig,
+  options: StartDaemonOptions,
+  signal?: AbortSignal
+) => {
   const paths = await prepareLifecyclePaths(config);
   const lock = await createLock(paths);
   try {
-    await stopWithLock(config);
-    return await startWithLock(config, options, paths, lock, estimateCleanupTimeout(config));
+    await stopWithLock(config, signal);
+    return await startWithLock(
+      config,
+      options,
+      paths,
+      lock,
+      estimateCleanupTimeout(config),
+      signal
+    );
   } finally {
     await lock.release();
   }
 };
-
-const daemonLifecycle = (config: DaemonConfig) =>
-  Effect.acquireUseRelease(
-    Effect.tryPromise({
-      try: () => openDaemon(config),
-      catch: (cause) => cause,
-    }),
-    (resource) =>
-      Effect.tryPromise({
-        try: () => resource.waitForShutdown(),
-        catch: (cause) => cause,
-      }),
-    (resource) =>
-      Effect.tryPromise({
-        try: () => resource.close(),
-        catch: (cause) => cause,
-      })
-  );
-
-export const runDaemon = (config: DaemonConfig = resolveDaemonConfig()) => daemonLifecycle(config);
 
 const isDaemonError = (cause: unknown): cause is DaemonError =>
   cause instanceof DaemonPathError ||
@@ -2984,31 +3111,53 @@ const daemonFailure = (path: string, cause: unknown): DaemonError =>
         message: `The Planview daemon operation at ${path} failed: ${describe(cause)}`,
       });
 
-const daemonEffect = <Value>(path: string, operation: () => Promise<Value>) =>
+const daemonLifecycle = (config: DaemonConfig) =>
+  Effect.acquireUseRelease(
+    Effect.tryPromise({
+      try: () => openDaemon(config),
+      catch: (cause) => daemonFailure(DAEMON_READY_PATH, cause),
+    }),
+    (resource) =>
+      Effect.tryPromise({
+        try: () => resource.waitForShutdown(),
+        catch: (cause) => daemonFailure(DAEMON_SHUTDOWN_PATH, cause),
+      }),
+    (resource) =>
+      Effect.tryPromise({
+        try: () => resource.close(),
+        catch: (cause) => daemonFailure(DAEMON_SHUTDOWN_PATH, cause),
+      })
+  );
+
+export const runDaemon = (config: DaemonConfig = resolveDaemonConfig()) => daemonLifecycle(config);
+
+const daemonEffect = <Value>(path: string, operation: (signal: AbortSignal) => Promise<Value>) =>
   Effect.tryPromise({
     try: operation,
     catch: (cause) => daemonFailure(path, cause),
   });
 
 export const inspectDaemon = (config: DaemonConfig) =>
-  daemonEffect(DAEMON_STATUS_PATH, () => inspectDaemonPromise(config));
+  daemonEffect(DAEMON_STATUS_PATH, (signal) => inspectDaemonPromise(config, signal));
 
 export const startDetachedDaemon = (config: DaemonConfig, options: StartDaemonOptions) =>
-  daemonEffect(DAEMON_READY_PATH, () => startDetachedDaemonPromise(config, options));
+  daemonEffect(DAEMON_READY_PATH, (signal) => startDetachedDaemonPromise(config, options, signal));
 
 export const publishDocument = (config: DaemonConfig, options: PublishDaemonOptions) =>
-  daemonEffect(DAEMON_PUBLISH_PATH, () => publishDocumentPromise(config, options));
+  daemonEffect(DAEMON_PUBLISH_PATH, (signal) => publishDocumentPromise(config, options, signal));
 
 export const cleanDaemon = (config: DaemonConfig, options: StartDaemonOptions) =>
-  daemonEffect(DAEMON_CLEAN_PATH, () => cleanDaemonPromise(config, options));
+  daemonEffect(DAEMON_CLEAN_PATH, (signal) => cleanDaemonPromise(config, options, signal));
 
 export const retrieveDocument = (config: DaemonConfig, options: RetrieveDaemonOptions) =>
-  daemonEffect(`/${options.documentId}`, () => retrieveDocumentPromise(config, options));
+  daemonEffect(`/${options.documentId}`, (signal) =>
+    retrieveDocumentPromise(config, options, signal)
+  );
 
 export const stopDaemon = (config: DaemonConfig) =>
-  daemonEffect(DAEMON_SHUTDOWN_PATH, () => stopDaemonPromise(config));
+  daemonEffect(DAEMON_SHUTDOWN_PATH, (signal) => stopDaemonPromise(config, signal));
 
 export const restartDaemon = (config: DaemonConfig, options: StartDaemonOptions) =>
-  daemonEffect(DAEMON_READY_PATH, () => restartDaemonPromise(config, options));
+  daemonEffect(DAEMON_READY_PATH, (signal) => restartDaemonPromise(config, options, signal));
 
 export const runDaemonProcess = (config: DaemonConfig = resolveDaemonConfig()) => runDaemon(config);

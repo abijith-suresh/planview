@@ -1188,7 +1188,10 @@ export const createDocumentPublicationCoordinator = (
   const publish = (sourcePath: string, signal?: AbortSignal) =>
     Effect.tryPromise({
       try: (effectSignal) =>
-        publishPromise(sourcePath, signal === undefined ? effectSignal : signal),
+        publishPromise(
+          sourcePath,
+          signal === undefined ? effectSignal : AbortSignal.any([effectSignal, signal])
+        ),
       catch: (cause) =>
         cause instanceof DocumentPublicationError ||
         cause instanceof DocumentPublicationRetryLimitError
