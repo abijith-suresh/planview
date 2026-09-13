@@ -215,12 +215,18 @@ test("repository foundation has the expected configuration", () => {
     undefined,
     "the public package must not declare private daemon"
   );
+  expectProperty(
+    cliPackageJson.devDependencies,
+    "@planview/local",
+    "0.1.0",
+    "CLI local application dependency"
+  );
   expectProperty(cliPackageJson.bin, "planview", "./dist/index.js", "CLI bin mapping");
   expectEqual(cliPackageJson.files, ["dist", "skills", "README.md"], "CLI publish files");
   expectProperty(
     cliPackageJson.scripts,
     "build",
-    "npm run build --workspace @planview/daemon && tsc --project tsconfig.json && node scripts/bundle.mjs && node scripts/make-executable.mjs dist/index.js",
+    "npm run build --workspace @planview/local && tsc --project tsconfig.json && node scripts/bundle.mjs && node scripts/make-executable.mjs dist/index.js",
     "CLI build script"
   );
   expectProperty(cliPackageJson.scripts, "prepack", "npm run build", "CLI prepack script");
@@ -241,7 +247,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     cliPackageJson.scripts,
     "typecheck",
-    "npm run build --workspace @planview/daemon && tsc --project tsconfig.json --noEmit",
+    "npm run build --workspace @planview/local && tsc --project tsconfig.json --noEmit",
     "CLI typecheck script"
   );
   expectProperty(
@@ -270,6 +276,58 @@ test("repository foundation has the expected configuration", () => {
     "typecheck:test",
     "tsc --project tsconfig.test.json",
     "daemon test typecheck script"
+  );
+
+  const localPackageJson = readJson("packages/local/package.json");
+  expectEqual(localPackageJson.name, "@planview/local", "local package name");
+  expectEqual(localPackageJson.private, true, "local package privacy");
+  expectEqual(localPackageJson.type, "module", "local package module type");
+  expectProperty(
+    localPackageJson.scripts,
+    "build",
+    "tsc --build tsconfig.json",
+    "local build script"
+  );
+  expectProperty(
+    localPackageJson.scripts,
+    "test",
+    'npm run build && npm run typecheck:test && node --test "test/**/*.test.mts"',
+    "local test script"
+  );
+  expectProperty(
+    localPackageJson.scripts,
+    "typecheck",
+    "tsc --project tsconfig.typecheck.json",
+    "local typecheck script"
+  );
+  expectProperty(
+    localPackageJson.scripts,
+    "typecheck:test",
+    "tsc --project tsconfig.test.json",
+    "local test typecheck script"
+  );
+  expectEqual(
+    localPackageJson.dependencies,
+    {
+      "@planview/core": "0.1.0",
+      "@planview/daemon": "0.1.0",
+      "@planview/storage": "0.1.0",
+      effect: "4.0.0-rc.115",
+    },
+    "local dependencies"
+  );
+  const localTsConfig = readJson("packages/local/tsconfig.json");
+  expectProperty(localTsConfig.compilerOptions, "composite", true, "local composite build setting");
+  expectProperty(
+    localTsConfig.compilerOptions,
+    "tsBuildInfoFile",
+    "dist/.tsbuildinfo",
+    "local build state location"
+  );
+  expectEqual(
+    localTsConfig.references,
+    [{ path: "../core" }, { path: "../storage" }, { path: "../daemon" }],
+    "local TypeScript project references"
   );
 
   const corePackageJson = readJson("packages/core/package.json");
@@ -454,5 +512,19 @@ test("repository foundation has the expected configuration", () => {
     "version",
     storagePackageJson.version,
     "package-lock storage version"
+  );
+
+  const localLockPackage = lockfile.packages["packages/local"];
+  expectProperty(
+    localLockPackage,
+    "name",
+    localPackageJson.name,
+    "package-lock local package name"
+  );
+  expectProperty(
+    localLockPackage,
+    "version",
+    localPackageJson.version,
+    "package-lock local package version"
   );
 });

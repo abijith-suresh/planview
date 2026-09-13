@@ -2,21 +2,14 @@ import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isValidDocumentId, V1_PORT } from "@planview/core";
 import {
-  cleanDaemon,
-  inspectDaemon,
-  publishDocument,
-  resolveDaemonConfig,
-  resolveDaemonConfigForTest,
-  restartDaemon,
-  retrieveDocument,
-  startDetachedDaemon,
-  stopDaemon,
-} from "@planview/daemon";
+  createLocalApplication,
+  parseDocumentReference,
+  type LocalApplication,
+  type LocalDaemonStatus,
+} from "@planview/local";
 import { Data, Effect } from "effect";
 import packageJson from "../package.json" with { type: "json" };
-import { preparePublishSource } from "./publish-source.js";
 import { installSkills } from "./skills.js";
 
 const SEMVER_PATTERN =
@@ -206,6 +199,10 @@ const describe = (cause: unknown) => (cause instanceof Error ? cause.message : S
 
 const daemonScriptPath = () => fileURLToPath(new URL("./daemon.js", import.meta.url));
 
+const localApplication: LocalApplication = createLocalApplication({
+  daemonScriptPath: daemonScriptPath(),
+});
+
 const browserCommand = () =>
   process.platform === "win32"
     ? { command: "cmd.exe", arguments: ["/c", "start", ""] }
@@ -247,19 +244,8 @@ export const openUrl = (url: string, spawnProcess: typeof spawn = spawn) =>
     child.once("spawn", onSpawn);
   });
 
-const resolveCliDaemonConfig = () => {
-  const { NODE_ENV, PLANVIEW_TEST_DAEMON_PORT: configuredTestPort } = process.env;
-  const testPort = NODE_ENV === "test" ? configuredTestPort : undefined;
-  return testPort === undefined
-    ? resolveDaemonConfig()
-    : resolveDaemonConfigForTest({ port: Number(testPort) });
-};
-
-const formatRunning = (status: {
-  readonly pid: number;
-  readonly host: string;
-  readonly port: number;
-}) => `Planview daemon is running at http://${status.host}:${status.port}/ (pid ${status.pid}).\n`;
+const formatRunning = (status: Extract<LocalDaemonStatus, { readonly state: "running" }>) =>
+  `Planview daemon is running at http://${status.host}:${status.port}/ (pid ${status.pid}).\n`;
 
 const publishFailure = (sourcePath: string, cause: unknown) =>
   new PublishCommandError({
@@ -269,34 +255,9 @@ const publishFailure = (sourcePath: string, cause: unknown) =>
   });
 
 const publishSource = (sourcePath: string) =>
-  Effect.acquireUseRelease(
-    Effect.tryPromise({
-      try: () => preparePublishSource(sourcePath),
-      catch: (cause) => publishFailure(sourcePath, cause),
-    }),
-    (prepared) =>
-      Effect.tryPromise({
-        try: () => Promise.resolve(resolveCliDaemonConfig()),
-        catch: (cause) => publishFailure(sourcePath, cause),
-      }).pipe(
-        Effect.flatMap((config) =>
-          publishDocument(config, {
-            daemonScriptPath: daemonScriptPath(),
-            sourcePath: prepared.sourcePath,
-            sourceSizeBytes: prepared.sourceSizeBytes,
-          }).pipe(
-            Effect.map(
-              (published) => `http://localhost:${published.descriptor.port}/${published.id}`
-            ),
-            Effect.mapError((cause) => publishFailure(sourcePath, cause))
-          )
-        )
-      ),
-    (prepared) =>
-      Effect.tryPromise({
-        try: () => prepared.cleanup(),
-        catch: (cause) => publishFailure(sourcePath, cause),
-      })
+  localApplication.publish(sourcePath).pipe(
+    Effect.map(({ url }) => url),
+    Effect.mapError((cause) => publishFailure(sourcePath, cause))
   );
 
 const runPublishCommand = (sourcePath: string, stdout: StdoutWriter) =>
@@ -315,7 +276,7 @@ const runPublishCommand = (sourcePath: string, stdout: StdoutWriter) =>
       })
     ),
     Effect.mapError((cause) =>
-      cause instanceof OutputCommandError
+      cause instanceof OutputCommandError || cause instanceof PublishCommandError
         ? cause
         : new PublishCommandError({
             sourcePath,
@@ -349,37 +310,22 @@ const runPreviewCommand = (sourcePath: string, stdout: StdoutWriter) =>
   );
 
 const runGetCommand = (reference: string, stdout: StdoutWriter) =>
-  Effect.tryPromise({
-    try: () =>
-      Promise.resolve().then(() => {
-        const config = resolveCliDaemonConfig();
-        return { config, documentId: parseDocumentReference(reference, config.port) };
-      }),
-    catch: (cause) =>
-      new GetCommandError({
-        reference,
-        cause,
-        message: `Could not retrieve ${reference}: ${describe(cause)}`,
-      }),
-  }).pipe(
-    Effect.flatMap(({ config, documentId }) =>
-      retrieveDocument(config, {
-        daemonScriptPath: daemonScriptPath(),
-        documentId,
-        onChunk: (chunk) => stdout(chunk),
-      }).pipe(
-        Effect.map(() => 0),
-        Effect.mapError(
-          (cause) =>
-            new GetCommandError({
-              reference,
-              cause,
-              message: `Could not retrieve ${reference}: ${describe(cause)}`,
-            })
-        )
+  localApplication
+    .get({
+      reference,
+      onChunk: (chunk) => stdout(chunk),
+    })
+    .pipe(
+      Effect.map(() => 0),
+      Effect.mapError(
+        (cause) =>
+          new GetCommandError({
+            reference,
+            cause,
+            message: `Could not retrieve ${reference}: ${describe(cause)}`,
+          })
       )
-    )
-  );
+    );
 
 const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
   Effect.tryPromise({
@@ -399,112 +345,72 @@ const runDaemonCommand = (
   command: Exclude<Command, "publish" | "preview" | "get" | "skills">,
   stdout: StdoutWriter
 ) =>
-  Effect.tryPromise({
-    try: () => Promise.resolve(resolveCliDaemonConfig()),
-    catch: (cause) =>
-      new DaemonCommandError({
-        command,
-        cause,
-        message: `Could not ${command} the Planview daemon: ${describe(cause)}`,
-      }),
+  Effect.gen(function* () {
+    const write = (message: string) =>
+      Effect.tryPromise({
+        try: () => Promise.resolve(stdout(message)),
+        catch: (cause) => cause,
+      });
+
+    if (command === "status") {
+      const result = yield* localApplication.inspect();
+      yield* write(
+        result.state === "running" ? formatRunning(result) : "Planview daemon is not running.\n"
+      );
+      return 0;
+    }
+
+    if (command === "stop") {
+      yield* localApplication.stop();
+      yield* write("Planview daemon stopped.\n");
+      return 0;
+    }
+
+    if (command === "restart") {
+      const result = yield* localApplication.restart();
+      yield* write(`Planview daemon restarted at http://${result.host}:${result.port}/.\n`);
+      return 0;
+    }
+
+    if (command === "clean") {
+      const result = yield* localApplication.clean();
+      const failures = result.failures.length;
+      const summary =
+        result.removedDocuments === 0 &&
+        result.removedDocumentFiles === 0 &&
+        result.removedMetadataRows === 0 &&
+        result.removedStagedFiles === 0 &&
+        result.removedReadReferences === 0 &&
+        result.removedFinalizationLocks === 0 &&
+        result.retainedEntries === 0
+          ? "Planview cleanup found no expired or inconsistent snapshots."
+          : `Planview cleanup removed ${result.removedDocuments} expired snapshot${result.removedDocuments === 1 ? "" : "s"}, reconciled ${result.removedMetadataRows} metadata row${result.removedMetadataRows === 1 ? "" : "s"} and ${result.removedDocumentFiles} document file${result.removedDocumentFiles === 1 ? "" : "s"}, reclaimed ${result.reclaimedBytes} bytes, and removed ${result.removedStagedFiles} staged file${result.removedStagedFiles === 1 ? "" : "s"}, ${result.removedReadReferences} crashed-read marker${result.removedReadReferences === 1 ? "" : "s"}, and ${result.removedFinalizationLocks} finalization lock${result.removedFinalizationLocks === 1 ? "" : "s"}.`;
+      const retained = result.retainedEntries;
+      yield* write(
+        `${summary}${retained === 0 ? "" : ` ${retained} state${retained === 1 ? "" : "s"} retained for retry.`}\n`
+      );
+      return failures === 0 ? 0 : 1;
+    }
+
+    const result = yield* localApplication.start();
+    yield* write(
+      result.reused
+        ? `Planview daemon is already running at http://${result.status.host}:${result.status.port}/.\n`
+        : `Planview daemon started at http://${result.status.host}:${result.status.port}/.\n`
+    );
+    return 0;
   }).pipe(
-    Effect.flatMap((config) =>
-      Effect.gen(function* () {
-        const write = (message: string) =>
-          Effect.tryPromise({
-            try: () => Promise.resolve(stdout(message)),
-            catch: (cause) => cause,
-          });
-
-        if (command === "status") {
-          const result = yield* inspectDaemon(config);
-          yield* write(
-            result.state === "running"
-              ? formatRunning(result.status)
-              : "Planview daemon is not running.\n"
-          );
-          return 0;
-        }
-
-        if (command === "stop") {
-          yield* stopDaemon(config);
-          yield* write("Planview daemon stopped.\n");
-          return 0;
-        }
-
-        if (command === "restart") {
-          const result = yield* restartDaemon(config, { daemonScriptPath: daemonScriptPath() });
-          yield* write(
-            `Planview daemon restarted at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
-          );
-          return 0;
-        }
-
-        if (command === "clean") {
-          const result = yield* cleanDaemon(config, { daemonScriptPath: daemonScriptPath() });
-          const failures = result.result.failures.length;
-          const summary =
-            result.result.removedDocuments === 0 &&
-            result.result.removedDocumentFiles === 0 &&
-            result.result.removedMetadataRows === 0 &&
-            result.result.removedStagedFiles === 0 &&
-            result.result.removedReadReferences === 0 &&
-            result.result.removedFinalizationLocks === 0 &&
-            result.result.retainedEntries === 0
-              ? "Planview cleanup found no expired or inconsistent snapshots."
-              : `Planview cleanup removed ${result.result.removedDocuments} expired snapshot${result.result.removedDocuments === 1 ? "" : "s"}, reconciled ${result.result.removedMetadataRows} metadata row${result.result.removedMetadataRows === 1 ? "" : "s"} and ${result.result.removedDocumentFiles} document file${result.result.removedDocumentFiles === 1 ? "" : "s"}, reclaimed ${result.result.reclaimedBytes} bytes, and removed ${result.result.removedStagedFiles} staged file${result.result.removedStagedFiles === 1 ? "" : "s"}, ${result.result.removedReadReferences} crashed-read marker${result.result.removedReadReferences === 1 ? "" : "s"}, and ${result.result.removedFinalizationLocks} finalization lock${result.result.removedFinalizationLocks === 1 ? "" : "s"}.`;
-          const retained = result.result.retainedEntries;
-          yield* write(
-            `${summary}${retained === 0 ? "" : ` ${retained} state${retained === 1 ? "" : "s"} retained for retry.`}\n`
-          );
-          return failures === 0 ? 0 : 1;
-        }
-
-        const result = yield* startDetachedDaemon(config, { daemonScriptPath: daemonScriptPath() });
-        yield* write(
-          result.reused
-            ? `Planview daemon is already running at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
-            : `Planview daemon started at http://${result.descriptor.host}:${result.descriptor.port}/.\n`
-        );
-        return 0;
-      })
-    ),
-    Effect.mapError((cause) =>
-      cause instanceof DaemonCommandError
-        ? cause
-        : new DaemonCommandError({
-            command,
-            cause,
-            message: `Could not ${command} the Planview daemon: ${describe(cause)}`,
-          })
+    Effect.mapError(
+      (cause) =>
+        new DaemonCommandError({
+          command,
+          cause,
+          message: `Could not ${command} the Planview daemon: ${describe(cause)}`,
+        })
     )
   );
 
-const parseDocumentReference = (reference: string, port: number) => {
-  if (isValidDocumentId(reference)) {
-    return reference;
-  }
-
-  const expectedPort = String(port);
-  const urlPrefixes = [`http://localhost:${expectedPort}/`, `http://127.0.0.1:${expectedPort}/`];
-  const prefix = urlPrefixes.find((candidate) => reference.startsWith(candidate));
-  if (prefix === undefined || reference.length <= prefix.length) {
-    throw new Error(
-      "Document reference must be a valid 21-character id or an exact local Planview URL."
-    );
-  }
-
-  const candidate = reference.slice(prefix.length);
-  if (!isValidDocumentId(candidate)) {
-    throw new Error(
-      "Document reference must be a valid 21-character id or an exact local Planview URL."
-    );
-  }
-
-  return candidate;
-};
-
-export const parseGetReference = (reference: string, port = V1_PORT) =>
+export const parseGetReference = (reference: string, port?: number) =>
   String(parseDocumentReference(reference, port));
 
 const command = (

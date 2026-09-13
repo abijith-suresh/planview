@@ -6,7 +6,8 @@ immutable localhost URL.
 ## Bootstrap status
 
 The foundation includes the public `@abijith-suresh/planview` npm workspace and the
-private `@planview/core`, `@planview/daemon`, and `@planview/storage` workspaces. The CLI
+private `@planview/core`, `@planview/daemon`, `@planview/storage`, and
+`@planview/local` workspaces. The CLI
 is an installable TypeScript ESM package with detached daemon lifecycle
 commands: `start`, `status`, `stop`, and `restart`, plus `publish <file|folder>`
 and `get <id|url>` for immutable HTML snapshots. `preview <file|folder>` also
@@ -110,6 +111,7 @@ and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
 - `packages/core` — private path, v1 policy, document identifier, and source-file validation primitives
 - `packages/daemon` — private detached lifecycle daemon and authenticated management boundary
 - `packages/storage` — private daemon-owned metadata and document-file storage boundary
+- `packages/local` — reusable local application API used by the CLI and future MCP adapter
 - `packages/*` — reusable implementation packages
 
 SQLite-backed publication and CLI retrieval are implemented. The daemon performs

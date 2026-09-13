@@ -91,6 +91,7 @@ const runSmoke = async () => {
     "apps/cli/dist",
     "packages/core/dist",
     "packages/daemon/dist",
+    "packages/local/dist",
     "packages/storage/dist",
   ]) {
     rmSync(resolve(root, directory), { force: true, recursive: true });
