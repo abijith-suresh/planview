@@ -9,6 +9,7 @@
   "bin": {
     "planview": "./dist/index.js"
   },
+  "man": "./man/planview.1",
   "publishConfig": {
     "access": "public"
   },
@@ -21,6 +22,7 @@
   "files": [
     "dist",
     "skills",
+    "man",
     "README.md"
   ],
   "scripts": {

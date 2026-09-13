@@ -24,6 +24,31 @@ planview preview ./site
 
 ```
 
+Get help for the whole CLI or for one command:
+
+```sh
+planview help
+planview help publish
+planview publish --help
+```
+
+Commands that return metadata also support one JSON object on stdout:
+
+```sh
+planview publish --json ./report.html
+planview status --json
+```
+
+The package includes a Unix manual page. On npm versions that register package
+man pages, a global install makes it available as:
+
+```sh
+man planview
+```
+
+`planview help` is the portable help path. Newer npm versions may keep the
+manual in the package without registering it with the system `man` command.
+
 The daemon can also be managed directly:
 
 ```sh
@@ -49,7 +74,8 @@ reuses an authenticated daemon it owns and never terminates an unknown process
 listening on the port.
 `preview` follows the same publish flow, prints the URL, and asks the platform's
 default browser opener to open it. If the opener is unavailable, the URL is
-still printed and the command reports the browser error on stderr.
+still printed and the command reports the browser error on stderr. `get` keeps
+its output as raw document bytes, so it does not support `--json`.
 
 The package also bundles independent `planview` and `create-html` Agent Skills.
 Install both into `~/.agents/skills` with:
