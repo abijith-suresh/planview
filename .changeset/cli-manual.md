@@ -2,4 +2,4 @@
 "@abijith-suresh/planview": patch
 ---
 
-Document the CLI contract and package a Unix man page.
+Document CLI usage and package a Unix man page.
