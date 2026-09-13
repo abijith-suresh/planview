@@ -7,7 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { Effect } from "effect";
-import { resolveDaemonConfigForTest } from "@planview/daemon";
+import { DaemonPortInUseError, resolveDaemonConfigForTest } from "@planview/daemon";
 import {
   createLocalApplication,
   LocalApplicationError,
@@ -136,6 +136,36 @@ test("invalid get references fail before the local daemon starts", async () => {
     );
     assert.equal(existsSync(runtimeDir), false);
   } finally {
+    await removeFixture(runtimeRoot);
+  }
+});
+
+test("local application keeps daemon error tags available to callers", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-local-error-test-"));
+  const port = await freePort();
+  const owner = createServer((socket) => socket.end());
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    owner.once("error", rejectPromise);
+    owner.listen(port, "127.0.0.1", () => resolvePromise());
+  });
+  const application = createLocalApplication({
+    daemonScriptPath,
+    config: resolveDaemonConfigForTest({
+      appDataDir: join(runtimeRoot, "data"),
+      runtimeDir: join(runtimeRoot, "data", "runtime"),
+      port,
+    }),
+  });
+
+  try {
+    await assert.rejects(
+      Effect.runPromise(application.start()),
+      (cause: unknown) => cause instanceof DaemonPortInUseError
+    );
+  } finally {
+    await new Promise<void>((resolvePromise, rejectPromise) =>
+      owner.close((cause) => (cause === undefined ? resolvePromise() : rejectPromise(cause)))
+    );
     await removeFixture(runtimeRoot);
   }
 });

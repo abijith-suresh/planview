@@ -341,11 +341,11 @@ const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
       }),
   });
 
-const runDaemonCommand = (
-  command: Exclude<Command, "publish" | "preview" | "get" | "skills">,
-  stdout: StdoutWriter
-) =>
-  Effect.gen(function* () {
+const runDaemonCommand = Effect.fnUntraced(
+  function* (
+    command: Exclude<Command, "publish" | "preview" | "get" | "skills">,
+    stdout: StdoutWriter
+  ) {
     const write = (message: string) =>
       Effect.tryPromise({
         try: () => Promise.resolve(stdout(message)),
@@ -399,16 +399,19 @@ const runDaemonCommand = (
         : `Planview daemon started at http://${result.status.host}:${result.status.port}/.\n`
     );
     return 0;
-  }).pipe(
-    Effect.mapError(
-      (cause) =>
-        new DaemonCommandError({
-          command,
-          cause,
-          message: `Could not ${command} the Planview daemon: ${describe(cause)}`,
-        })
+  },
+  (effect, command) =>
+    effect.pipe(
+      Effect.mapError(
+        (cause) =>
+          new DaemonCommandError({
+            command,
+            cause,
+            message: `Could not ${command} the Planview daemon: ${describe(cause)}`,
+          })
+      )
     )
-  );
+);
 
 export const parseGetReference = (reference: string, port?: number) =>
   String(parseDocumentReference(reference, port));
@@ -538,7 +541,14 @@ const command = (
 export const run = (args: readonly string[], stdout = writeStdout, stderr = writeStderr) =>
   command(args, stdout).pipe(
     Effect.tapError((error) =>
-      Effect.sync(() => stderr(error.message.endsWith("\n") ? error.message : `${error.message}\n`))
+      Effect.try({
+        try: () => stderr(error.message.endsWith("\n") ? error.message : `${error.message}\n`),
+        catch: (cause) =>
+          new OutputCommandError({
+            cause,
+            message: `Could not write command error: ${describe(cause)}`,
+          }),
+      })
     )
   );
 

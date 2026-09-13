@@ -10,6 +10,7 @@ import {
   startDetachedDaemon,
   stopDaemon,
   type DaemonConfig,
+  type DaemonError,
 } from "@planview/daemon";
 import type { DocumentId } from "@planview/core";
 import type { DocumentCleanupResult } from "@planview/storage";
@@ -23,6 +24,8 @@ export class LocalApplicationError extends Data.TaggedError("LocalApplicationErr
   readonly cause: unknown;
   readonly message: string;
 }> {}
+
+export type LocalApplicationFailure = LocalApplicationError | DaemonError;
 
 export type LocalApplicationOptions = Readonly<{
   readonly daemonScriptPath: string;
@@ -57,13 +60,13 @@ export type LocalGetOptions = Readonly<{
 export type LocalApplication = Readonly<{
   readonly publish: (
     sourcePath: string
-  ) => Effect.Effect<LocalPublishedDocument, LocalApplicationError>;
-  readonly get: (options: LocalGetOptions) => Effect.Effect<void, LocalApplicationError>;
-  readonly start: () => Effect.Effect<LocalDaemonStartResult, LocalApplicationError>;
-  readonly stop: () => Effect.Effect<void, LocalApplicationError>;
-  readonly restart: () => Effect.Effect<LocalDaemonRunningStatus, LocalApplicationError>;
-  readonly inspect: () => Effect.Effect<LocalDaemonStatus, LocalApplicationError>;
-  readonly clean: () => Effect.Effect<DocumentCleanupResult, LocalApplicationError>;
+  ) => Effect.Effect<LocalPublishedDocument, LocalApplicationFailure>;
+  readonly get: (options: LocalGetOptions) => Effect.Effect<void, LocalApplicationFailure>;
+  readonly start: () => Effect.Effect<LocalDaemonStartResult, LocalApplicationFailure>;
+  readonly stop: () => Effect.Effect<void, LocalApplicationFailure>;
+  readonly restart: () => Effect.Effect<LocalDaemonRunningStatus, LocalApplicationFailure>;
+  readonly inspect: () => Effect.Effect<LocalDaemonStatus, LocalApplicationFailure>;
+  readonly clean: () => Effect.Effect<DocumentCleanupResult, LocalApplicationFailure>;
 }>;
 
 const describe = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
@@ -88,19 +91,17 @@ const statusFromDescriptor = (descriptor: {
   startedAt: descriptor.startedAt,
 });
 
-const withConfig = <A>(
+const withConfig = Effect.fnUntraced(function* <A, E>(
   operation: LocalOperation,
   resolveConfig: () => DaemonConfig,
-  run: (config: DaemonConfig) => Effect.Effect<A, unknown>
-): Effect.Effect<A, LocalApplicationError> =>
-  Effect.tryPromise({
-    try: () => Promise.resolve(resolveConfig()),
+  run: (config: DaemonConfig) => Effect.Effect<A, E>
+): Effect.fn.Return<A, E | LocalApplicationError> {
+  const config = yield* Effect.try({
+    try: resolveConfig,
     catch: (cause) => localFailure(operation, cause),
-  }).pipe(
-    Effect.flatMap((config) =>
-      run(config).pipe(Effect.mapError((cause) => localFailure(operation, cause)))
-    )
-  );
+  });
+  return yield* run(config);
+});
 
 export const createLocalApplication = (options: LocalApplicationOptions): LocalApplication => {
   const resolveConfig = () => {
@@ -114,8 +115,8 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
   };
   const daemonOptions = { daemonScriptPath: options.daemonScriptPath };
 
-  const publish = (sourcePath: string) =>
-    Effect.acquireUseRelease(
+  const publish = Effect.fn("LocalApplication.publish")(function* (sourcePath: string) {
+    return yield* Effect.acquireUseRelease(
       Effect.tryPromise({
         try: () => preparePublishSource(sourcePath),
         catch: (cause) => localFailure("publish", cause),
@@ -139,26 +140,29 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
           catch: (cause) => localFailure("publish", cause),
         })
     );
+  });
 
-  const get = ({ reference, onChunk }: LocalGetOptions) =>
-    withConfig("get", resolveConfig, (config) =>
-      Effect.tryPromise({
-        try: () => Promise.resolve().then(() => parseDocumentReference(reference, config.port)),
-        catch: (cause) => cause,
-      }).pipe(
-        Effect.flatMap((documentId) =>
-          retrieveDocument(config, {
-            ...daemonOptions,
-            documentId,
-            onChunk,
-          })
-        ),
-        Effect.map(() => undefined)
-      )
-    );
+  const get = Effect.fn("LocalApplication.get")(function* ({
+    reference,
+    onChunk,
+  }: LocalGetOptions) {
+    const config = yield* Effect.try({
+      try: resolveConfig,
+      catch: (cause) => localFailure("get", cause),
+    });
+    const documentId = yield* Effect.try({
+      try: () => parseDocumentReference(reference, config.port),
+      catch: (cause) => localFailure("get", cause),
+    });
+    yield* retrieveDocument(config, {
+      ...daemonOptions,
+      documentId,
+      onChunk,
+    });
+  });
 
-  const start = (): Effect.Effect<LocalDaemonStartResult, LocalApplicationError> =>
-    withConfig("start", resolveConfig, (config) =>
+  const start = Effect.fn("LocalApplication.start")(function* () {
+    return yield* withConfig("start", resolveConfig, (config) =>
       startDetachedDaemon(config, daemonOptions).pipe(
         Effect.map(({ descriptor, reused }) => ({
           status: statusFromDescriptor(descriptor),
@@ -166,32 +170,37 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
         }))
       )
     );
+  });
 
-  const stop = () =>
-    withConfig("stop", resolveConfig, (config) =>
-      stopDaemon(config).pipe(Effect.map(() => undefined))
+  const stop = Effect.fn("LocalApplication.stop")(function* () {
+    return yield* withConfig("stop", resolveConfig, (config) =>
+      stopDaemon(config).pipe(Effect.asVoid)
     );
+  });
 
-  const restart = (): Effect.Effect<LocalDaemonRunningStatus, LocalApplicationError> =>
-    withConfig("restart", resolveConfig, (config) =>
+  const restart = Effect.fn("LocalApplication.restart")(function* () {
+    return yield* withConfig("restart", resolveConfig, (config) =>
       restartDaemon(config, daemonOptions).pipe(
         Effect.map(({ descriptor }) => statusFromDescriptor(descriptor))
       )
     );
+  });
 
-  const inspect = () =>
-    withConfig("inspect", resolveConfig, (config) =>
+  const inspect = Effect.fn("LocalApplication.inspect")(function* () {
+    return yield* withConfig("inspect", resolveConfig, (config) =>
       inspectDaemon(config).pipe(
         Effect.map((status) =>
           status.state === "running" ? statusFromDescriptor(status.status) : status
         )
       )
     );
+  });
 
-  const clean = () =>
-    withConfig("clean", resolveConfig, (config) =>
+  const clean = Effect.fn("LocalApplication.clean")(function* () {
+    return yield* withConfig("clean", resolveConfig, (config) =>
       cleanDaemon(config, daemonOptions).pipe(Effect.map(({ result }) => result))
     );
+  });
 
   return { publish, get, start, stop, restart, inspect, clean };
 };
