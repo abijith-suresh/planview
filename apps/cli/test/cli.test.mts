@@ -47,6 +47,13 @@ type PipedChild = ChildProcessByStdio<null, Readable, Readable>;
 const removeFixture = (path: string): Promise<void> =>
   rm(path, { force: true, recursive: true, maxRetries: 10, retryDelay: 50 });
 
+const temporaryBundleDirectories = () =>
+  new Set(
+    readdirSync(tmpdir(), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith("planview-bundle-"))
+      .map((entry) => entry.name)
+  );
+
 const waitFor = async <T,>(
   condition: () => T | false | undefined | PromiseLike<T | false | undefined>,
   timeout = 10_000
@@ -452,6 +459,46 @@ test("publish validates before startup and preserves the source file", async () 
   assert.match(oversized.stderr, /must not exceed 10485760 bytes/);
   assert.equal(existsSync(runtimeDir), false);
   await removeFixture(runtimeRoot);
+});
+
+test("publish removes a prepared page bundle when daemon startup fails", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-cleanup-test-"));
+  const site = join(runtimeRoot, "site");
+  mkdirSync(site);
+  writeFileSync(join(site, "index.html"), "<h1>blocked</h1>");
+
+  const blocker = createServer();
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    blocker.once("error", rejectPromise);
+    blocker.listen(0, "127.0.0.1", resolvePromise);
+  });
+  const address = blocker.address();
+  assert.ok(address !== null && typeof address !== "string");
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: join(runtimeRoot, "data"),
+    PLANVIEW_RUNTIME_DIR: join(runtimeRoot, "data", "runtime"),
+    PLANVIEW_TEST_DAEMON_PORT: String(address.port),
+  };
+  const before = temporaryBundleDirectories();
+
+  try {
+    const result = spawnSync(process.execPath, [cli, "publish", site], {
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(result.status, 1, result.stderr);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /Could not publish/);
+    const leaked = [...temporaryBundleDirectories()].filter((name) => !before.has(name));
+    assert.deepEqual(leaked, []);
+  } finally {
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      blocker.close((cause) => (cause === undefined ? resolvePromise() : rejectPromise(cause)));
+    });
+    await removeFixture(runtimeRoot);
+  }
 });
 
 test("publish budgets a slow maximum-size publication before returning its committed URL", async () => {
