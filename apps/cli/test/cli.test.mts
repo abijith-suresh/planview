@@ -152,7 +152,6 @@ test("help exposes the root and command-specific documentation", () => {
 
   for (const command of [
     "publish",
-    "preview",
     "get",
     "start",
     "status",
@@ -182,7 +181,6 @@ test("help exposes the root and command-specific documentation", () => {
 test("command options reject unknown flags before doing work", () => {
   const commands = [
     ["publish", "--unknown"],
-    ["preview", "--unknown"],
     ["get", "--unknown"],
     ["start", "--unknown"],
     ["status", "--unknown"],
@@ -200,7 +198,7 @@ test("command options reject unknown flags before doing work", () => {
   }
 });
 
-test("preview opens URLs with the platform browser launcher", async () => {
+test("browser opening uses the platform launcher", async () => {
   let command: string | undefined;
   let argumentsList: readonly string[] | undefined;
   let options: SpawnOptions | undefined;
@@ -354,19 +352,27 @@ test("recognized options reject trailing arguments", () => {
   assert.match(result.stderr, /^Unexpected argument: unexpected\n/);
 });
 
-test("publish and preview explain that they need a source path", async () => {
-  for (const command of ["publish", "preview"] as const) {
-    const stderr: string[] = [];
-    assert.equal(
-      await main(
-        [command],
-        () => undefined,
-        (message) => stderr.push(message)
-      ),
-      1
-    );
-    assert.match(stderr[0] ?? "", /^Missing source file or folder:/);
-  }
+test("publish explains that it needs a source path", async () => {
+  const stderr: string[] = [];
+  assert.equal(
+    await main(
+      ["publish"],
+      () => undefined,
+      (message) => stderr.push(message)
+    ),
+    1
+  );
+  assert.match(stderr[0] ?? "", /^Missing source file or folder:/);
+});
+
+test("publish --open is recognized and preview is not a command", () => {
+  const open = execute("publish", "--open");
+  assert.equal(open.status, 1);
+  assert.match(open.stderr, /^Missing source file or folder:/);
+
+  const preview = execute("preview", "--help");
+  assert.equal(preview.status, 1);
+  assert.match(preview.stderr, /^Unknown command: preview\n/);
 });
 
 test("the installed bin invokes the built CLI", () => {

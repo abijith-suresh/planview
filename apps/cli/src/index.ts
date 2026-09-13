@@ -121,8 +121,9 @@ export class PublishCommandError extends Data.TaggedError("PublishCommandError")
   readonly message: string;
 }> {}
 
-export class PreviewCommandError extends Data.TaggedError("PreviewCommandError")<{
+export class OpenBrowserCommandError extends Data.TaggedError("OpenBrowserCommandError")<{
   readonly sourcePath: string;
+  readonly url: string;
   readonly cause: unknown;
   readonly message: string;
 }> {}
@@ -149,7 +150,7 @@ export type CliError =
   | UnexpectedArgumentsError
   | DaemonCommandError
   | PublishCommandError
-  | PreviewCommandError
+  | OpenBrowserCommandError
   | GetCommandError
   | SkillsCommandError
   | OutputCommandError;
@@ -169,12 +170,14 @@ type ParsedArguments = Readonly<{
   readonly help: boolean;
   readonly json: boolean;
   readonly force: boolean;
+  readonly open: boolean;
   readonly operands: readonly string[];
 }>;
 
 type OptionParserOptions = Readonly<{
   readonly allowForce?: boolean;
   readonly allowJson?: boolean;
+  readonly allowOpen?: boolean;
   readonly allowLeadingHyphenOperand?: (argument: string) => boolean;
   readonly helpTopic: HelpTopic;
 }>;
@@ -199,6 +202,7 @@ const parseOptions = (
   let help = false;
   let json = false;
   let force = false;
+  let open = false;
   const operands: string[] = [];
 
   for (const argument of args) {
@@ -217,6 +221,14 @@ const parseOptions = (
         return Effect.fail(unknownOption(argument, options.helpTopic));
       }
       json = true;
+      continue;
+    }
+
+    if (!optionsEnded && argument === "--open") {
+      if (options.allowOpen !== true) {
+        return Effect.fail(unknownOption(argument, options.helpTopic));
+      }
+      open = true;
       continue;
     }
 
@@ -240,7 +252,7 @@ const parseOptions = (
     operands.push(argument);
   }
 
-  return Effect.succeed({ help, json, force, operands });
+  return Effect.succeed({ help, json, force, open, operands });
 };
 
 const formatJson = (value: unknown) => {
@@ -340,7 +352,7 @@ const formatError = (error: CliError, format: OutputFormat) => {
     details.command = error.command;
   } else if (error instanceof PublishCommandError) {
     details.sourcePath = error.sourcePath;
-  } else if (error instanceof PreviewCommandError) {
+  } else if (error instanceof OpenBrowserCommandError) {
     details.sourcePath = error.sourcePath;
   } else if (error instanceof GetCommandError) {
     details.reference = error.reference;
@@ -410,44 +422,44 @@ const publishSource = (sourcePath: string) =>
     .publish(sourcePath)
     .pipe(Effect.mapError((cause) => publishFailure(sourcePath, cause)));
 
-const runPublishCommand = (sourcePath: string, format: OutputFormat, stdout: StdoutWriter) =>
-  publishSource(sourcePath).pipe(
-    Effect.flatMap((published) =>
-      writeCommandResult(stdout, format, published, ({ url }) => `${url}\n`).pipe(
-        Effect.map(() => 0)
-      )
-    ),
-    Effect.mapError((cause) =>
-      cause instanceof OutputCommandError || cause instanceof PublishCommandError
-        ? cause
-        : new PublishCommandError({
-            sourcePath,
-            cause,
-            message: `Could not publish ${sourcePath}: ${describe(cause)}`,
-          })
-    )
-  );
+const openBrowserFailure = (sourcePath: string, url: string, cause: unknown) =>
+  new OpenBrowserCommandError({
+    sourcePath,
+    url,
+    cause,
+    message: `Could not open ${url} in a browser: ${describe(cause)}`,
+  });
 
-const runPreviewCommand = (sourcePath: string, format: OutputFormat, stdout: StdoutWriter) =>
+const openPublishedUrl = (sourcePath: string, url: string) =>
+  Effect.tryPromise({
+    try: () => openUrl(url),
+    catch: (cause) => openBrowserFailure(sourcePath, url, cause),
+  });
+
+const runPublishCommand = (
+  sourcePath: string,
+  format: OutputFormat,
+  open: boolean,
+  stdout: StdoutWriter
+) =>
   publishSource(sourcePath).pipe(
     Effect.flatMap((published) =>
       writeCommandResult(stdout, format, published, ({ url }) => `${url}\n`).pipe(
         Effect.flatMap(() =>
-          Effect.tryPromise({
-            try: () => openUrl(published.url),
-            catch: (cause) => cause,
-          })
+          open ? openPublishedUrl(sourcePath, published.url) : Effect.succeed(undefined)
         ),
         Effect.map(() => 0)
       )
     ),
     Effect.mapError((cause) =>
-      cause instanceof PreviewCommandError || cause instanceof OutputCommandError
+      cause instanceof OutputCommandError ||
+      cause instanceof PublishCommandError ||
+      cause instanceof OpenBrowserCommandError
         ? cause
-        : new PreviewCommandError({
+        : new PublishCommandError({
             sourcePath,
             cause,
-            message: `Could not preview ${sourcePath}: ${describe(cause)}`,
+            message: `Could not publish ${sourcePath}: ${describe(cause)}`,
           })
     )
   );
@@ -486,7 +498,7 @@ const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
 
 const runDaemonCommand = Effect.fnUntraced(
   function* (
-    command: Exclude<Command, "publish" | "preview" | "get" | "skills" | "help">,
+    command: Exclude<Command, "publish" | "get" | "skills" | "help">,
     format: OutputFormat,
     stdout: StdoutWriter
   ) {
@@ -645,12 +657,13 @@ const runSkillsCommand = (
 };
 
 const runDocumentCommand = (
-  commandName: "publish" | "preview" | "get",
+  commandName: "publish" | "get",
   args: readonly string[],
   stdout: StdoutWriter
 ): Effect.Effect<number, CliError> =>
   parseOptions(args, {
-    allowJson: commandName !== "get",
+    allowJson: commandName === "publish",
+    allowOpen: commandName === "publish",
     ...(commandName === "get"
       ? {
           allowLeadingHyphenOperand: (argument: string) => {
@@ -688,17 +701,14 @@ const runDocumentCommand = (
       const format: OutputFormat = parsed.json ? "json" : "text";
       const operand = parsed.operands[0];
       if (commandName === "publish") {
-        return runPublishCommand(operand, format, stdout);
-      }
-      if (commandName === "preview") {
-        return runPreviewCommand(operand, format, stdout);
+        return runPublishCommand(operand, format, parsed.open, stdout);
       }
       return runGetCommand(operand, stdout);
     })
   );
 
 const runDaemonCommandFromArgs = (
-  commandName: Exclude<Command, "publish" | "preview" | "get" | "skills" | "help">,
+  commandName: Exclude<Command, "publish" | "get" | "skills" | "help">,
   args: readonly string[],
   stdout: StdoutWriter
 ): Effect.Effect<number, CliError> =>
@@ -763,7 +773,7 @@ const command = (
     return runSkillsCommand(trailing, stdout);
   }
 
-  if (argument === "publish" || argument === "preview" || argument === "get") {
+  if (argument === "publish" || argument === "get") {
     return runDocumentCommand(argument, trailing, stdout);
   }
 
@@ -797,7 +807,7 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
         "UnexpectedArgumentsError",
         "DaemonCommandError",
         "PublishCommandError",
-        "PreviewCommandError",
+        "OpenBrowserCommandError",
         "GetCommandError",
         "SkillsCommandError",
         "OutputCommandError",

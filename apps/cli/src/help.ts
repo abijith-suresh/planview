@@ -1,6 +1,5 @@
 export const COMMANDS = [
   "publish",
-  "preview",
   "get",
   "start",
   "status",
@@ -17,8 +16,7 @@ export type HelpTopic = Command | "skills install";
 const ROOT_HELP = `Usage: planview <command> [options]
 
 Commands:
-  publish <file|folder>  Publish an immutable HTML snapshot and print its URL
-  preview <file|folder>  Publish a snapshot and open its URL in a browser
+  publish <file|folder>  Publish a snapshot and print its URL
   get <id|url>           Write a stored snapshot to standard output
   start                  Start the local daemon, or reuse the running daemon
   status                 Show daemon status without starting it
@@ -43,15 +41,7 @@ The input may be an HTML file or a page folder containing index.html.
 
 Options:
   -h, --help             Show this help message
-  --json                 Print the snapshot id and URL as one JSON object
-`,
-  preview: `Usage: planview preview [options] <file|folder>
-
-Publish an immutable HTML snapshot and open its URL in the default browser.
-The input may be an HTML file or a page folder containing index.html.
-
-Options:
-  -h, --help             Show this help message
+  --open                 Open the published URL in the default browser
   --json                 Print the snapshot id and URL as one JSON object
 `,
   get: `Usage: planview get [options] <id|url>
