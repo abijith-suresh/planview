@@ -144,6 +144,62 @@ test("--help and -h produce the same deterministic output", () => {
   assert.match(long.stdout, /^Usage: planview <command>/);
 });
 
+test("help exposes the root and command-specific documentation", () => {
+  const root = execute("help");
+  assert.equal(root.status, 0, root.stderr);
+  assert.equal(root.stderr, "");
+  assert.equal(root.stdout, formatHelp());
+
+  for (const command of [
+    "publish",
+    "preview",
+    "get",
+    "start",
+    "status",
+    "stop",
+    "restart",
+    "clean",
+    "skills",
+    "help",
+  ] as const) {
+    const fromHelp = execute("help", command);
+    const fromOption = execute(command, "--help");
+
+    assert.equal(fromHelp.status, 0, fromHelp.stderr);
+    assert.equal(fromOption.status, 0, fromOption.stderr);
+    assert.equal(fromHelp.stderr, "");
+    assert.equal(fromOption.stderr, "");
+    assert.equal(fromHelp.stdout, fromOption.stdout);
+  }
+
+  const installFromHelp = execute("help", "skills", "install");
+  const installFromOption = execute("skills", "install", "--help");
+  assert.equal(installFromHelp.status, 0, installFromHelp.stderr);
+  assert.equal(installFromOption.status, 0, installFromOption.stderr);
+  assert.equal(installFromHelp.stdout, installFromOption.stdout);
+});
+
+test("command options reject unknown flags before doing work", () => {
+  const commands = [
+    ["publish", "--unknown"],
+    ["preview", "--unknown"],
+    ["get", "--unknown"],
+    ["start", "--unknown"],
+    ["status", "--unknown"],
+    ["stop", "--unknown"],
+    ["restart", "--unknown"],
+    ["clean", "--unknown"],
+    ["skills", "install", "--unknown"],
+  ] as const;
+
+  for (const args of commands) {
+    const result = execute(...args);
+    assert.equal(result.status, 1, `${args.join(" ")} should fail`);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /^Unknown option: --unknown\n/);
+  }
+});
+
 test("preview opens URLs with the platform browser launcher", async () => {
   let command: string | undefined;
   let argumentsList: readonly string[] | undefined;
@@ -259,6 +315,34 @@ test("unknown options fail with a useful error", () => {
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /^Unknown option: --unknown\n/);
   assert.match(result.stderr, /Usage: planview <command>/);
+});
+
+test("JSON errors stay machine-readable on stderr", () => {
+  const result = execute("publish", "--json", "--unknown");
+
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.deepEqual(JSON.parse(result.stderr), {
+    error: {
+      code: "UnknownOptionError",
+      message: "Unknown option: --unknown",
+      option: "--unknown",
+    },
+  });
+});
+
+test("get keeps stdout available for raw document bytes", () => {
+  const result = execute("get", "--json");
+
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, "");
+  assert.deepEqual(JSON.parse(result.stderr), {
+    error: {
+      code: "UnknownOptionError",
+      message: "Unknown option: --json",
+      option: "--json",
+    },
+  });
 });
 
 test("recognized options reject trailing arguments", () => {
@@ -443,6 +527,78 @@ const freePort = (): Promise<number> =>
       );
     });
   });
+
+test("metadata commands emit one JSON object when requested", async () => {
+  const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-json-cli-test-"));
+  const appDataDir = join(runtimeRoot, "data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const environment = {
+    ...process.env,
+    NODE_ENV: "test",
+    PLANVIEW_APP_DATA_DIR: appDataDir,
+    PLANVIEW_RUNTIME_DIR: runtimeDir,
+    PLANVIEW_TEST_DAEMON_PORT: String(port),
+  };
+  const executeInFixture = (...args: string[]) =>
+    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+
+  try {
+    const stopped = executeInFixture("status", "--json");
+    assert.equal(stopped.status, 0, stopped.stderr);
+    assert.deepEqual(JSON.parse(stopped.stdout), { state: "stopped" });
+
+    const started = executeInFixture("start", "--json");
+    assert.equal(started.status, 0, started.stderr);
+    const startedDocument = JSON.parse(started.stdout);
+    assert.equal(startedDocument.state, "running");
+    assert.equal(startedDocument.host, "127.0.0.1");
+    assert.equal(startedDocument.port, port);
+    assert.equal(startedDocument.reused, false);
+
+    const sourcePath = join(runtimeRoot, "json.html");
+    writeFileSync(sourcePath, "<main>json</main>");
+    const published = executeInFixture("publish", "--json", sourcePath);
+    assert.equal(published.status, 0, published.stderr);
+    const publication = JSON.parse(published.stdout);
+    assert.match(publication.id, /^[A-Za-z0-9_-]{21}$/);
+    assert.equal(publication.url, `http://localhost:${port}/${publication.id}`);
+
+    const running = executeInFixture("status", "--json");
+    assert.equal(running.status, 0, running.stderr);
+    const runningDocument = JSON.parse(running.stdout);
+    assert.deepEqual(runningDocument, {
+      state: "running",
+      host: "127.0.0.1",
+      port,
+      pid: runningDocument.pid,
+      startedAt: runningDocument.startedAt,
+    });
+
+    const restarted = executeInFixture("restart", "--json");
+    assert.equal(restarted.status, 0, restarted.stderr);
+    const restartedDocument = JSON.parse(restarted.stdout);
+    assert.equal(restartedDocument.state, "running");
+    assert.equal(restartedDocument.host, "127.0.0.1");
+    assert.equal(restartedDocument.port, port);
+
+    const cleaned = executeInFixture("clean", "--json");
+    assert.equal(cleaned.status, 0, cleaned.stderr);
+    const cleanup = JSON.parse(cleaned.stdout);
+    assert.equal(Array.isArray(cleanup.failures), true);
+    assert.equal(
+      cleanup.failures.some((failure: Record<string, unknown>) => "cause" in failure),
+      false
+    );
+
+    const finalStop = executeInFixture("stop", "--json");
+    assert.equal(finalStop.status, 0, finalStop.stderr);
+    assert.deepEqual(JSON.parse(finalStop.stdout), { state: "stopped" });
+  } finally {
+    executeInFixture("stop");
+    await removeFixture(runtimeRoot);
+  }
+});
 
 test("publish validates before startup and preserves the source file", async () => {
   const runtimeRoot = mkdtempSync(join(tmpdir(), "planview-publish-validation-test-"));
