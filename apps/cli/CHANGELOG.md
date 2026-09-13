@@ -1,5 +1,19 @@
 # @abijith-suresh/planview
 
+## 0.1.4
+
+### Patch Changes
+
+- 0dc132c: Add command-specific help, strict option parsing, and JSON output for CLI metadata commands.
+- a2928c0: Keep CLI command composition in Effect and clean prepared sources after failed publications.
+- af7ce8c: Route CLI operations through the reusable local Effect API.
+- ba8743b: Document CLI usage and package a Unix man page.
+- 51466a4: Improve publish guidance and the missing-input message.
+- 1bc8657: Expose daemon lifecycle and document operations as typed Effect programs.
+- 1bc8657: Upgrade the CLI runtime to the current Effect v4 release candidate.
+- 4437bb4: Expose publication and cleanup coordination as typed Effect programs.
+- 7519d6d: Align Effect v4 boundaries with typed errors and propagate cancellation through daemon operations.
+
 ## 0.1.3
 
 ### Patch Changes
