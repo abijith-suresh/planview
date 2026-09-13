@@ -32,7 +32,8 @@ Text output contains no progress messages or logs. A command that accepts
 ### `publish <file|folder>`
 
 Publishes an immutable HTML file or page folder and prints its URL. A folder
-must contain `index.html`.
+must contain `index.html`. Pass `--open` to open the resulting URL in the
+platform's default browser.
 
 Text stdout:
 
@@ -46,10 +47,8 @@ JSON stdout with `--json`:
 {"id":"<id>","url":"http://localhost:4777/<id>"}
 ```
 
-### `preview <file|folder>`
-
-Publishes the same snapshot as `publish`, prints the URL, and opens it in the
-platform's default browser. Its JSON result has the same shape as `publish`.
+`publish --open` uses the same output and JSON shapes as `publish`; it adds the
+browser-opening side effect.
 
 ### `get <id|url>`
 

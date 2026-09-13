@@ -15,10 +15,10 @@ that was already printed.
 ## Workflow
 
 1. Confirm the input is a complete `.html` or `.htm` file no larger than 10 MiB.
-2. Preview it when you need to inspect the result in a browser:
+2. Open it in a browser when you need to inspect the result:
 
    ```sh
-   planview preview ./report.html
+   planview publish --open ./report.html
    ```
 
    Use `publish` when you only need the URL:

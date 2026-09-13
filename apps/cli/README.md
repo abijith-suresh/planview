@@ -20,7 +20,7 @@ planview publish ./site
 # http://localhost:4777/<id>
 
 # Publish and open the URL in the default browser
-planview preview ./site
+planview publish --open ./site
 
 ```
 
@@ -72,10 +72,10 @@ stderr. `clean` starts or reuses the daemon and invokes its authenticated
 human-readable summary to stdout. `status` does not start a daemon; `start`
 reuses an authenticated daemon it owns and never terminates an unknown process
 listening on the port.
-`preview` follows the same publish flow, prints the URL, and asks the platform's
-default browser opener to open it. If the opener is unavailable, the URL is
-still printed and the command reports the browser error on stderr. `get` keeps
-its output as raw document bytes, so it does not support `--json`.
+`publish --open` follows the same publish flow, prints the URL, and asks the
+platform's default browser opener to open it. If the opener is unavailable, the
+URL is still printed and the command reports the browser error on stderr.
+`get` keeps its output as raw document bytes, so it does not support `--json`.
 
 The package also bundles independent `planview` and `create-html` Agent Skills.
 Install both into `~/.agents/skills` with:

@@ -1,6 +1,6 @@
 .TH PLANVIEW 1 "September 2026" "Planview" "User Commands"
 .SH NAME
-planview \- publish and preview immutable HTML snapshots
+planview \- publish immutable HTML snapshots
 .SH SYNOPSIS
 .B planview
 .I command
@@ -17,17 +17,15 @@ and is published with its assets.
 .PP
 The
 .B publish
-command creates a snapshot without opening a browser. The
-.B preview
-command creates the same kind of snapshot and opens its URL in the default
-browser.
+command creates a snapshot and prints its URL. Pass
+.B \-\-open
+to open the URL in the default browser after publishing.
 .SH COMMANDS
 .TP
 .B publish [options] file|folder
-Publish an immutable HTML snapshot and print its URL.
-.TP
-.B preview [options] file|folder
-Publish an immutable HTML snapshot and open its URL in the default browser.
+Publish an immutable HTML snapshot and print its URL. Use
+.B \-\-open
+to open the URL in the default browser.
 .TP
 .B get id|url
 Write a stored snapshot's exact bytes to standard output. The reference must be
@@ -69,11 +67,14 @@ to request help explicitly.
 .B \-v, \-\-version
 Show the Planview CLI version.
 .TP
+.B \-\-open
+Open the published URL in the default browser. Supported by
+.B publish
+only.
+.TP
 .B \-\-json
 Print one newline-terminated JSON object for metadata commands. Supported by
 .B publish
-,
-.B preview
 ,
 .B start
 ,
@@ -128,7 +129,7 @@ The command could not complete, or its arguments were invalid.
 .SH EXAMPLES
 .EX
 planview publish ./report.html
-planview preview ./site
+planview publish --open ./site
 planview get http://localhost:4777/<id> > report.html
 planview status --json
 planview publish --json ./report.html
