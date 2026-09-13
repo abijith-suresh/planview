@@ -2,4 +2,4 @@
 "@abijith-suresh/planview": patch
 ---
 
-Improve the preview command guidance and missing-input message.
+Improve publish guidance and the missing-input message.

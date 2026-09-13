@@ -222,7 +222,8 @@ test("repository foundation has the expected configuration", () => {
     "CLI local application dependency"
   );
   expectProperty(cliPackageJson.bin, "planview", "./dist/index.js", "CLI bin mapping");
-  expectEqual(cliPackageJson.files, ["dist", "skills", "README.md"], "CLI publish files");
+  expectEqual(cliPackageJson.files, ["dist", "skills", "man", "README.md"], "CLI publish files");
+  expectEqual(cliPackageJson.man, "./man/planview.1", "CLI man page");
   expectProperty(
     cliPackageJson.scripts,
     "build",
@@ -232,7 +233,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(cliPackageJson.scripts, "prepack", "npm run build", "CLI prepack script");
   const cliSource = readText("apps/cli/src/index.ts");
   assert.match(cliSource, /from "\.\.\/package\.json" with \{ type: "json" \}/);
-  assert.match(cliSource, /skills install/);
+  assert.match(readText("apps/cli/src/help.ts"), /skills install/);
   assert.match(readText("apps/cli/skills/planview/SKILL.md"), /^name: planview/m);
   assert.match(readText("apps/cli/skills/create-html/SKILL.md"), /^name: create-html/m);
   assert.match(cliSource, /export const VERSION = packageVersion;/);
