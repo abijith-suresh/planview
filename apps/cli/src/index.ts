@@ -502,7 +502,7 @@ const command = (
     if (trailing.length !== 1 || trailing[0] === undefined) {
       const label =
         trailing.length === 0
-          ? argument === "publish"
+          ? argument === "publish" || argument === "preview"
             ? "Missing source file or folder"
             : "Missing document id or URL"
           : "Unexpected arguments";

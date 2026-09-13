@@ -3,27 +3,35 @@
 The public `@abijith-suresh/planview` command-line package. It publishes immutable,
 30-day-last-access-retained HTML snapshots through the private localhost daemon:
 
+Install it once:
+
 ```sh
-npx @abijith-suresh/planview publish ./report.html
+npm install --global @abijith-suresh/planview
+```
+
+For a one-off run, use `npx @abijith-suresh/planview` instead.
+
+```sh
+planview publish ./report.html
 # http://localhost:4777/<id>
 
 # A folder publishes index.html and its assets as one snapshot
-npx @abijith-suresh/planview publish ./site
+planview publish ./site
 # http://localhost:4777/<id>
 
 # Publish and open the URL in the default browser
-npx @abijith-suresh/planview preview ./site
+planview preview ./site
 
 ```
 
 The daemon can also be managed directly:
 
 ```sh
-npx @abijith-suresh/planview start
-npx @abijith-suresh/planview status
-npx @abijith-suresh/planview stop
-npx @abijith-suresh/planview restart
-npx @abijith-suresh/planview clean
+planview start
+planview status
+planview stop
+planview restart
+planview clean
 ```
 
 The daemon is detached, bound only to the fixed `127.0.0.1:4777`, and stores
