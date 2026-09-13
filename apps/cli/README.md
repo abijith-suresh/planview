@@ -49,6 +49,26 @@ man planview
 `planview help` is the portable help path. Newer npm versions may keep the
 manual in the package without registering it with the system `man` command.
 
+## Automation contract
+
+Successful results go to stdout. Errors go to stderr. Exit status `0` means
+success; exit status `1` means invalid input or an operation failure. `get`
+writes only the stored document bytes to stdout.
+
+Options may appear before or after operands. `--` ends option parsing, and an
+unknown option fails before the command starts work. Commands that accept
+`--json` write one newline-terminated JSON value. For example:
+
+```json
+{"id":"<id>","url":"http://localhost:4777/<id>"}
+```
+
+`status --json` reports either `{"state":"stopped"}` or a running daemon
+with its `host`, `port`, `pid`, and `startedAt`. `start --json` adds `reused`.
+`stop --json` reports the stopped state. `clean --json` returns cleanup counts
+and failure messages without internal causes. `publish --open` keeps the
+normal publish result and adds the browser-opening side effect.
+
 The daemon can also be managed directly:
 
 ```sh
@@ -72,11 +92,6 @@ stderr. `clean` starts or reuses the daemon and invokes its authenticated
 human-readable summary to stdout. `status` does not start a daemon; `start`
 reuses an authenticated daemon it owns and never terminates an unknown process
 listening on the port.
-`publish --open` follows the same publish flow, prints the URL, and asks the
-platform's default browser opener to open it. If the opener is unavailable, the
-URL is still printed and the command reports the browser error on stderr.
-`get` keeps its output as raw document bytes, so it does not support `--json`.
-
 The package also bundles independent `planview` and `create-html` Agent Skills.
 Install both into `~/.agents/skills` with:
 

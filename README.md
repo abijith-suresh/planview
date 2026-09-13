@@ -10,11 +10,12 @@ private `@planview/core`, `@planview/daemon`, `@planview/storage`, and
 `@planview/local` workspaces. The CLI
 is an installable TypeScript ESM package with detached daemon lifecycle
 commands: `start`, `status`, `stop`, and `restart`, plus `publish <file|folder>`
-and `get <id|url>` for immutable HTML snapshots. `preview <file|folder>` also
-publishes and opens the resulting URL. A publish folder must contain
+and `get <id|url>` for immutable HTML snapshots. `publish --open <file|folder>`
+opens the resulting URL after publishing. A publish folder must contain
 `index.html`; its assets are served below the same immutable URL. The private daemon is bundled into
 the one published CLI artifact and owns loopback-only lifecycle HTTP and direct
 snapshot serving.
+See [apps/cli/README.md](apps/cli/README.md) for CLI usage and automation details.
 Core resolves conventional per-user application-data paths and holds the fixed
 v1 policy values. Storage owns daemon-private metadata in a versioned SQLite
 database, immutable document-file staging/finalization, and a private
@@ -77,9 +78,8 @@ publish/get, daemon status/stop, and bundled skills installation; the POSIX-only
 storage suite remains part of Linux `npm run verify`. A push to `main` validates the
 repository, then the Changesets Action creates or updates the generated
 `changeset-release/main` version PR with the `RELEASE_TOKEN` PAT. Merging that PR
-runs the same release command; npm publishing remains explicitly disabled until
-its registry and separate npm token are configured. See [RELEASING.md](RELEASING.md)
-for details.
+runs the same release command. npm publishing is disabled by default. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the release policy.
 
 The Pages workflow builds `apps/site` on relevant pushes to `main` and deploys it
 at `https://<owner>.github.io/<repository>/`. The existing Astro configuration
@@ -99,10 +99,10 @@ npm's available fix is `astro@7.2.0`, a major upgrade from Astro 5, so this
 slice does not apply it without a compatibility review. These findings remain a
 build-toolchain follow-up; no audit suppression is used.
 
-## Contributing and releases
+## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for changeset and verification requirements
-and [RELEASING.md](RELEASING.md) for the maintainer release procedure.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for changeset, verification, and release
+policy requirements.
 
 ## Planned structure
 
