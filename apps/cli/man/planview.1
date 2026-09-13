@@ -1,0 +1,139 @@
+.TH PLANVIEW 1 "September 2026" "Planview" "User Commands"
+.SH NAME
+planview \- publish and preview immutable HTML snapshots
+.SH SYNOPSIS
+.B planview
+.I command
+[\fIoptions\fR]
+.br
+.B planview help
+[\fIcommand\fR]
+.SH DESCRIPTION
+.B planview
+publishes an HTML file or page folder to a local daemon and returns a stable
+localhost URL. A page folder must contain
+.B index.html
+and is published with its assets.
+.PP
+The
+.B publish
+command creates a snapshot without opening a browser. The
+.B preview
+command creates the same kind of snapshot and opens its URL in the default
+browser.
+.SH COMMANDS
+.TP
+.B publish [options] file|folder
+Publish an immutable HTML snapshot and print its URL.
+.TP
+.B preview [options] file|folder
+Publish an immutable HTML snapshot and open its URL in the default browser.
+.TP
+.B get id|url
+Write a stored snapshot's exact bytes to standard output. The reference must be
+a document id or an exact local Planview URL.
+.TP
+.B start [options]
+Start the local daemon, or reuse the authenticated daemon already running.
+.TP
+.B status [options]
+Show daemon status without starting a daemon.
+.TP
+.B stop [options]
+Gracefully stop the local daemon.
+.TP
+.B restart [options]
+Restart the local daemon.
+.TP
+.B clean [options]
+Remove expired snapshots and reconcile incomplete storage operations.
+.TP
+.B skills install [options]
+Install the bundled
+.B planview
+and
+.B create-html
+Agent Skills into
+.B ~/.agents/skills
+.
+.TP
+.B help [command]
+Show help for the whole CLI or for one command.
+.SH OPTIONS
+.TP
+.B \-h, \-\-help
+Show the relevant help text. Use
+.B planview help command
+to request help explicitly.
+.TP
+.B \-v, \-\-version
+Show the Planview CLI version.
+.TP
+.B \-\-json
+Print one newline-terminated JSON object for metadata commands. Supported by
+.B publish
+,
+.B preview
+,
+.B start
+,
+.B status
+,
+.B stop
+,
+.B restart
+,
+and
+.B clean
+.
+.TP
+.B \-\-force
+Replace existing skill directories when used with
+.B skills install
+.
+.TP
+.B \-\-
+Stop option parsing. Text after this marker is treated as an operand.
+.SH OUTPUT
+Successful text output goes to standard output. Errors go to standard error.
+.B get
+writes only the stored document bytes to standard output.
+.PP
+With
+.B \-\-json
+, successful metadata commands write one JSON object followed by a newline.
+JSON errors use an
+.B error
+object on standard error. The
+.B get
+command does not accept
+.B \-\-json
+because its output is the stored document itself.
+.SH FILES
+.TP
+.B ~/.local/share/planview
+Default application data directory on supported Unix systems.
+.TP
+.B ~/.agents/skills
+Destination used by
+.B skills install
+.
+.SH EXIT STATUS
+.TP
+.B 0
+The command completed successfully.
+.TP
+.B 1
+The command could not complete, or its arguments were invalid.
+.SH EXAMPLES
+.EX
+planview publish ./report.html
+planview preview ./site
+planview get http://localhost:4777/<id> > report.html
+planview status --json
+planview publish --json ./report.html
+planview help publish
+.EE
+.SH SEE ALSO
+.BR npm (1),
+.BR man (1)
