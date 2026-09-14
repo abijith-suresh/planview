@@ -1052,6 +1052,11 @@ const listen = (
     tryCandidate();
   });
 
+const portInUseMessage = (config: Pick<DaemonConfig, "host" | "port" | "strictPort">) =>
+  config.strictPort
+    ? `Port ${config.port} on ${config.host} is occupied by an unknown process; Planview will not stop it.`
+    : `No available port was found on ${config.host} from ${config.port} through ${Math.min(65_535, config.port + DAEMON_PORT_FALLBACK_ATTEMPTS)}.`;
+
 const forceCloseServer = (server: import("node:http").Server, connections: ReadonlySet<Socket>) => {
   server.closeIdleConnections();
   server.closeAllConnections();
@@ -2386,9 +2391,7 @@ const openDaemon = async (config: DaemonConfig) => {
       throw new DaemonPortInUseError({
         host: config.host,
         port: config.port,
-        message: config.strictPort
-          ? `Port ${config.port} on ${config.host} is occupied by an unknown process; Planview will not stop it.`
-          : `No available port was found on ${config.host} from ${config.port} through ${Math.min(65_535, config.port + DAEMON_PORT_FALLBACK_ATTEMPTS)}.`,
+        message: portInUseMessage(config),
       });
     }
     throw cause;
@@ -2773,18 +2776,17 @@ const waitForReady = async (
       diagnostics.length === 0
         ? cause
         : new Error(`${describe(cause)}\nDaemon stderr: ${diagnostics}`);
-    startupFailure =
-      config.strictPort && diagnostics.includes("occupied by an unknown process")
-        ? new DaemonPortInUseError({
-            host: config.host,
-            port: config.port,
-            message: `Port ${config.port} on ${config.host} is occupied by an unknown process; Planview will not stop it.`,
-          })
-        : new DaemonRequestError({
-            path: DAEMON_READY_PATH,
-            cause: detailedCause,
-            message: `The detached Planview daemon failed before readiness: ${describe(detailedCause)}`,
-          });
+    startupFailure = diagnostics.includes(portInUseMessage(config))
+      ? new DaemonPortInUseError({
+          host: config.host,
+          port: config.port,
+          message: portInUseMessage(config),
+        })
+      : new DaemonRequestError({
+          path: DAEMON_READY_PATH,
+          cause: detailedCause,
+          message: `The detached Planview daemon failed before readiness: ${describe(detailedCause)}`,
+        });
     rejectChildFailure?.(startupFailure);
   };
   const onChildStderr = (chunk: string | Uint8Array) => {
@@ -2910,10 +2912,9 @@ const startWithLock = async (
     assertDescriptorEndpoint(config, startupDescriptor, paths.descriptorPath);
   }
   const { spawn } = await import("node:child_process");
-  const captureStartupDiagnostics = isTestProcess() || config.port !== DAEMON_PORT;
   const child = spawn(process.execPath, [options.daemonScriptPath], {
     detached: true,
-    stdio: captureStartupDiagnostics ? ["ignore", "ignore", "pipe"] : "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true,
     env: resolveDaemonEnvironment(config, lock.token),
   });
