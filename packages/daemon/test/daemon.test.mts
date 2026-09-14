@@ -44,6 +44,7 @@ type DaemonDescriptor = Readonly<{
   readonly pid: number;
   readonly host: string;
   readonly port: number;
+  readonly profile?: string;
   readonly secret: string;
   readonly startedAt: number;
 }>;
@@ -315,13 +316,36 @@ test("public configuration fixes 4777, while test injection is explicit and cont
     );
     assert.equal(publicConfig.port, daemon.DAEMON_PORT);
     assert.equal(publicConfig.port, 4777);
+    assert.equal(publicConfig.profile, "default");
 
     const testConfig = daemon.resolveDaemonConfigForTest({ appDataDir, port: 4997 });
     assert.equal(testConfig.port, 4997);
+    assert.equal(testConfig.profile, "default");
     assert.throws(
       () => daemon.resolveDaemonPaths({ appDataDir, runtimeDir: join(fixture, "outside") }),
       /contained below app-data/
     );
+  } finally {
+    rmSync(fixture, { force: true, recursive: true });
+  }
+});
+
+test("profile configuration isolates the default path and explicit test paths", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-profile-config-"));
+  try {
+    const defaultConfig = daemon.resolveDaemonConfig({}, { XDG_DATA_HOME: fixture });
+    const namedConfig = daemon.resolveDaemonConfig({ profile: "work" }, { XDG_DATA_HOME: fixture });
+    assert.equal(defaultConfig.profile, "default");
+    assert.equal(namedConfig.profile, "work");
+    assert.equal(defaultConfig.appDataDir, join(fixture, "planview"));
+    assert.equal(namedConfig.appDataDir, join(fixture, "planview", "profiles", "work"));
+    assert.notEqual(defaultConfig.runtimeDir, namedConfig.runtimeDir);
+
+    const explicitConfig = daemon.resolveDaemonConfig({
+      appDataDir: join(fixture, "explicit"),
+      profile: "work",
+    });
+    assert.equal(explicitConfig.appDataDir, join(fixture, "explicit"));
   } finally {
     rmSync(fixture, { force: true, recursive: true });
   }
@@ -345,6 +369,7 @@ test("detached daemon environments contain Planview settings and safe runtime pl
 
   assert.deepEqual(environment, {
     PLANVIEW_APP_DATA_DIR: "/tmp/planview-app-data",
+    PLANVIEW_PROFILE: "default",
     PLANVIEW_RUNTIME_DIR: "/tmp/planview-runtime",
     PLANVIEW_DAEMON_LIFECYCLE_TOKEN: "lifecycle-token",
     PATH: "/unrelated/path",
@@ -355,6 +380,22 @@ test("detached daemon environments contain Planview settings and safe runtime pl
     PLANVIEW_TEST_DAEMON_PORT: "4777",
     PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "250",
   });
+});
+
+test("a detached daemon keeps the selected profile in its descriptor", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-profile-child-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const port = await freePort();
+  const child = startChild(appDataDir, runtimeDir, port, { PLANVIEW_PROFILE: "work" });
+
+  try {
+    const descriptor = await waitFor(() => descriptorAt(runtimeDir));
+    assert.equal(descriptor.profile, "work");
+  } finally {
+    await stopChild(child);
+    await removeFixture(fixture);
+  }
 });
 
 test("a detached child failure is observed and the starter releases its lifecycle lock", async () => {
@@ -401,6 +442,7 @@ test("a stale protected malformed lifecycle lock is recovered only after its con
     const descriptor = await waitFor(() => descriptorAt(runtimeDir));
     assert.equal(descriptor.port, port);
     assert.equal(descriptor.host, "127.0.0.1");
+    assert.equal(descriptor.profile, "default");
   } finally {
     await stopChild(child);
     await removeFixture(fixture);
@@ -560,6 +602,39 @@ test("lifecycle and status reject a descriptor endpoint mismatch with a typed er
           error.configPort === 4777
       );
     }
+  } finally {
+    await removeFixture(fixture);
+  }
+});
+
+test("lifecycle rejects a descriptor from another profile", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-profile-mismatch-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const config = daemon.resolveDaemonConfig({ appDataDir, runtimeDir, profile: "work" });
+  mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });
+  writeFileSync(
+    join(runtimeDir, daemon.DAEMON_DESCRIPTOR_NAME),
+    JSON.stringify({
+      version: 1,
+      pid: process.pid,
+      host: "127.0.0.1",
+      port: config.port,
+      profile: "other",
+      secret: "private-descriptor-secret-that-is-long-enough",
+      startedAt: Date.now(),
+    }),
+    { encoding: "utf8", mode: 0o600 }
+  );
+
+  try {
+    await assert.rejects(
+      runEffect(daemon.inspectDaemon(config)),
+      (error) =>
+        isTaggedError(error, "DaemonDescriptorProfileMismatchError") &&
+        error["descriptorProfile"] === "other" &&
+        error["configProfile"] === "work"
+    );
   } finally {
     await removeFixture(fixture);
   }

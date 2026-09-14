@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  DEFAULT_PROFILE_NAME,
   type AppDataPlatform,
+  isValidProfileName,
   resolveAppDataPaths,
   V1_CLEANUP_INTERVAL_HOURS,
   V1_MAX_HTML_SIZE_BYTES,
@@ -10,6 +12,7 @@ import {
   V1_RETENTION_DAYS,
   V1_STORAGE_METADATA_BYTES_PER_DOCUMENT,
   V1_STORAGE_QUOTA_BYTES,
+  validateProfileName,
 } from "../dist/index.js";
 
 const dependencies = (
@@ -27,6 +30,29 @@ const paths = (appDataDir: string, separator = "/") => ({
   databasePath: `${appDataDir}${separator}metadata.sqlite`,
   documentsDir: `${appDataDir}${separator}documents`,
   stagingDir: `${appDataDir}${separator}staging`,
+});
+
+test("keeps the default profile path and isolates named profiles below it", () => {
+  const base = dependencies("linux", "/home/alice", {
+    XDG_DATA_HOME: "/mnt/data/alice-data",
+  });
+  assert.equal(DEFAULT_PROFILE_NAME, "default");
+  assert.deepEqual(resolveAppDataPaths(base), paths("/mnt/data/alice-data/planview"));
+  assert.deepEqual(
+    resolveAppDataPaths({ ...base, profile: "work" }),
+    paths("/mnt/data/alice-data/planview/profiles/work")
+  );
+});
+
+test("accepts safe profile names and rejects names that can escape the profile directory", () => {
+  for (const name of ["dev", "work-2026", "a_profile", "9"]) {
+    assert.equal(isValidProfileName(name), true);
+    assert.equal(validateProfileName(name), name);
+  }
+  for (const name of ["", ".", "..", "Dev", "work/feature", "a".repeat(33)]) {
+    assert.equal(isValidProfileName(name), false);
+    assert.throws(() => validateProfileName(name), /profile name must start/);
+  }
 });
 
 test("uses XDG_DATA_HOME for Linux and WSL-style environments", () => {
