@@ -317,10 +317,14 @@ test("public configuration fixes 4777, while test injection is explicit and cont
     assert.equal(publicConfig.port, daemon.DAEMON_PORT);
     assert.equal(publicConfig.port, 4777);
     assert.equal(publicConfig.profile, "default");
+    assert.equal(publicConfig.strictPort, false);
+    assert.equal(publicConfig.testOnly, false);
 
     const testConfig = daemon.resolveDaemonConfigForTest({ appDataDir, port: 4997 });
     assert.equal(testConfig.port, 4997);
     assert.equal(testConfig.profile, "default");
+    assert.equal(testConfig.strictPort, true);
+    assert.equal(testConfig.testOnly, true);
     assert.throws(
       () => daemon.resolveDaemonPaths({ appDataDir, runtimeDir: join(fixture, "outside") }),
       /contained below app-data/
@@ -371,6 +375,7 @@ test("detached daemon environments contain Planview settings and safe runtime pl
     PLANVIEW_APP_DATA_DIR: "/tmp/planview-app-data",
     PLANVIEW_PROFILE: "default",
     PLANVIEW_RUNTIME_DIR: "/tmp/planview-runtime",
+    PLANVIEW_DAEMON_STRICT_PORT: "false",
     PLANVIEW_DAEMON_LIFECYCLE_TOKEN: "lifecycle-token",
     PATH: "/unrelated/path",
     HOME: "/home/test-user",
@@ -380,6 +385,72 @@ test("detached daemon environments contain Planview settings and safe runtime pl
     PLANVIEW_TEST_DAEMON_PORT: "4777",
     PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "250",
   });
+});
+
+test("a production fallback configuration does not inherit test-only port plumbing", () => {
+  const environment = daemon.resolveDaemonEnvironment(
+    {
+      appDataDir: "/tmp/planview-app-data",
+      profile: "work",
+      runtimeDir: "/tmp/planview-runtime",
+      port: daemon.DAEMON_PORT,
+      strictPort: false,
+      testOnly: false,
+    },
+    "lifecycle-token",
+    { NODE_ENV: "production" }
+  );
+
+  assert.equal(environment["NODE_ENV"], undefined);
+  assert.equal(environment["PLANVIEW_TEST_DAEMON_PORT"], undefined);
+  assert.equal(environment["PLANVIEW_DAEMON_STRICT_PORT"], "false");
+});
+
+test("binds the next available port and publishes that port in every daemon response", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-port-fallback-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const preferredPort = await freePort();
+  const owner = createServer((socket) => socket.end());
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    owner.once("error", rejectPromise);
+    owner.listen(preferredPort, "127.0.0.1", () => resolvePromise());
+  });
+  const config = daemon.resolveDaemonConfigForTest({
+    appDataDir,
+    runtimeDir,
+    port: preferredPort,
+    strictPort: false,
+  });
+
+  try {
+    const started = await runEffect(
+      daemon.startDetachedDaemon(config, { daemonScriptPath: entry })
+    );
+    assert.equal(started.reused, false);
+    assert.ok(started.descriptor.port > preferredPort);
+    assert.equal(descriptorAt(runtimeDir)?.port, started.descriptor.port);
+
+    const response = await fetch(
+      `http://${started.descriptor.host}:${started.descriptor.port}${daemon.DAEMON_STATUS_PATH}`,
+      { headers: { "x-planview-secret": started.descriptor.secret } }
+    );
+    assert.equal(response.status, 200);
+    const status = (await response.json()) as Readonly<{ readonly port?: unknown }>;
+    assert.equal(status.port, started.descriptor.port);
+
+    const inspected = await runEffect(daemon.inspectDaemon(config));
+    assert.equal(inspected.state, "running");
+    if (inspected.state === "running") {
+      assert.equal(inspected.status.port, started.descriptor.port);
+    }
+  } finally {
+    await runEffect(daemon.stopDaemon(config)).catch(() => undefined);
+    await new Promise<void>((resolvePromise, rejectPromise) =>
+      owner.close((cause) => (cause === undefined ? resolvePromise() : rejectPromise(cause)))
+    );
+    await removeFixture(fixture);
+  }
 });
 
 test("a detached daemon keeps the selected profile in its descriptor", async () => {
