@@ -179,7 +179,8 @@ export const resolveDaemonEnvironment = (
       environment[key] = value;
     }
   }
-  const testProcess = source["NODE_ENV"] === "test" || config.testOnly === true;
+  const testProcess =
+    config.testOnly === true || (config.testOnly === undefined && source["NODE_ENV"] === "test");
   if (testProcess) {
     environment["NODE_ENV"] = "test";
     environment[TEST_PORT_ENV] = String(config.port);
@@ -2754,9 +2755,9 @@ const waitForReady = async (
   const paths = resolveDaemonPaths(config);
   const deadline = Date.now() + timeoutMs;
   let readinessObserved = false;
-  let startupFailure: DaemonRequestError | undefined;
+  let startupFailure: DaemonError | undefined;
   let childDiagnostics = "";
-  let rejectChildFailure: ((error: DaemonRequestError) => void) | undefined;
+  let rejectChildFailure: ((error: DaemonError) => void) | undefined;
   const childFailure =
     child === undefined
       ? undefined
@@ -2772,11 +2773,18 @@ const waitForReady = async (
       diagnostics.length === 0
         ? cause
         : new Error(`${describe(cause)}\nDaemon stderr: ${diagnostics}`);
-    startupFailure = new DaemonRequestError({
-      path: DAEMON_READY_PATH,
-      cause: detailedCause,
-      message: `The detached Planview daemon failed before readiness: ${describe(detailedCause)}`,
-    });
+    startupFailure =
+      config.strictPort && diagnostics.includes("occupied by an unknown process")
+        ? new DaemonPortInUseError({
+            host: config.host,
+            port: config.port,
+            message: `Port ${config.port} on ${config.host} is occupied by an unknown process; Planview will not stop it.`,
+          })
+        : new DaemonRequestError({
+            path: DAEMON_READY_PATH,
+            cause: detailedCause,
+            message: `The detached Planview daemon failed before readiness: ${describe(detailedCause)}`,
+          });
     rejectChildFailure?.(startupFailure);
   };
   const onChildStderr = (chunk: string | Uint8Array) => {
