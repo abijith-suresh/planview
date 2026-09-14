@@ -7,6 +7,7 @@ export type AppDataPathDependencies = {
   readonly platform: AppDataPlatform;
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly homeDir: string;
+  readonly profile?: string;
 };
 
 export type AppDataPaths = {
@@ -20,6 +21,19 @@ const APP_DIRECTORY = "planview";
 const WINDOWS_APP_DIRECTORY = "Planview";
 const LOCAL_APP_DATA_KEY = "LOCALAPPDATA";
 const XDG_DATA_HOME_KEY = "XDG_DATA_HOME";
+export const DEFAULT_PROFILE_NAME = "default";
+const PROFILE_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{0,31})$/;
+
+export const isValidProfileName = (value: string) => PROFILE_NAME_PATTERN.test(value);
+
+export const validateProfileName = (value: string) => {
+  if (!isValidProfileName(value)) {
+    throw new Error(
+      "The Planview profile name must start with a lowercase letter or number and contain only lowercase letters, numbers, hyphens, and underscores (up to 32 characters)."
+    );
+  }
+  return value;
+};
 
 const pathFor = (platform: AppDataPlatform) => (platform === "win32" ? win32Path : posixPath);
 
@@ -64,7 +78,10 @@ export const resolveAppDataPaths = (dependencies: Partial<AppDataPathDependencie
   const env = dependencies.env ?? process.env;
   const homeDir = dependencies.homeDir ?? homedir();
   const pathApi = pathFor(platform);
-  const appDataDir = resolveAppDataRoot({ platform, env, homeDir });
+  const profile = validateProfileName(dependencies.profile ?? DEFAULT_PROFILE_NAME);
+  const appDataRoot = resolveAppDataRoot({ platform, env, homeDir });
+  const appDataDir =
+    profile === DEFAULT_PROFILE_NAME ? appDataRoot : pathApi.join(appDataRoot, "profiles", profile);
 
   return {
     appDataDir,

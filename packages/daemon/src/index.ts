@@ -17,10 +17,13 @@ import { hostname } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
 import {
+  DEFAULT_PROFILE_NAME,
+  isValidProfileName,
   resolveAppDataPaths,
   V1_CLEANUP_INTERVAL_HOURS,
   V1_MAX_HTML_SIZE_BYTES,
   V1_PORT,
+  validateProfileName,
   validateDocumentId,
 } from "@planview/core";
 import {
@@ -134,6 +137,7 @@ let testPublishPauseConsumed = false;
 
 export type DaemonPathOptions = Readonly<{
   readonly appDataDir?: string;
+  readonly profile?: string;
   readonly runtimeDir?: string;
 }>;
 
@@ -146,18 +150,21 @@ export type DaemonPaths = Readonly<{
 
 export type DaemonConfig = Readonly<{
   readonly appDataDir: string;
+  readonly profile: string;
   readonly runtimeDir: string;
   readonly host: typeof DAEMON_HOST;
   readonly port: number;
 }>;
 
 export const resolveDaemonEnvironment = (
-  config: Pick<DaemonConfig, "appDataDir" | "runtimeDir" | "port">,
+  config: Pick<DaemonConfig, "appDataDir" | "runtimeDir" | "port"> &
+    Partial<Pick<DaemonConfig, "profile">>,
   lifecycleToken: string,
   source: Readonly<Record<string, string | undefined>> = process.env
 ) => {
   const environment: Record<string, string> = {
     PLANVIEW_APP_DATA_DIR: config.appDataDir,
+    PLANVIEW_PROFILE: config.profile ?? DEFAULT_PROFILE_NAME,
     PLANVIEW_RUNTIME_DIR: config.runtimeDir,
     [LIFECYCLE_TOKEN_ENV]: lifecycleToken,
   };
@@ -194,6 +201,7 @@ export type RuntimeDescriptor = Readonly<{
   readonly pid: number;
   readonly host: string;
   readonly port: number;
+  readonly profile?: string;
   readonly secret: string;
   readonly startedAt: number;
 }>;
@@ -255,6 +263,15 @@ export class DaemonDescriptorEndpointMismatchError extends Data.TaggedError(
   readonly message: string;
 }> {}
 
+export class DaemonDescriptorProfileMismatchError extends Data.TaggedError(
+  "DaemonDescriptorProfileMismatchError"
+)<{
+  readonly path: string;
+  readonly descriptorProfile: string | undefined;
+  readonly configProfile: string;
+  readonly message: string;
+}> {}
+
 export class DaemonRequestError extends Data.TaggedError("DaemonRequestError")<{
   readonly path: string;
   readonly cause: unknown;
@@ -268,6 +285,7 @@ export type DaemonError =
   | DaemonPortInUseError
   | DaemonDescriptorError
   | DaemonDescriptorEndpointMismatchError
+  | DaemonDescriptorProfileMismatchError
   | DaemonRequestError;
 
 export type DaemonState =
@@ -366,7 +384,10 @@ const isContainedPath = (root: string, child: string) => {
 
 export const resolveDaemonPaths = (options: DaemonPathOptions = {}) => {
   const appDataDir = validateAbsolutePath(
-    options.appDataDir ?? resolveAppDataPaths().appDataDir,
+    options.appDataDir ??
+      resolveAppDataPaths({
+        ...(options.profile === undefined ? {} : { profile: options.profile }),
+      }).appDataDir,
     "The Planview app-data directory"
   );
   const runtimeDir = validateAbsolutePath(
@@ -393,16 +414,21 @@ const resolveConfig = (
   env: Readonly<Record<string, string | undefined>>,
   port: number
 ) => {
+  const profile = validateProfileName(
+    options.profile ?? envValue(env, "PLANVIEW_PROFILE") ?? DEFAULT_PROFILE_NAME
+  );
   const appDataDir =
     options.appDataDir ?? envValue(env, "PLANVIEW_APP_DATA_DIR", "PLANVIEW_DATA_DIR");
   const runtimeDir = options.runtimeDir ?? envValue(env, "PLANVIEW_RUNTIME_DIR");
   const paths = resolveDaemonPaths({
-    ...(appDataDir === undefined ? {} : { appDataDir }),
+    appDataDir: appDataDir ?? resolveAppDataPaths({ profile, env }).appDataDir,
+    profile,
     ...(runtimeDir === undefined ? {} : { runtimeDir }),
   });
 
   return {
     ...paths,
+    profile,
     host: DAEMON_HOST,
     port: validatePort(port),
   } satisfies DaemonConfig & DaemonPaths;
@@ -553,6 +579,7 @@ const isValidDescriptor = (value: unknown): value is RuntimeDescriptor => {
   if (!isRecord(value)) {
     return false;
   }
+  const profile = recordValue(value, "profile");
   return (
     recordValue(value, "version") === DAEMON_DESCRIPTOR_VERSION &&
     typeof recordValue(value, "pid") === "number" &&
@@ -560,6 +587,7 @@ const isValidDescriptor = (value: unknown): value is RuntimeDescriptor => {
     (recordValue(value, "pid") as number) > 0 &&
     typeof recordValue(value, "host") === "string" &&
     (recordValue(value, "host") as string).length > 0 &&
+    (profile === undefined || (typeof profile === "string" && isValidProfileName(profile))) &&
     typeof recordValue(value, "port") === "number" &&
     Number.isInteger(recordValue(value, "port")) &&
     (recordValue(value, "port") as number) >= 1 &&
@@ -2107,6 +2135,7 @@ const openDaemon = async (config: DaemonConfig) => {
       pid: process.pid,
       host: config.host,
       port: config.port,
+      profile: config.profile,
       secret: randomBytes(32).toString("base64url"),
       startedAt: Date.now(),
     };
@@ -2406,6 +2435,25 @@ const assertDescriptorEndpoint = (
   });
 };
 
+const assertDescriptorProfile = (
+  config: DaemonConfig,
+  descriptor: Pick<RuntimeDescriptor, "profile">,
+  path: string
+) => {
+  if (descriptor.profile === undefined && config.profile === DEFAULT_PROFILE_NAME) {
+    return;
+  }
+  if (descriptor.profile === config.profile) {
+    return;
+  }
+  throw new DaemonDescriptorProfileMismatchError({
+    path,
+    descriptorProfile: descriptor.profile,
+    configProfile: config.profile,
+    message: `The daemon descriptor belongs to profile ${descriptor.profile ?? DEFAULT_PROFILE_NAME}, but the configured profile is ${config.profile}.`,
+  });
+};
+
 const parseResponse = <Value>(answer: DaemonResponse, path: string, statusCode: number) => {
   if (answer.statusCode !== statusCode) {
     let detail: string | undefined;
@@ -2614,6 +2662,7 @@ const inspectDaemonPromise = async (
   if (descriptor === undefined) {
     return { state: "stopped" };
   }
+  assertDescriptorProfile(config, descriptor, paths.descriptorPath);
   assertDescriptorEndpoint(config, descriptor, paths.descriptorPath);
   try {
     const status = await requestStatus(descriptor, signal);
@@ -2741,6 +2790,7 @@ const waitForReady = async (
       signal?.throwIfAborted();
       const descriptor = await raceWithChild(readDaemonDescriptor(paths));
       if (descriptor !== undefined) {
+        assertDescriptorProfile(config, descriptor, paths.descriptorPath);
         assertDescriptorEndpoint(config, descriptor, paths.descriptorPath);
         try {
           const ready = await raceWithChild(requestReady(descriptor, signal));
@@ -2817,6 +2867,7 @@ const startWithLock = async (
 
   const startupDescriptor = await readDescriptorForStartup(paths);
   if (startupDescriptor !== undefined) {
+    assertDescriptorProfile(config, startupDescriptor, paths.descriptorPath);
     assertDescriptorEndpoint(config, startupDescriptor, paths.descriptorPath);
   }
   if (await portIsOpen(config.host, config.port, signal)) {
@@ -3044,6 +3095,7 @@ const stopWithLock = async (config: DaemonConfig, signal?: AbortSignal) => {
     signal?.throwIfAborted();
     const descriptor = await readDaemonDescriptor(paths);
     if (descriptor !== undefined) {
+      assertDescriptorProfile(config, descriptor, paths.descriptorPath);
       assertDescriptorEndpoint(config, descriptor, paths.descriptorPath);
     }
     if (descriptor === undefined || !processIsAlive(descriptor.pid)) {
@@ -3100,6 +3152,7 @@ const isDaemonError = (cause: unknown): cause is DaemonError =>
   cause instanceof DaemonPortInUseError ||
   cause instanceof DaemonDescriptorError ||
   cause instanceof DaemonDescriptorEndpointMismatchError ||
+  cause instanceof DaemonDescriptorProfileMismatchError ||
   cause instanceof DaemonRequestError;
 
 const daemonFailure = (path: string, cause: unknown): DaemonError =>

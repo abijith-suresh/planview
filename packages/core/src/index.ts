@@ -29,7 +29,10 @@ export {
   type AppDataPathDependencies,
   type AppDataPaths,
   type AppDataPlatform,
+  DEFAULT_PROFILE_NAME,
+  isValidProfileName,
   resolveAppDataPaths,
+  validateProfileName,
 } from "./paths.js";
 export {
   V1_CLEANUP_INTERVAL_HOURS,
