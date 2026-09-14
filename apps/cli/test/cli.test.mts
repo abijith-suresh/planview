@@ -547,9 +547,9 @@ test("profiles run side by side, keep separate documents, and return their actua
     XDG_DATA_HOME: dataHome,
     NODE_ENV: "production",
   };
-  delete environment.PLANVIEW_APP_DATA_DIR;
-  delete environment.PLANVIEW_RUNTIME_DIR;
-  delete environment.PLANVIEW_TEST_DAEMON_PORT;
+  delete environment["PLANVIEW_APP_DATA_DIR"];
+  delete environment["PLANVIEW_RUNTIME_DIR"];
+  delete environment["PLANVIEW_TEST_DAEMON_PORT"];
   const executeInHome = (...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
   const devSource = join(home, "dev.html");

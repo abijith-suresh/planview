@@ -33,7 +33,10 @@ export const parseDocumentReferenceDetails = (
     url.password !== "" ||
     url.search !== "" ||
     url.hash !== "" ||
-    url.port === ""
+    url.port === "" ||
+    reference.includes("?") ||
+    reference.includes("#") ||
+    url.href !== reference
   ) {
     throw invalidReference();
   }
@@ -45,7 +48,6 @@ export const parseDocumentReferenceDetails = (
     port < 1 ||
     port > 65_535 ||
     (expectedPort !== undefined && port !== expectedPort) ||
-    url.pathname !== `/${candidate}` ||
     !isValidDocumentId(candidate)
   ) {
     throw invalidReference();

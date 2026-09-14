@@ -45,10 +45,12 @@ test("parses ids and local URLs with an optional expected port", () => {
   assert.equal(parseDocumentReference(`http://localhost:${port}/${id}`, port), id);
   assert.equal(parseDocumentReference(`http://127.0.0.1:${port}/${id}`, port), id);
   assert.equal(parseDocumentReference(`http://localhost:${port + 1}/${id}`), id);
-  assert.throws(
-    () => parseDocumentReference(`http://localhost:${port}/${id}?download=1`, port),
-    /valid 21-character id or an exact local Planview URL/
-  );
+  for (const suffix of ["?download=1", "#section", "?", "#", "/"]) {
+    assert.throws(
+      () => parseDocumentReference(`http://localhost:${port}/${id}${suffix}`, port),
+      /valid 21-character id or an exact local Planview URL/
+    );
+  }
 });
 
 test("local application publishes, retrieves, cleans, restarts, and stops", async () => {
