@@ -308,6 +308,7 @@ export type DaemonState =
 
 export type DaemonStatusPayload = Readonly<{
   readonly state: "running";
+  readonly profile: string;
   readonly pid: number;
   readonly host: string;
   readonly port: number;
@@ -1116,6 +1117,7 @@ const htmlError = (_status: number, title: string, message: string) =>
 const statusPayload = (descriptor: RuntimeDescriptor) =>
   ({
     state: "running",
+    profile: descriptor.profile ?? DEFAULT_PROFILE_NAME,
     pid: descriptor.pid,
     host: descriptor.host,
     port: descriptor.port,

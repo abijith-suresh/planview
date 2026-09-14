@@ -22,6 +22,9 @@ planview publish ./site
 # Publish and open the URL in the default browser
 planview publish --open ./site
 
+# Keep a feature build separate from the default installation
+planview --profile feature publish ./site
+
 ```
 
 Get help for the whole CLI or for one command:
@@ -55,7 +58,8 @@ Successful results go to stdout. Errors go to stderr. Exit status `0` means
 success; exit status `1` means invalid input or an operation failure. `get`
 writes only the stored document bytes to stdout.
 
-Options may appear before or after operands. `--` ends option parsing, and an
+Global options must appear before the command. Command options may appear
+before or after operands. `--` ends command option parsing, and an
 unknown option fails before the command starts work. Commands that accept
 `--json` write one newline-terminated JSON value. For example:
 
@@ -64,7 +68,7 @@ unknown option fails before the command starts work. Commands that accept
 ```
 
 `status --json` reports either `{"state":"stopped"}` or a running daemon
-with its `host`, `port`, `pid`, and `startedAt`. `start --json` adds `reused`.
+with its `profile`, `host`, `port`, `pid`, and `startedAt`. `start --json` adds `reused`.
 `stop --json` reports the stopped state. `clean --json` returns cleanup counts
 and failure messages without internal causes. `publish --open` keeps the
 normal publish result and adds the browser-opening side effect.
@@ -79,15 +83,18 @@ planview restart
 planview clean
 ```
 
-The daemon is detached, bound only to the fixed `127.0.0.1:4777`, and stores
-its protected runtime descriptor below the durable Planview app-data
-directory. `publish` validates the `.html`/`.htm` source and inclusive 10 MiB
+The daemon is detached and binds to `127.0.0.1:4777` when available. If that
+port is occupied, it tries the next 50 ports and stores the selected port in
+the protected runtime descriptor. The URL printed by `publish` always uses
+the selected port. Each profile has its own durable app-data and runtime
+directory; the default profile keeps the existing Planview data location and
+named profiles live below `planview/profiles/<name>`. `publish` validates the `.html`/`.htm` source and inclusive 10 MiB
 limit before starting the daemon, then prints only the resulting localhost URL.
 When the input is a folder, it must contain `index.html`; the folder is packed
 into one immutable snapshot, with asset paths available below `/<id>/`.
-`get` accepts a document id or exact local Planview URL and writes only the
-stored HTML bytes to stdout; invalid references and missing documents fail on
-stderr. `clean` starts or reuses the daemon and invokes its authenticated
+`get` accepts a document id or exact local Planview URL for the selected
+profile and writes only the stored HTML bytes to stdout; invalid references,
+URLs from another active profile, and missing documents fail on stderr. `clean` starts or reuses the daemon and invokes its authenticated
 30-day-last-access retention and startup-reconciliation policy, printing a
 human-readable summary to stdout. `status` does not start a daemon; `start`
 reuses an authenticated daemon it owns and never terminates an unknown process

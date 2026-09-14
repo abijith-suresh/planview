@@ -12,10 +12,10 @@ import {
   type DaemonConfig,
   type DaemonError,
 } from "@planview/daemon";
-import type { DocumentId } from "@planview/core";
+import { DEFAULT_PROFILE_NAME, type DocumentId } from "@planview/core";
 import type { DocumentCleanupResult } from "@planview/storage";
 import { preparePublishSource } from "./publish-source.js";
-import { parseDocumentReference } from "./reference.js";
+import { parseDocumentReferenceDetails } from "./reference.js";
 
 export type LocalOperation = "publish" | "get" | "start" | "stop" | "restart" | "inspect" | "clean";
 
@@ -30,6 +30,7 @@ export type LocalApplicationFailure = LocalApplicationError | DaemonError;
 export type LocalApplicationOptions = Readonly<{
   readonly daemonScriptPath: string;
   readonly config?: DaemonConfig;
+  readonly profile?: string;
 }>;
 
 export type LocalPublishedDocument = Readonly<{
@@ -39,6 +40,7 @@ export type LocalPublishedDocument = Readonly<{
 
 export type LocalDaemonRunningStatus = Readonly<{
   readonly state: "running";
+  readonly profile: string;
   readonly pid: number;
   readonly host: string;
   readonly port: number;
@@ -79,12 +81,14 @@ const localFailure = (operation: LocalOperation, cause: unknown) =>
   });
 
 const statusFromDescriptor = (descriptor: {
+  readonly profile?: string;
   readonly pid: number;
   readonly host: string;
   readonly port: number;
   readonly startedAt: number;
 }): LocalDaemonRunningStatus => ({
   state: "running",
+  profile: descriptor.profile ?? DEFAULT_PROFILE_NAME,
   pid: descriptor.pid,
   host: descriptor.host,
   port: descriptor.port,
@@ -109,9 +113,10 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
       return options.config;
     }
     const { NODE_ENV, PLANVIEW_TEST_DAEMON_PORT: configuredTestPort } = process.env;
+    const profile = options.profile === undefined ? {} : { profile: options.profile };
     return NODE_ENV === "test" && configuredTestPort !== undefined
-      ? resolveDaemonConfigForTest({ port: Number(configuredTestPort) })
-      : resolveDaemonConfig();
+      ? resolveDaemonConfigForTest({ ...profile, port: Number(configuredTestPort) })
+      : resolveDaemonConfig(profile);
   };
   const daemonOptions = { daemonScriptPath: options.daemonScriptPath };
 
@@ -150,13 +155,26 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
       try: resolveConfig,
       catch: (cause) => localFailure("get", cause),
     });
-    const documentId = yield* Effect.try({
-      try: () => parseDocumentReference(reference, config.port),
+    const parsed = yield* Effect.try({
+      try: () => parseDocumentReferenceDetails(reference),
       catch: (cause) => localFailure("get", cause),
     });
+    if (parsed.port !== undefined) {
+      const running = yield* startDetachedDaemon(config, daemonOptions);
+      if (running.descriptor.port !== parsed.port) {
+        return yield* Effect.fail(
+          localFailure(
+            "get",
+            new Error(
+              `The URL uses port ${parsed.port}, but profile ${config.profile} is running on port ${running.descriptor.port}.`
+            )
+          )
+        );
+      }
+    }
     yield* retrieveDocument(config, {
       ...daemonOptions,
-      documentId,
+      documentId: parsed.documentId,
       onChunk,
     });
   });
@@ -205,4 +223,9 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
   return { publish, get, start, stop, restart, inspect, clean };
 };
 
-export { parseDocumentReference, preparePublishSource };
+export {
+  parseDocumentReference,
+  parseDocumentReferenceDetails,
+} from "./reference.js";
+export { preparePublishSource };
+export { isValidProfileName, validateProfileName } from "@planview/core";

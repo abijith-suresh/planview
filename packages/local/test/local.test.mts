@@ -37,13 +37,14 @@ const freePort = (): Promise<number> =>
     });
   });
 
-test("parses ids and exact local URLs at the configured daemon port", () => {
+test("parses ids and local URLs with an optional expected port", () => {
   const port = 49123;
   const id = "a".repeat(21);
 
   assert.equal(parseDocumentReference(id, port), id);
   assert.equal(parseDocumentReference(`http://localhost:${port}/${id}`, port), id);
   assert.equal(parseDocumentReference(`http://127.0.0.1:${port}/${id}`, port), id);
+  assert.equal(parseDocumentReference(`http://localhost:${port + 1}/${id}`), id);
   assert.throws(
     () => parseDocumentReference(`http://localhost:${port}/${id}?download=1`, port),
     /valid 21-character id or an exact local Planview URL/

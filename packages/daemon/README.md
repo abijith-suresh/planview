@@ -5,10 +5,14 @@ the published CLI and is not a published package API. The authenticated
 management boundary coordinates the existing SQLite metadata store, immutable
 document-file store, and publication coordinator.
 
-The public v1 listener is always `127.0.0.1:4777`; the port is not configurable
-through normal CLI options or environment variables. A test-only configuration
-path is used by the hermetic process tests and is not part of the production
-configuration contract.
+The public v1 listener prefers `127.0.0.1:4777`. When that port is occupied,
+the daemon tries the next 50 ports and records the port that actually bound.
+Test-only configuration can select a preferred port and can enable strict
+binding for hermetic tests; it is not part of the production CLI contract.
+
+The default profile keeps the existing app-data directory. Named profiles use
+their own database, documents, staging, runtime descriptor, and lifecycle lock
+below `planview/profiles/<name>`.
 
 On POSIX, Planview creates the app-data and runtime directories as `0700`,
 requires them to be owned by the current UID, and writes the descriptor and

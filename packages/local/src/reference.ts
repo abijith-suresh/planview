@@ -1,25 +1,58 @@
 import { isValidDocumentId, type DocumentId } from "@planview/core";
-import { DAEMON_PORT } from "@planview/daemon";
 
-export const parseDocumentReference = (reference: string, port = DAEMON_PORT): DocumentId => {
+export type ParsedDocumentReference = Readonly<{
+  readonly documentId: DocumentId;
+  readonly port?: number;
+}>;
+
+const invalidReference = () =>
+  new Error("Document reference must be a valid 21-character id or an exact local Planview URL.");
+
+export const parseDocumentReferenceDetails = (
+  reference: string,
+  expectedPort?: number
+): ParsedDocumentReference => {
   if (isValidDocumentId(reference)) {
-    return reference;
+    return { documentId: reference };
   }
 
-  const expectedPort = String(port);
-  const prefixes = [`http://localhost:${expectedPort}/`, `http://127.0.0.1:${expectedPort}/`];
-  const prefix = prefixes.find((candidate) => reference.startsWith(candidate));
-  if (prefix === undefined || reference.length <= prefix.length) {
-    throw new Error(
-      "Document reference must be a valid 21-character id or an exact local Planview URL."
-    );
+  if (reference.trim() !== reference) {
+    throw invalidReference();
   }
 
-  const candidate = reference.slice(prefix.length);
-  if (!isValidDocumentId(candidate)) {
-    throw new Error(
-      "Document reference must be a valid 21-character id or an exact local Planview URL."
-    );
+  let url: URL;
+  try {
+    url = new URL(reference);
+  } catch {
+    throw invalidReference();
   }
-  return candidate;
+  if (
+    url.protocol !== "http:" ||
+    (url.hostname !== "localhost" && url.hostname !== "127.0.0.1") ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    url.port === ""
+  ) {
+    throw invalidReference();
+  }
+
+  const port = Number(url.port);
+  const candidate = url.pathname.slice(1);
+  if (
+    !Number.isInteger(port) ||
+    port < 1 ||
+    port > 65_535 ||
+    (expectedPort !== undefined && port !== expectedPort) ||
+    url.pathname !== `/${candidate}` ||
+    !isValidDocumentId(candidate)
+  ) {
+    throw invalidReference();
+  }
+
+  return { documentId: candidate, port };
 };
+
+export const parseDocumentReference = (reference: string, expectedPort?: number): DocumentId =>
+  parseDocumentReferenceDetails(reference, expectedPort).documentId;

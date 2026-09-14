@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createLocalApplication,
+  isValidProfileName,
   parseDocumentReference,
   type LocalApplication,
   type LocalDaemonStatus,
@@ -99,6 +100,12 @@ export class UnknownOptionError extends Data.TaggedError("UnknownOptionError")<{
   readonly message: string;
 }> {}
 
+export class InvalidOptionValueError extends Data.TaggedError("InvalidOptionValueError")<{
+  readonly option: string;
+  readonly value?: string;
+  readonly message: string;
+}> {}
+
 export class UnknownCommandError extends Data.TaggedError("UnknownCommandError")<{
   readonly command: string;
   readonly message: string;
@@ -146,6 +153,7 @@ export class OutputCommandError extends Data.TaggedError("OutputCommandError")<{
 
 export type CliError =
   | UnknownOptionError
+  | InvalidOptionValueError
   | UnknownCommandError
   | UnexpectedArgumentsError
   | DaemonCommandError
@@ -174,6 +182,11 @@ type ParsedArguments = Readonly<{
   readonly operands: readonly string[];
 }>;
 
+type ParsedGlobalArguments = Readonly<{
+  readonly profile?: string;
+  readonly commandArguments: readonly string[];
+}>;
+
 type OptionParserOptions = Readonly<{
   readonly allowForce?: boolean;
   readonly allowJson?: boolean;
@@ -186,6 +199,13 @@ const unknownOption = (option: string, helpTopic?: HelpTopic) =>
   new UnknownOptionError({
     option,
     message: `Unknown option: ${option}\n\n${formatHelp(helpTopic)}`,
+  });
+
+const invalidOptionValue = (option: string, value: string | undefined, message: string) =>
+  new InvalidOptionValueError({
+    option,
+    ...(value === undefined ? {} : { value }),
+    message,
   });
 
 const unexpectedArguments = (argumentsList: readonly string[], message: string) =>
@@ -253,6 +273,63 @@ const parseOptions = (
   }
 
   return Effect.succeed({ help, json, force, open, operands });
+};
+
+const parseGlobalOptions = (
+  args: readonly string[]
+): Effect.Effect<ParsedGlobalArguments, CliError> => {
+  let profile: string | undefined;
+  let index = 0;
+
+  while (index < args.length) {
+    const argument = args[index];
+    if (argument === undefined) {
+      break;
+    }
+    if (argument === "--profile") {
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("-")) {
+        return Effect.fail(
+          invalidOptionValue("--profile", undefined, "Option --profile requires a profile name.")
+        );
+      }
+      if (!isValidProfileName(value)) {
+        return Effect.fail(
+          invalidOptionValue(
+            "--profile",
+            value,
+            `Invalid profile name: ${value}. Profile names start with a lowercase letter or number and contain only lowercase letters, numbers, hyphens, and underscores.`
+          )
+        );
+      }
+      profile = value;
+      index += 2;
+      continue;
+    }
+
+    if (argument.startsWith("--profile=")) {
+      const value = argument.slice("--profile=".length);
+      if (value.length === 0 || !isValidProfileName(value)) {
+        return Effect.fail(
+          invalidOptionValue(
+            "--profile",
+            value,
+            `Invalid profile name: ${value || "(empty)"}. Profile names start with a lowercase letter or number and contain only lowercase letters, numbers, hyphens, and underscores.`
+          )
+        );
+      }
+      profile = value;
+      index += 1;
+      continue;
+    }
+
+    break;
+  }
+
+  return Effect.succeed({
+    ...(profile === undefined ? {} : { profile }),
+    commandArguments: args.slice(index),
+  });
 };
 
 const formatJson = (value: unknown) => {
@@ -327,6 +404,7 @@ type JsonErrorDetails = {
   code: string;
   message: string;
   option?: string;
+  value?: string;
   command?: string;
   arguments?: readonly string[];
   sourcePath?: string;
@@ -344,6 +422,11 @@ const formatError = (error: CliError, format: OutputFormat) => {
   };
   if (error instanceof UnknownOptionError) {
     details.option = error.option;
+  } else if (error instanceof InvalidOptionValueError) {
+    details.option = error.option;
+    if (error.value !== undefined) {
+      details.value = error.value;
+    }
   } else if (error instanceof UnknownCommandError) {
     details.command = error.command;
   } else if (error instanceof UnexpectedArgumentsError) {
@@ -362,9 +445,11 @@ const formatError = (error: CliError, format: OutputFormat) => {
 
 const daemonScriptPath = () => fileURLToPath(new URL("./daemon.js", import.meta.url));
 
-const localApplication: LocalApplication = createLocalApplication({
-  daemonScriptPath: daemonScriptPath(),
-});
+const applicationFor = (profile?: string): LocalApplication =>
+  createLocalApplication({
+    daemonScriptPath: daemonScriptPath(),
+    ...(profile === undefined ? {} : { profile }),
+  });
 
 const browserCommand = () =>
   process.platform === "win32"
@@ -417,8 +502,8 @@ const publishFailure = (sourcePath: string, cause: unknown) =>
     message: `Could not publish ${sourcePath}: ${describe(cause)}`,
   });
 
-const publishSource = (sourcePath: string) =>
-  localApplication
+const publishSource = (application: LocalApplication, sourcePath: string) =>
+  application
     .publish(sourcePath)
     .pipe(Effect.mapError((cause) => publishFailure(sourcePath, cause)));
 
@@ -437,12 +522,13 @@ const openPublishedUrl = (sourcePath: string, url: string) =>
   });
 
 const runPublishCommand = (
+  application: LocalApplication,
   sourcePath: string,
   format: OutputFormat,
   open: boolean,
   stdout: StdoutWriter
 ) =>
-  publishSource(sourcePath).pipe(
+  publishSource(application, sourcePath).pipe(
     Effect.flatMap((published) =>
       writeCommandResult(stdout, format, published, ({ url }) => `${url}\n`).pipe(
         Effect.flatMap(() =>
@@ -464,8 +550,8 @@ const runPublishCommand = (
     )
   );
 
-const runGetCommand = (reference: string, stdout: StdoutWriter) =>
-  localApplication
+const runGetCommand = (application: LocalApplication, reference: string, stdout: StdoutWriter) =>
+  application
     .get({
       reference,
       onChunk: (chunk) => stdout(chunk),
@@ -499,11 +585,12 @@ const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
 const runDaemonCommand = Effect.fnUntraced(
   function* (
     command: Exclude<Command, "publish" | "get" | "skills" | "help">,
+    application: LocalApplication,
     format: OutputFormat,
     stdout: StdoutWriter
   ) {
     if (command === "status") {
-      const result = yield* localApplication.inspect();
+      const result = yield* application.inspect();
       yield* writeCommandResult(stdout, format, result, (status) =>
         status.state === "running" ? formatRunning(status) : "Planview daemon is not running.\n"
       );
@@ -511,7 +598,7 @@ const runDaemonCommand = Effect.fnUntraced(
     }
 
     if (command === "stop") {
-      yield* localApplication.stop();
+      yield* application.stop();
       yield* writeCommandResult(
         stdout,
         format,
@@ -522,7 +609,7 @@ const runDaemonCommand = Effect.fnUntraced(
     }
 
     if (command === "restart") {
-      const result = yield* localApplication.restart();
+      const result = yield* application.restart();
       yield* writeCommandResult(
         stdout,
         format,
@@ -533,7 +620,7 @@ const runDaemonCommand = Effect.fnUntraced(
     }
 
     if (command === "clean") {
-      const result = yield* localApplication.clean();
+      const result = yield* application.clean();
       const failures = result.failures.length;
       const summary =
         result.removedDocuments === 0 &&
@@ -552,7 +639,7 @@ const runDaemonCommand = Effect.fnUntraced(
       return failures === 0 ? 0 : 1;
     }
 
-    const result = yield* localApplication.start();
+    const result = yield* application.start();
     yield* writeCommandResult(
       stdout,
       format,
@@ -658,6 +745,7 @@ const runSkillsCommand = (
 
 const runDocumentCommand = (
   commandName: "publish" | "get",
+  application: LocalApplication,
   args: readonly string[],
   stdout: StdoutWriter
 ): Effect.Effect<number, CliError> =>
@@ -701,14 +789,15 @@ const runDocumentCommand = (
       const format: OutputFormat = parsed.json ? "json" : "text";
       const operand = parsed.operands[0];
       if (commandName === "publish") {
-        return runPublishCommand(operand, format, parsed.open, stdout);
+        return runPublishCommand(application, operand, format, parsed.open, stdout);
       }
-      return runGetCommand(operand, stdout);
+      return runGetCommand(application, operand, stdout);
     })
   );
 
 const runDaemonCommandFromArgs = (
   commandName: Exclude<Command, "publish" | "get" | "skills" | "help">,
+  application: LocalApplication,
   args: readonly string[],
   stdout: StdoutWriter
 ): Effect.Effect<number, CliError> =>
@@ -726,13 +815,14 @@ const runDaemonCommandFromArgs = (
           )
         );
       }
-      return runDaemonCommand(commandName, parsed.json ? "json" : "text", stdout);
+      return runDaemonCommand(commandName, application, parsed.json ? "json" : "text", stdout);
     })
   );
 
-const command = (
+const commandWithProfile = (
   args: readonly string[],
-  stdout: StdoutWriter
+  stdout: StdoutWriter,
+  profile?: string
 ): Effect.Effect<number, CliError> => {
   const [argument, ...trailing] = args;
 
@@ -773,12 +863,21 @@ const command = (
     return runSkillsCommand(trailing, stdout);
   }
 
+  const application = applicationFor(profile);
+
   if (argument === "publish" || argument === "get") {
-    return runDocumentCommand(argument, trailing, stdout);
+    return runDocumentCommand(argument, application, trailing, stdout);
   }
 
-  return runDaemonCommandFromArgs(argument, trailing, stdout);
+  return runDaemonCommandFromArgs(argument, application, trailing, stdout);
 };
+
+const command = (args: readonly string[], stdout: StdoutWriter): Effect.Effect<number, CliError> =>
+  parseGlobalOptions(args).pipe(
+    Effect.flatMap(({ profile, commandArguments }) =>
+      commandWithProfile(commandArguments, stdout, profile)
+    )
+  );
 
 export const run = (
   args: readonly string[],
@@ -803,6 +902,7 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
     Effect.catchTag(
       [
         "UnknownOptionError",
+        "InvalidOptionValueError",
         "UnknownCommandError",
         "UnexpectedArgumentsError",
         "DaemonCommandError",
