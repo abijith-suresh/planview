@@ -3,6 +3,7 @@
 planview \- publish immutable HTML snapshots
 .SH SYNOPSIS
 .B planview
+.RI [ global-options ]
 .I command
 [\fIoptions\fR]
 .br
@@ -14,6 +15,14 @@ publishes an HTML file or page folder to a local daemon and returns a stable
 localhost URL. A page folder must contain
 .B index.html
 and is published with its assets.
+.PP
+Use
+.B --profile name
+before the command to use an isolated set of documents and daemon state.
+The default profile keeps the existing Planview data directory. Named profiles
+are stored below
+.B planview/profiles/name
+.
 .PP
 The
 .B publish
@@ -67,6 +76,10 @@ to request help explicitly.
 .B \-v, \-\-version
 Show the Planview CLI version.
 .TP
+.B \-\-profile name
+Use the named profile for this invocation. Names start with a lowercase letter
+or number and contain only lowercase letters, numbers, hyphens, and underscores.
+.TP
 .B \-\-open
 Open the published URL in the default browser. Supported by
 .B publish
@@ -114,6 +127,9 @@ because its output is the stored document itself.
 .TP
 .B ~/.local/share/planview
 Default application data directory on supported Unix systems.
+.TP
+.B ~/.local/share/planview/profiles/name
+Application data directory for a named profile on supported Unix systems.
 .TP
 .B ~/.agents/skills
 Destination used by

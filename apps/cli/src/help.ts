@@ -13,12 +13,12 @@ export const COMMANDS = [
 export type Command = (typeof COMMANDS)[number];
 export type HelpTopic = Command | "skills install";
 
-const ROOT_HELP = `Usage: planview <command> [options]
+const ROOT_HELP = `Usage: planview [global-options] <command> [options]
 
 Commands:
   publish <file|folder>  Publish a snapshot and print its URL
   get <id|url>           Write a stored snapshot to standard output
-  start                  Start the local daemon, or reuse the running daemon
+  start                  Start or reuse the daemon for the selected profile
   status                 Show daemon status without starting it
   stop                   Gracefully stop the local daemon
   restart                Restart the local daemon
@@ -29,7 +29,9 @@ Commands:
 Global options:
   -h, --help             Show this help message
   -v, --version          Show the version
+  --profile <name>       Use isolated state for this command (default: default)
 
+Profile names use lowercase letters, numbers, hyphens, and underscores.
 Use planview <command> --help for command options.
 `;
 
@@ -38,6 +40,7 @@ const COMMAND_HELP: Record<HelpTopic, string> = {
 
 Publish one immutable HTML snapshot and print its localhost URL.
 The input may be an HTML file or a page folder containing index.html.
+The selected profile owns its documents and local daemon.
 
 Options:
   -h, --help             Show this help message
@@ -48,13 +51,15 @@ Options:
 
 Write the stored snapshot's exact bytes to standard output.
 The reference may be a document id or an exact local Planview URL.
+The URL must use the selected profile's current port.
 
 Options:
   -h, --help             Show this help message
 `,
   start: `Usage: planview start [options]
 
-Start the local daemon, or reuse the authenticated daemon already running.
+Start the selected profile's daemon, or reuse its authenticated daemon.
+If the preferred port is occupied, Planview uses the next available port.
 
 Options:
   -h, --help             Show this help message

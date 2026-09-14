@@ -141,7 +141,7 @@ test("--help and -h produce the same deterministic output", () => {
   assert.equal(long.error, undefined);
   assert.equal(long.stderr, "");
   assert.equal(long.stdout, short.stdout);
-  assert.match(long.stdout, /^Usage: planview <command>/);
+  assert.match(long.stdout, /^Usage: planview \[global-options\] <command>/);
 });
 
 test("help exposes the root and command-specific documentation", () => {
@@ -196,6 +196,26 @@ test("command options reject unknown flags before doing work", () => {
     assert.equal(result.stdout, "");
     assert.match(result.stderr, /^Unknown option: --unknown\n/);
   }
+});
+
+test("profile selection is parsed before the command and validates its value", () => {
+  const help = execute("--profile", "dev", "help");
+  assert.equal(help.status, 0, help.stderr);
+  assert.equal(help.stdout, formatHelp());
+
+  const invalid = execute("--profile", "Work", "status");
+  assert.equal(invalid.status, 1);
+  assert.equal(invalid.stdout, "");
+  assert.match(invalid.stderr, /^Invalid profile name: Work/);
+
+  const missing = execute("--profile");
+  assert.equal(missing.status, 1);
+  assert.equal(missing.stdout, "");
+  assert.match(missing.stderr, /^Option --profile requires a profile name/);
+
+  const misplaced = execute("status", "--profile", "dev");
+  assert.equal(misplaced.status, 1);
+  assert.match(misplaced.stderr, /^Unknown option: --profile/);
 });
 
 test("browser opening uses the platform launcher", async () => {
@@ -312,7 +332,7 @@ test("unknown options fail with a useful error", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /^Unknown option: --unknown\n/);
-  assert.match(result.stderr, /Usage: planview <command>/);
+  assert.match(result.stderr, /Usage: planview \[global-options\] <command>/);
 });
 
 test("JSON errors stay machine-readable on stderr", () => {
@@ -408,7 +428,7 @@ test("a starter crash after daemon lock adoption does not strand lifecycle comma
   const appDataDir = join(runtimeRoot, "app-data");
   const daemonRuntimeDir = join(appDataDir, "runtime");
   const port = await freePort();
-  const environment = {
+  const environment: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: "test",
     PLANVIEW_APP_DATA_DIR: appDataDir,
@@ -517,6 +537,75 @@ test("start, status, stop, and restart are process-backed and private", async ()
   }
 });
 
+test("profiles run side by side, keep separate documents, and return their actual ports", async () => {
+  const home = mkdtempSync(join(tmpdir(), "planview-profile-cli-test-"));
+  const dataHome = join(home, "data");
+  const environment: NodeJS.ProcessEnv = {
+    ...process.env,
+    HOME: home,
+    USERPROFILE: home,
+    XDG_DATA_HOME: dataHome,
+    NODE_ENV: "production",
+  };
+  delete environment["PLANVIEW_APP_DATA_DIR"];
+  delete environment["PLANVIEW_RUNTIME_DIR"];
+  delete environment["PLANVIEW_TEST_DAEMON_PORT"];
+  const executeInHome = (...args: string[]) =>
+    spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env: environment });
+  const devSource = join(home, "dev.html");
+  const workSource = join(home, "work.html");
+  writeFileSync(devSource, "<p>dev</p>\n");
+  writeFileSync(workSource, "<p>work</p>\n");
+
+  try {
+    const devPublished = executeInHome("--profile", "dev", "publish", "--json", devSource);
+    assert.equal(devPublished.status, 0, devPublished.stderr);
+    const devDocument = JSON.parse(devPublished.stdout) as {
+      readonly id: string;
+      readonly url: string;
+    };
+
+    const workPublished = executeInHome("--profile=work", "publish", "--json", workSource);
+    assert.equal(workPublished.status, 0, workPublished.stderr);
+    const workDocument = JSON.parse(workPublished.stdout) as {
+      readonly id: string;
+      readonly url: string;
+    };
+
+    assert.notEqual(devDocument.url, workDocument.url);
+    assert.equal(
+      existsSync(join(dataHome, "planview", "profiles", "dev", "metadata.sqlite")),
+      true
+    );
+    assert.equal(
+      existsSync(join(dataHome, "planview", "profiles", "work", "metadata.sqlite")),
+      true
+    );
+
+    const devStatus = executeInHome("--profile", "dev", "status", "--json");
+    const workStatus = executeInHome("--profile", "work", "status", "--json");
+    assert.equal(devStatus.status, 0, devStatus.stderr);
+    assert.equal(workStatus.status, 0, workStatus.stderr);
+    const devRunning = JSON.parse(devStatus.stdout);
+    const workRunning = JSON.parse(workStatus.stdout);
+    assert.equal(devRunning.profile, "dev");
+    assert.equal(workRunning.profile, "work");
+    assert.equal(devRunning.port, Number(new URL(devDocument.url).port));
+    assert.equal(workRunning.port, Number(new URL(workDocument.url).port));
+
+    const devContents = executeInHome("--profile", "dev", "get", devDocument.url);
+    assert.equal(devContents.status, 0, devContents.stderr);
+    assert.equal(devContents.stdout, "<p>dev</p>\n");
+    const crossProfile = executeInHome("--profile", "work", "get", devDocument.url);
+    assert.equal(crossProfile.status, 1);
+    assert.match(crossProfile.stderr, /uses port/);
+  } finally {
+    executeInHome("--profile", "dev", "stop");
+    executeInHome("--profile", "work", "stop");
+    await removeFixture(home);
+  }
+});
+
 const freePort = (): Promise<number> =>
   new Promise<number>((resolvePort, rejectPort) => {
     const server = createServer();
@@ -575,6 +664,7 @@ test("metadata commands emit one JSON object when requested", async () => {
     const runningDocument = JSON.parse(running.stdout);
     assert.deepEqual(runningDocument, {
       state: "running",
+      profile: "default",
       host: "127.0.0.1",
       port,
       pid: runningDocument.pid,
