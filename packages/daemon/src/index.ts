@@ -12,7 +12,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
-import { createConnection, type Socket } from "node:net";
+import type { Socket } from "node:net";
 import { hostname } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -42,8 +42,9 @@ import {
 import { Data, Effect } from "effect";
 
 export const DAEMON_HOST = "127.0.0.1" as const;
-/** The v1 daemon port is fixed for the public CLI. */
+/** Preferred listener port for the public CLI. */
 export const DAEMON_PORT = V1_PORT;
+export const DAEMON_PORT_FALLBACK_ATTEMPTS = 50;
 export const DAEMON_STARTUP_LEASE_MS = 30_000;
 export const DAEMON_STARTUP_GRACE_MS = 5_000;
 export const DAEMON_SHUTDOWN_TIMEOUT_MS = 5_000;
@@ -104,6 +105,7 @@ const TEST_PUBLISH_PAUSE_ONCE_ENV = "PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_ONCE";
 const TEST_UNCOOPERATIVE_PUBLISH_ENV = "PLANVIEW_TEST_DAEMON_UNCOOPERATIVE_PUBLISH";
 const TEST_CLEANUP_PAUSE_ENV = "PLANVIEW_TEST_DAEMON_CLEANUP_PAUSE_MS";
 const LIFECYCLE_TOKEN_ENV = "PLANVIEW_DAEMON_LIFECYCLE_TOKEN";
+const STRICT_PORT_ENV = "PLANVIEW_DAEMON_STRICT_PORT";
 // These values are runtime plumbing, not application configuration. Keep the
 // allowlist narrow so detached daemons do not inherit tokens or Node flags,
 // while retaining the platform variables needed by Node and native tooling.
@@ -154,11 +156,13 @@ export type DaemonConfig = Readonly<{
   readonly runtimeDir: string;
   readonly host: typeof DAEMON_HOST;
   readonly port: number;
+  readonly strictPort: boolean;
+  readonly testOnly: boolean;
 }>;
 
 export const resolveDaemonEnvironment = (
   config: Pick<DaemonConfig, "appDataDir" | "runtimeDir" | "port"> &
-    Partial<Pick<DaemonConfig, "profile">>,
+    Partial<Pick<DaemonConfig, "profile" | "strictPort" | "testOnly">>,
   lifecycleToken: string,
   source: Readonly<Record<string, string | undefined>> = process.env
 ) => {
@@ -166,6 +170,7 @@ export const resolveDaemonEnvironment = (
     PLANVIEW_APP_DATA_DIR: config.appDataDir,
     PLANVIEW_PROFILE: config.profile ?? DEFAULT_PROFILE_NAME,
     PLANVIEW_RUNTIME_DIR: config.runtimeDir,
+    [STRICT_PORT_ENV]: String(config.strictPort ?? false),
     [LIFECYCLE_TOKEN_ENV]: lifecycleToken,
   };
   for (const key of SAFE_RUNTIME_ENVIRONMENT_KEYS) {
@@ -174,7 +179,8 @@ export const resolveDaemonEnvironment = (
       environment[key] = value;
     }
   }
-  const testProcess = source["NODE_ENV"] === "test" || config.port !== DAEMON_PORT;
+  const testProcess =
+    config.testOnly === true || (config.testOnly === undefined && source["NODE_ENV"] === "test");
   if (testProcess) {
     environment["NODE_ENV"] = "test";
     environment[TEST_PORT_ENV] = String(config.port);
@@ -188,12 +194,16 @@ export const resolveDaemonEnvironment = (
   return environment;
 };
 
-export type DaemonConfigOptions = DaemonPathOptions;
+export type DaemonConfigOptions = DaemonPathOptions &
+  Readonly<{
+    readonly strictPort?: boolean;
+  }>;
 
 /** @internal Test-only configuration; the public daemon port remains fixed. */
 export type DaemonTestConfigOptions = DaemonPathOptions &
   Readonly<{
     readonly port: number;
+    readonly strictPort?: boolean;
   }>;
 
 export type RuntimeDescriptor = Readonly<{
@@ -356,6 +366,19 @@ const envValue = (env: Readonly<Record<string, string | undefined>>, ...keys: st
   return undefined;
 };
 
+const booleanEnvironmentValue = (value: string | undefined, label: string) => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === "true") {
+    return true;
+  }
+  if (value === "false") {
+    return false;
+  }
+  throw new Error(`${label} must be true or false.`);
+};
+
 const validateAbsolutePath = (value: string, label: string) => {
   if (!isAbsolute(value) || resolve(value) === parse(resolve(value)).root) {
     throw new DaemonPathError({
@@ -410,9 +433,10 @@ export const resolveDaemonPaths = (options: DaemonPathOptions = {}) => {
 };
 
 const resolveConfig = (
-  options: DaemonPathOptions,
+  options: DaemonConfigOptions,
   env: Readonly<Record<string, string | undefined>>,
-  port: number
+  port: number,
+  testOnly: boolean
 ) => {
   const profile = validateProfileName(
     options.profile ?? envValue(env, "PLANVIEW_PROFILE") ?? DEFAULT_PROFILE_NAME
@@ -425,25 +449,31 @@ const resolveConfig = (
     profile,
     ...(runtimeDir === undefined ? {} : { runtimeDir }),
   });
+  const strictPort =
+    options.strictPort ??
+    booleanEnvironmentValue(envValue(env, STRICT_PORT_ENV), STRICT_PORT_ENV) ??
+    testOnly;
 
   return {
     ...paths,
     profile,
     host: DAEMON_HOST,
     port: validatePort(port),
+    strictPort,
+    testOnly,
   } satisfies DaemonConfig & DaemonPaths;
 };
 
 export const resolveDaemonConfig = (
   options: DaemonConfigOptions = {},
   env: Readonly<Record<string, string | undefined>> = process.env
-) => resolveConfig(options, env, DAEMON_PORT);
+) => resolveConfig(options, env, DAEMON_PORT, false);
 
 /** @internal Test-only port injection; production configuration always uses 4777. */
 export const resolveDaemonConfigForTest = (
   options: DaemonTestConfigOptions,
   env: Readonly<Record<string, string | undefined>> = process.env
-) => resolveConfig(options, env, options.port);
+) => resolveConfig(options, env, options.port, true);
 
 const isNotFound = (cause: unknown) =>
   typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT";
@@ -978,20 +1008,54 @@ const removeDescriptorFor = async (paths: DaemonPaths, descriptor: RuntimeDescri
   }
 };
 
-const listen = (server: import("node:http").Server, host: string, port: number) =>
-  new Promise<void>((resolvePromise, rejectPromise) => {
-    const onError = (cause: Error) => {
-      server.off("listening", onListening);
-      rejectPromise(cause);
+const listen = (
+  server: import("node:http").Server,
+  host: string,
+  preferredPort: number,
+  strictPort: boolean
+) =>
+  new Promise<number>((resolvePromise, rejectPromise) => {
+    let fallbackAttempt = 0;
+    let candidatePort = preferredPort;
+
+    const tryCandidate = () => {
+      const onError = (cause: Error) => {
+        server.off("listening", onListening);
+        server.off("error", onError);
+        if (
+          isAddressInUse(cause) &&
+          !strictPort &&
+          fallbackAttempt < DAEMON_PORT_FALLBACK_ATTEMPTS &&
+          candidatePort < 65_535
+        ) {
+          fallbackAttempt += 1;
+          candidatePort += 1;
+          tryCandidate();
+          return;
+        }
+        rejectPromise(cause);
+      };
+      const onListening = () => {
+        server.off("error", onError);
+        const address = server.address();
+        if (address === null || typeof address === "string") {
+          rejectPromise(new Error("The daemon listener did not report a TCP address."));
+          return;
+        }
+        resolvePromise(address.port);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(candidatePort, host);
     };
-    const onListening = () => {
-      server.off("error", onError);
-      resolvePromise();
-    };
-    server.once("error", onError);
-    server.once("listening", onListening);
-    server.listen(port, host);
+
+    tryCandidate();
   });
+
+const portInUseMessage = (config: Pick<DaemonConfig, "host" | "port" | "strictPort">) =>
+  config.strictPort
+    ? `Port ${config.port} on ${config.host} is occupied by an unknown process; Planview will not stop it.`
+    : `No available port was found on ${config.host} from ${config.port} through ${Math.min(65_535, config.port + DAEMON_PORT_FALLBACK_ATTEMPTS)}.`;
 
 const forceCloseServer = (server: import("node:http").Server, connections: ReadonlySet<Socket>) => {
   server.closeIdleConnections();
@@ -2130,8 +2194,8 @@ const openDaemon = async (config: DaemonConfig) => {
         return result;
       });
     };
-    descriptor = {
-      version: DAEMON_DESCRIPTOR_VERSION,
+    const runtimeDescriptor = {
+      version: DAEMON_DESCRIPTOR_VERSION as typeof DAEMON_DESCRIPTOR_VERSION,
       pid: process.pid,
       host: config.host,
       port: config.port,
@@ -2139,8 +2203,9 @@ const openDaemon = async (config: DaemonConfig) => {
       secret: randomBytes(32).toString("base64url"),
       startedAt: Date.now(),
     };
+    descriptor = runtimeDescriptor;
     const daemonServer = await createDaemonServer(
-      descriptor,
+      runtimeDescriptor,
       requestShutdown,
       publicationCoordinator,
       metadataStore,
@@ -2156,7 +2221,8 @@ const openDaemon = async (config: DaemonConfig) => {
     forceCloseConnections = daemonServer.forceClose;
     abortRequests = daemonServer.abortRequests;
     waitForRequests = daemonServer.waitForRequests;
-    await listen(server, config.host, config.port);
+    const actualPort = await listen(server, config.host, config.port, config.strictPort);
+    runtimeDescriptor.port = actualPort;
     if (server === undefined || descriptor === undefined || connections === undefined) {
       throw new Error("The daemon listener was not initialized.");
     }
@@ -2325,7 +2391,7 @@ const openDaemon = async (config: DaemonConfig) => {
       throw new DaemonPortInUseError({
         host: config.host,
         port: config.port,
-        message: `Port ${config.port} on ${config.host} is already in use; Planview will not stop an unknown owner.`,
+        message: portInUseMessage(config),
       });
     }
     throw cause;
@@ -2422,7 +2488,7 @@ const assertDescriptorEndpoint = (
   descriptor: Readonly<{ readonly host: string; readonly port: number }>,
   path: string
 ) => {
-  if (descriptor.host === config.host && descriptor.port === config.port) {
+  if (descriptor.host === config.host && (!config.strictPort || descriptor.port === config.port)) {
     return;
   }
   throw new DaemonDescriptorEndpointMismatchError({
@@ -2605,37 +2671,6 @@ const requestClean = async (
   return parseResponse<Record<string, unknown>>(answer, DAEMON_CLEAN_PATH, 200);
 };
 
-const portIsOpen = (host: string, port: number, signal?: AbortSignal) =>
-  new Promise<boolean>((resolvePromise, rejectPromise) => {
-    let settled = false;
-    const socket: Socket = createConnection({ host, port });
-    const onAbort = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      signal?.removeEventListener("abort", onAbort);
-      socket.destroy();
-      rejectPromise(signal?.reason ?? new Error("The daemon port check was canceled."));
-    };
-    const finish = (open: boolean) => {
-      if (!settled) {
-        settled = true;
-        signal?.removeEventListener("abort", onAbort);
-        socket.destroy();
-        resolvePromise(open);
-      }
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) {
-      onAbort();
-      return;
-    }
-    socket.once("connect", () => finish(true));
-    socket.once("error", () => finish(false));
-    socket.setTimeout(REQUEST_TIMEOUT_MS, () => finish(false));
-  });
-
 const wait = (milliseconds: number, signal?: AbortSignal) => {
   if (signal?.aborted) {
     return Promise.reject(signal.reason);
@@ -2723,9 +2758,9 @@ const waitForReady = async (
   const paths = resolveDaemonPaths(config);
   const deadline = Date.now() + timeoutMs;
   let readinessObserved = false;
-  let startupFailure: DaemonRequestError | undefined;
+  let startupFailure: DaemonError | undefined;
   let childDiagnostics = "";
-  let rejectChildFailure: ((error: DaemonRequestError) => void) | undefined;
+  let rejectChildFailure: ((error: DaemonError) => void) | undefined;
   const childFailure =
     child === undefined
       ? undefined
@@ -2741,11 +2776,17 @@ const waitForReady = async (
       diagnostics.length === 0
         ? cause
         : new Error(`${describe(cause)}\nDaemon stderr: ${diagnostics}`);
-    startupFailure = new DaemonRequestError({
-      path: DAEMON_READY_PATH,
-      cause: detailedCause,
-      message: `The detached Planview daemon failed before readiness: ${describe(detailedCause)}`,
-    });
+    startupFailure = diagnostics.includes(portInUseMessage(config))
+      ? new DaemonPortInUseError({
+          host: config.host,
+          port: config.port,
+          message: portInUseMessage(config),
+        })
+      : new DaemonRequestError({
+          path: DAEMON_READY_PATH,
+          cause: detailedCause,
+          message: `The detached Planview daemon failed before readiness: ${describe(detailedCause)}`,
+        });
     rejectChildFailure?.(startupFailure);
   };
   const onChildStderr = (chunk: string | Uint8Array) => {
@@ -2753,7 +2794,7 @@ const waitForReady = async (
     childDiagnostics = `${childDiagnostics}${text}`.slice(-8 * 1024);
   };
   const onChildError = (cause: Error) => failForChild(cause);
-  const onChildExit = (code: number | null, signal: NodeJS.Signals | null) =>
+  const onChildClose = (code: number | null, signal: NodeJS.Signals | null) =>
     failForChild(
       new Error(
         signal === null
@@ -2769,11 +2810,15 @@ const waitForReady = async (
   };
 
   child?.once("error", onChildError);
-  child?.once("exit", onChildExit);
+  child?.once("close", onChildClose);
   child?.stderr?.setEncoding("utf8");
   child?.stderr?.on("data", onChildStderr);
-  if (child !== undefined && (child.exitCode !== null || child.signalCode !== null)) {
-    onChildExit(child.exitCode, child.signalCode);
+  if (
+    child !== undefined &&
+    (child.exitCode !== null || child.signalCode !== null) &&
+    child.stderr?.readableEnded === true
+  ) {
+    onChildClose(child.exitCode, child.signalCode);
   }
   const onAbort = () => {
     if (child?.exitCode === null && child.signalCode === null) {
@@ -2828,7 +2873,7 @@ const waitForReady = async (
     }
   } finally {
     child?.off("error", onChildError);
-    child?.off("exit", onChildExit);
+    child?.off("close", onChildClose);
     child?.stderr?.off("data", onChildStderr);
     child?.stderr?.destroy();
     signal?.removeEventListener("abort", onAbort);
@@ -2870,18 +2915,10 @@ const startWithLock = async (
     assertDescriptorProfile(config, startupDescriptor, paths.descriptorPath);
     assertDescriptorEndpoint(config, startupDescriptor, paths.descriptorPath);
   }
-  if (await portIsOpen(config.host, config.port, signal)) {
-    throw new DaemonPortInUseError({
-      host: config.host,
-      port: config.port,
-      message: `Port ${config.port} on ${config.host} is occupied by an unknown process; Planview will not stop it.`,
-    });
-  }
   const { spawn } = await import("node:child_process");
-  const captureStartupDiagnostics = isTestProcess() || config.port !== DAEMON_PORT;
   const child = spawn(process.execPath, [options.daemonScriptPath], {
     detached: true,
-    stdio: captureStartupDiagnostics ? ["ignore", "ignore", "pipe"] : "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     windowsHide: true,
     env: resolveDaemonEnvironment(config, lock.token),
   });

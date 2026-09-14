@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { rm } from "node:fs/promises";
-import { createConnection, createServer, type Socket } from "node:net";
+import { createConnection, createServer, type Server, type Socket } from "node:net";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -152,6 +152,32 @@ const freePort = async () => {
     server.close((error) => (error ? reject(error) : resolve()))
   );
   return port;
+};
+
+const occupyPort = async (port: number): Promise<Server | undefined> => {
+  const server = createServer();
+  const bound = await new Promise<boolean>((resolvePromise, rejectPromise) => {
+    const onListening = () => {
+      cleanup();
+      resolvePromise(true);
+    };
+    const onError = (cause: NodeJS.ErrnoException) => {
+      cleanup();
+      if (cause.code === "EADDRINUSE") {
+        resolvePromise(false);
+        return;
+      }
+      rejectPromise(cause);
+    };
+    const cleanup = () => {
+      server.off("listening", onListening);
+      server.off("error", onError);
+    };
+    server.once("listening", onListening);
+    server.once("error", onError);
+    server.listen(port, "127.0.0.1");
+  });
+  return bound ? server : undefined;
 };
 
 const startChild = (
@@ -317,10 +343,14 @@ test("public configuration fixes 4777, while test injection is explicit and cont
     assert.equal(publicConfig.port, daemon.DAEMON_PORT);
     assert.equal(publicConfig.port, 4777);
     assert.equal(publicConfig.profile, "default");
+    assert.equal(publicConfig.strictPort, false);
+    assert.equal(publicConfig.testOnly, false);
 
     const testConfig = daemon.resolveDaemonConfigForTest({ appDataDir, port: 4997 });
     assert.equal(testConfig.port, 4997);
     assert.equal(testConfig.profile, "default");
+    assert.equal(testConfig.strictPort, true);
+    assert.equal(testConfig.testOnly, true);
     assert.throws(
       () => daemon.resolveDaemonPaths({ appDataDir, runtimeDir: join(fixture, "outside") }),
       /contained below app-data/
@@ -371,6 +401,7 @@ test("detached daemon environments contain Planview settings and safe runtime pl
     PLANVIEW_APP_DATA_DIR: "/tmp/planview-app-data",
     PLANVIEW_PROFILE: "default",
     PLANVIEW_RUNTIME_DIR: "/tmp/planview-runtime",
+    PLANVIEW_DAEMON_STRICT_PORT: "false",
     PLANVIEW_DAEMON_LIFECYCLE_TOKEN: "lifecycle-token",
     PATH: "/unrelated/path",
     HOME: "/home/test-user",
@@ -380,6 +411,107 @@ test("detached daemon environments contain Planview settings and safe runtime pl
     PLANVIEW_TEST_DAEMON_PORT: "4777",
     PLANVIEW_TEST_DAEMON_PUBLISH_PAUSE_MS: "250",
   });
+});
+
+test("a production fallback configuration does not inherit test-only port plumbing", () => {
+  const environment = daemon.resolveDaemonEnvironment(
+    {
+      appDataDir: "/tmp/planview-app-data",
+      profile: "work",
+      runtimeDir: "/tmp/planview-runtime",
+      port: daemon.DAEMON_PORT,
+      strictPort: false,
+      testOnly: false,
+    },
+    "lifecycle-token",
+    { NODE_ENV: "production" }
+  );
+
+  assert.equal(environment["NODE_ENV"], undefined);
+  assert.equal(environment["PLANVIEW_TEST_DAEMON_PORT"], undefined);
+  assert.equal(environment["PLANVIEW_DAEMON_STRICT_PORT"], "false");
+});
+
+test("binds the next available port and publishes that port in every daemon response", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-port-fallback-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const preferredPort = await freePort();
+  const owner = createServer((socket) => socket.end());
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    owner.once("error", rejectPromise);
+    owner.listen(preferredPort, "127.0.0.1", () => resolvePromise());
+  });
+  const config = daemon.resolveDaemonConfigForTest({
+    appDataDir,
+    runtimeDir,
+    port: preferredPort,
+    strictPort: false,
+  });
+
+  try {
+    const started = await runEffect(
+      daemon.startDetachedDaemon(config, { daemonScriptPath: entry })
+    );
+    assert.equal(started.reused, false);
+    assert.ok(started.descriptor.port > preferredPort);
+    assert.equal(descriptorAt(runtimeDir)?.port, started.descriptor.port);
+
+    const response = await fetch(
+      `http://${started.descriptor.host}:${started.descriptor.port}${daemon.DAEMON_STATUS_PATH}`,
+      { headers: { "x-planview-secret": started.descriptor.secret } }
+    );
+    assert.equal(response.status, 200);
+    const status = (await response.json()) as Readonly<{ readonly port?: unknown }>;
+    assert.equal(status.port, started.descriptor.port);
+
+    const inspected = await runEffect(daemon.inspectDaemon(config));
+    assert.equal(inspected.state, "running");
+    if (inspected.state === "running") {
+      assert.equal(inspected.status.port, started.descriptor.port);
+    }
+  } finally {
+    await runEffect(daemon.stopDaemon(config)).catch(() => undefined);
+    await new Promise<void>((resolvePromise, rejectPromise) =>
+      owner.close((cause) => (cause === undefined ? resolvePromise() : rejectPromise(cause)))
+    );
+    await removeFixture(fixture);
+  }
+});
+
+test("reports an exhausted production fallback range as a typed port error", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-port-exhausted-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const occupied: Server[] = [];
+
+  try {
+    for (let offset = 0; offset <= daemon.DAEMON_PORT_FALLBACK_ATTEMPTS; offset += 1) {
+      const server = await occupyPort(daemon.DAEMON_PORT + offset);
+      if (server !== undefined) {
+        occupied.push(server);
+      }
+    }
+
+    const config = daemon.resolveDaemonConfig({ appDataDir, runtimeDir });
+    await assert.rejects(
+      runEffect(daemon.startDetachedDaemon(config, { daemonScriptPath: entry })),
+      (error) =>
+        isTaggedError(error, "DaemonPortInUseError") &&
+        error["port"] === daemon.DAEMON_PORT &&
+        /No available port was found/.test(error.message)
+    );
+  } finally {
+    await Promise.all(
+      occupied.map(
+        (server) =>
+          new Promise<void>((resolvePromise, rejectPromise) =>
+            server.close((cause) => (cause === undefined ? resolvePromise() : rejectPromise(cause)))
+          )
+      )
+    );
+    await removeFixture(fixture);
+  }
 });
 
 test("a detached daemon keeps the selected profile in its descriptor", async () => {
@@ -417,6 +549,35 @@ test("a detached child failure is observed and the starter releases its lifecycl
       ),
       (error) =>
         isTaggedError(error, "DaemonRequestError") && /failed before readiness/.test(error.message)
+    );
+    assert.equal(existsSync(join(runtimeDir, daemon.DAEMON_LOCK_NAME)), false);
+  } finally {
+    await removeFixture(fixture);
+  }
+});
+
+test("startup failure diagnostics include stderr written before child close", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-startup-diagnostics-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const failedEntry = join(fixture, "failed-daemon-entry.mjs");
+  const marker = "startup-diagnostic-marker";
+  const diagnostics = `${"x".repeat(128 * 1024)}${marker}`;
+  writeFileSync(
+    failedEntry,
+    `process.stderr.write(${JSON.stringify(diagnostics)}, () => { process.exitCode = 1; });`,
+    { encoding: "utf8", mode: 0o700 }
+  );
+  const config = daemon.resolveDaemonConfigForTest({
+    appDataDir,
+    runtimeDir,
+    port: await freePort(),
+  });
+
+  try {
+    await assert.rejects(
+      runEffect(daemon.startDetachedDaemon(config, { daemonScriptPath: failedEntry })),
+      (error) => isTaggedError(error, "DaemonRequestError") && error.message.includes(marker)
     );
     assert.equal(existsSync(join(runtimeDir, daemon.DAEMON_LOCK_NAME)), false);
   } finally {
