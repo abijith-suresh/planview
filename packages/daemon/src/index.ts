@@ -2794,7 +2794,7 @@ const waitForReady = async (
     childDiagnostics = `${childDiagnostics}${text}`.slice(-8 * 1024);
   };
   const onChildError = (cause: Error) => failForChild(cause);
-  const onChildExit = (code: number | null, signal: NodeJS.Signals | null) =>
+  const onChildClose = (code: number | null, signal: NodeJS.Signals | null) =>
     failForChild(
       new Error(
         signal === null
@@ -2810,11 +2810,15 @@ const waitForReady = async (
   };
 
   child?.once("error", onChildError);
-  child?.once("exit", onChildExit);
+  child?.once("close", onChildClose);
   child?.stderr?.setEncoding("utf8");
   child?.stderr?.on("data", onChildStderr);
-  if (child !== undefined && (child.exitCode !== null || child.signalCode !== null)) {
-    onChildExit(child.exitCode, child.signalCode);
+  if (
+    child !== undefined &&
+    (child.exitCode !== null || child.signalCode !== null) &&
+    child.stderr?.readableEnded === true
+  ) {
+    onChildClose(child.exitCode, child.signalCode);
   }
   const onAbort = () => {
     if (child?.exitCode === null && child.signalCode === null) {
@@ -2869,7 +2873,7 @@ const waitForReady = async (
     }
   } finally {
     child?.off("error", onChildError);
-    child?.off("exit", onChildExit);
+    child?.off("close", onChildClose);
     child?.stderr?.off("data", onChildStderr);
     child?.stderr?.destroy();
     signal?.removeEventListener("abort", onAbort);

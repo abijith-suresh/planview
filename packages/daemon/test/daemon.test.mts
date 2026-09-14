@@ -556,6 +556,35 @@ test("a detached child failure is observed and the starter releases its lifecycl
   }
 });
 
+test("startup failure diagnostics include stderr written before child close", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-startup-diagnostics-"));
+  const appDataDir = join(fixture, "app-data");
+  const runtimeDir = join(appDataDir, "runtime");
+  const failedEntry = join(fixture, "failed-daemon-entry.mjs");
+  const marker = "startup-diagnostic-marker";
+  const diagnostics = `${"x".repeat(128 * 1024)}${marker}`;
+  writeFileSync(
+    failedEntry,
+    `process.stderr.write(${JSON.stringify(diagnostics)}, () => { process.exitCode = 1; });`,
+    { encoding: "utf8", mode: 0o700 }
+  );
+  const config = daemon.resolveDaemonConfigForTest({
+    appDataDir,
+    runtimeDir,
+    port: await freePort(),
+  });
+
+  try {
+    await assert.rejects(
+      runEffect(daemon.startDetachedDaemon(config, { daemonScriptPath: failedEntry })),
+      (error) => isTaggedError(error, "DaemonRequestError") && error.message.includes(marker)
+    );
+    assert.equal(existsSync(join(runtimeDir, daemon.DAEMON_LOCK_NAME)), false);
+  } finally {
+    await removeFixture(fixture);
+  }
+});
+
 test("a stale protected malformed lifecycle lock is recovered only after its conservative lease", async () => {
   const fixture = mkdtempSync(join(tmpdir(), "planview-daemon-lock-"));
   const appDataDir = join(fixture, "app-data");
