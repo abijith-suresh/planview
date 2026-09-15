@@ -8,11 +8,11 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 
-const withBuild = ({ outputDirectory, basePath, githubRepository }, check) => {
+const withBuild = ({ outputDirectory, basePath }, check) => {
   const output = resolve(root, outputDirectory);
   rmSync(output, { force: true, recursive: true });
 
-  const environment = { ...process.env, GITHUB_REPOSITORY: githubRepository };
+  const environment = { ...process.env };
   if (basePath === undefined) {
     delete environment.BASE_PATH;
   } else {
@@ -130,9 +130,7 @@ const assertHomepage = (output, expectedBase) => {
 };
 
 test("root static build is hermetic and emits the project homepage", () => {
-  withBuild({ outputDirectory: "dist", basePath: "", githubRepository: "" }, (output) =>
-    assertHomepage(output, "")
-  );
+  withBuild({ outputDirectory: "dist", basePath: "" }, (output) => assertHomepage(output, ""));
 });
 
 test("base-path normalization prefixes exact internal asset and home-link output", () => {
@@ -140,19 +138,13 @@ test("base-path normalization prefixes exact internal asset and home-link output
     {
       outputDirectory: "dist-base",
       basePath: "//planview///",
-      githubRepository: "owner/name",
     },
     (output) => assertHomepage(output, "/planview")
   );
 });
 
-test("repository name derives the deployment base when BASE_PATH is unset", () => {
-  withBuild(
-    {
-      outputDirectory: "dist-repository",
-      basePath: undefined,
-      githubRepository: "owner/name",
-    },
-    (output) => assertHomepage(output, "/name")
+test("an unset BASE_PATH keeps the site at the domain root", () => {
+  withBuild({ outputDirectory: "dist-root", basePath: undefined }, (output) =>
+    assertHomepage(output, "")
   );
 });
