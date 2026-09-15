@@ -62,13 +62,12 @@ npm run build --workspace @planview/site
 npm test --workspace @planview/site
 ```
 
-`BASE_PATH` sets the deployment prefix (leading and trailing slashes are
+`BASE_PATH` sets an optional deployment prefix (leading and trailing slashes are
 normalized), for example `BASE_PATH=/planview npm run build --workspace
-@planview/site`. When `BASE_PATH` is unset, `GITHUB_REPOSITORY=owner/name`
-derives `/name`; an explicit `BASE_PATH` always wins. The default is the root
-site with no prefix.
+@planview/site`. It is normally unset because the marketing site is deployed at
+the root of its Vercel domain.
 
-## GitHub Actions and Pages
+## Vercel deployment
 
 CI runs the required Node 24 quality gate on Linux for pull requests and pushes to
 `main`. It also packs the public `@abijith-suresh/planview` npm package and
@@ -81,14 +80,11 @@ repository, then the Changesets Action creates or updates the generated
 runs the same release command. npm publishing is disabled by default. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the release policy.
 
-The Pages workflow builds `apps/site` on relevant pushes to `main` and deploys it
-at `https://<owner>.github.io/<repository>/`. The existing Astro configuration
-derives the repository base path from `GITHUB_REPOSITORY`, so no `BASE_PATH` or
-secret is needed for the normal deployment.
-
-To activate deployment, set **Settings → Pages → Build and deployment → Source**
-to **GitHub Actions** in the repository. The workflow uses the `github-pages`
-environment and GitHub's Pages OIDC token; no repository secret is required.
+The marketing site is a static Astro project deployed by Vercel. Its Vercel
+project should use `apps/site` as the Root Directory, detect Astro as the
+framework, and use Node 24. Vercel's Git integration provides a preview
+deployment for each branch or pull request and promotes the `main` deployment
+to production. No repository deployment secret is required.
 
 ## Security follow-up
 

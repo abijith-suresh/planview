@@ -5,9 +5,7 @@ const normalizeBasePath = (value: string | undefined) => {
   return withoutOuterSlashes ? `/${withoutOuterSlashes}` : "";
 };
 
-const { BASE_PATH, GITHUB_REPOSITORY } = process.env;
-const repositoryName = GITHUB_REPOSITORY?.split("/").filter(Boolean).at(-1);
-const base = normalizeBasePath(BASE_PATH ?? (repositoryName ? `/${repositoryName}` : undefined));
+const base = normalizeBasePath(process.env["BASE_PATH"]);
 
 export default defineConfig({
   output: "static",
