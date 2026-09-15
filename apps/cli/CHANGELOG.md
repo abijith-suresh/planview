@@ -1,5 +1,13 @@
 # @abijith-suresh/planview
 
+## 0.1.5
+
+### Patch Changes
+
+- da01ecf: Expose named local profiles through the CLI and keep document URLs tied to the selected profile.
+- b9a6bbf: Use the next available loopback port when the preferred Planview daemon port is occupied.
+- c9b18f1: Give named local profiles isolated Planview state and daemon identity.
+
 ## 0.1.4
 
 ### Patch Changes
