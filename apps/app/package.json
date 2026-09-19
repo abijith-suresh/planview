@@ -11,9 +11,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@convex-dev/better-auth": "^0.12.5",
     "@solidjs/meta": "0.29.4",
     "@solidjs/router": "1.0.0",
     "@solidjs/start": "2.0.5",
+    "better-auth": "^1.6.33",
+    "convex": "^1.46.0",
     "nitro": "3.0.260903-beta",
     "solid-js": "1.9.15",
     "vite": "8.3.0"

@@ -1,9 +1,33 @@
 import { Meta, Title } from "@solidjs/meta";
 import { A } from "@solidjs/router";
+import { Show, createSignal } from "solid-js";
 import Wordmark from "~/components/Wordmark";
-import { authPreview } from "~/lib/auth";
+import { authClient, authPreview } from "~/lib/auth";
 
 export default function Home() {
+  const [isSigningIn, setIsSigningIn] = createSignal(false);
+  const [authError, setAuthError] = createSignal("");
+
+  const signInWithGitHub = async () => {
+    setAuthError("");
+    setIsSigningIn(true);
+
+    try {
+      const response = await authClient.signIn.social({
+        provider: "github",
+        callbackURL: "/dashboard",
+      });
+
+      if (response.error) {
+        setAuthError(response.error.message ?? "GitHub sign-in could not be started.");
+        setIsSigningIn(false);
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "GitHub sign-in could not be started.");
+      setIsSigningIn(false);
+    }
+  };
+
   return (
     <main class="auth-page">
       <Title>Sign in | Planview</Title>
@@ -79,12 +103,18 @@ export default function Home() {
               <span class="auth-card-label">Continue with</span>
               <span class="auth-card-index">01 / 01</span>
             </div>
-            <button class="github-button" type="button" disabled aria-disabled="true">
+            <button
+              class="github-button"
+              type="button"
+              disabled={isSigningIn()}
+              aria-busy={isSigningIn()}
+              onClick={signInWithGitHub}
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 2.5a9.5 9.5 0 0 0-3 18.51c.48.09.66-.21.66-.46v-1.63c-2.7.59-3.27-1.3-3.27-1.3-.44-1.13-1.08-1.43-1.08-1.43-.88-.6.07-.59.07-.59.97.07 1.48 1 1.48 1 .87 1.48 2.28 1.05 2.84.8.09-.62.34-1.05.62-1.29-2.16-.25-4.43-1.08-4.43-4.81 0-1.06.38-1.93 1-2.61-.1-.25-.43-1.24.1-2.58 0 0 .82-.26 2.67 1a9.3 9.3 0 0 1 4.86 0c1.85-1.26 2.67-1 2.67-1 .53 1.34.2 2.33.1 2.58.62.68 1 1.55 1 2.61 0 3.74-2.27 4.56-4.44 4.8.35.3.66.88.66 1.78v2.64c0 .25.18.55.67.46A9.5 9.5 0 0 0 12 2.5Z" />
               </svg>
-              <span>Continue with GitHub</span>
-              <small>coming next</small>
+              <span>{isSigningIn() ? "Opening GitHub..." : "Continue with GitHub"}</span>
+              <small>{isSigningIn() ? "redirecting" : "GitHub OAuth"}</small>
             </button>
             <div class="auth-card-footer">
               <span>{authPreview.provider} only, for now</span>
@@ -94,11 +124,17 @@ export default function Home() {
             </div>
           </div>
 
+          <Show when={authError()}>
+            <p class="auth-error" role="alert">
+              {authError()}
+            </p>
+          </Show>
+
           <p class="preview-note">
-            <strong>Preview build.</strong> {authPreview.description}
+            <strong>Staging build.</strong> {authPreview.description}
           </p>
-          <A class="dashboard-link" href="/dashboard">
-            Open the workspace preview <span aria-hidden="true">↗</span>
+          <A class="dashboard-link" href="/">
+            Return to the landing page <span aria-hidden="true">↗</span>
           </A>
         </div>
       </section>
