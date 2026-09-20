@@ -9,10 +9,6 @@
  */
 
 import type * as auth from "../auth.js";
-import type * as betterAuth__generated_api from "../betterAuth/_generated/api.js";
-import type * as betterAuth__generated_component from "../betterAuth/_generated/component.js";
-import type * as betterAuth__generated_dataModel from "../betterAuth/_generated/dataModel.js";
-import type * as betterAuth__generated_server from "../betterAuth/_generated/server.js";
 import type * as betterAuth_auth from "../betterAuth/auth.js";
 import type * as documents from "../documents.js";
 import type * as http from "../http.js";
@@ -25,10 +21,6 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
-  "betterAuth/_generated/api": typeof betterAuth__generated_api;
-  "betterAuth/_generated/component": typeof betterAuth__generated_component;
-  "betterAuth/_generated/dataModel": typeof betterAuth__generated_dataModel;
-  "betterAuth/_generated/server": typeof betterAuth__generated_server;
   "betterAuth/auth": typeof betterAuth_auth;
   documents: typeof documents;
   http: typeof http;
