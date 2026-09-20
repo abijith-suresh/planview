@@ -28,6 +28,19 @@ export async function getAuthedConvexClient(request: Request) {
   return { client, token };
 }
 
+export async function proxyResponse(response: Response) {
+  const headers = new Headers(response.headers);
+
+  headers.delete("content-length");
+  headers.delete("transfer-encoding");
+
+  return new Response(await response.arrayBuffer(), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 export function missingServerConfigurationResponse() {
   return Response.json(
     {

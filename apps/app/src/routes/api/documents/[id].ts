@@ -6,6 +6,7 @@ import {
   errorResponse,
   getAuthedConvexClient,
   missingServerConfigurationResponse,
+  proxyResponse,
 } from "~/lib/convex-server";
 
 type DocumentEvent = { request: Request; params: { id: string } };
@@ -29,16 +30,7 @@ export const GET = async ({ request, params }: DocumentEvent) => {
         headers: { Authorization: `Bearer ${token}` },
       }
     );
-    const headers = new Headers(response.headers);
-
-    headers.delete("transfer-encoding");
-    headers.delete("content-length");
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers,
-    });
+    return proxyResponse(response);
   } catch (error) {
     if (error instanceof Error && error.message === "Convex is not configured") {
       return missingServerConfigurationResponse();

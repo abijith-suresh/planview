@@ -1,4 +1,4 @@
-import { convexSiteUrl } from "~/lib/convex-server";
+import { convexSiteUrl, proxyResponse } from "~/lib/convex-server";
 
 type AuthEvent = { request: Request };
 
@@ -40,15 +40,7 @@ async function proxyAuthRequest({ request }: AuthEvent) {
     duplex: "half",
   });
 
-  const responseHeaders = new Headers(response.headers);
-  responseHeaders.delete("transfer-encoding");
-  responseHeaders.delete("content-length");
-
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: responseHeaders,
-  });
+  return proxyResponse(response);
 }
 
 export const GET = proxyAuthRequest;
