@@ -65,6 +65,8 @@ The current staging service is configured with that contract. It needs
 - `GET` and `DELETE /api/documents/:id` view or remove a private document.
 - `/api/health` is the Railway health check.
 
-Document content is authorized through the user's Convex session. The first
-pass deliberately supports one standalone HTML file; bundles and object
-storage migration are later slices.
+Document content is authorized through the user's Convex session. Previews are
+served inline with a sandboxed, opaque origin. This lets agent-generated HTML
+run its own scripts without giving it access to the app session or same-origin
+application APIs. The first pass deliberately supports one standalone HTML
+file; bundles and object storage migration are later slices.

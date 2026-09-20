@@ -7,6 +7,26 @@ import { authComponent, createAuth } from "./betterAuth/auth";
 
 const http = httpRouter();
 
+// Uploaded documents may contain the JavaScript that agent-generated HTML
+// commonly needs. Keep that code in a unique sandboxed origin so it cannot
+// read the app's cookies or call the app as the signed-in user.
+const previewContentSecurityPolicy = [
+  "default-src 'none'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+  "sandbox allow-scripts allow-modals allow-popups",
+  "script-src 'unsafe-inline' https: blob:",
+  "style-src 'unsafe-inline' https:",
+  "img-src data: blob: https:",
+  "font-src data: blob: https:",
+  "media-src data: blob: https:",
+  "connect-src https:",
+  "worker-src blob: https:",
+  "frame-src https:",
+].join("; ");
+
 authComponent.registerRoutes(http, createAuth);
 
 http.route({
@@ -44,14 +64,16 @@ http.route({
       return new Response(blob, {
         headers: {
           "Cache-Control": "private, no-store",
-          "Content-Security-Policy":
-            "default-src 'none'; img-src data: https:; style-src 'unsafe-inline' https:; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox",
+          "Content-Disposition": "inline",
+          "Content-Security-Policy": previewContentSecurityPolicy,
           "Content-Type": "text/html; charset=utf-8",
+          "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=()",
+          "Referrer-Policy": "no-referrer",
           "X-Content-Type-Options": "nosniff",
         },
       });
     } catch {
-      return new Response("Not found", { status: 404 });
+      return new Response("Preview unavailable", { status: 500 });
     }
   }),
 });
