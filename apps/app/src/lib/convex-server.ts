@@ -32,6 +32,9 @@ export async function proxyResponse(response: Response) {
   const headers = new Headers(response.headers);
 
   headers.delete("content-length");
+  // Fetch transparently decompresses upstream responses, so forwarding this
+  // header would make the downstream client try to decompress plain bytes.
+  headers.delete("content-encoding");
   headers.delete("transfer-encoding");
 
   return new Response(await response.arrayBuffer(), {
