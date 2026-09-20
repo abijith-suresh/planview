@@ -91,3 +91,21 @@ export const getContent = internalQuery({
     };
   },
 });
+
+// Temporary staging diagnostic. This deliberately skips ownership checks so
+// we can isolate storage and document rendering from the auth proxy.
+export const latestContent = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const document = await ctx.db.query("documents").order("desc").first();
+
+    if (!document) {
+      return null;
+    }
+
+    return {
+      storageId: document.storageId,
+      contentType: document.contentType,
+    };
+  },
+});

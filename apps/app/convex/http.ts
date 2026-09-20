@@ -27,6 +27,16 @@ const previewContentSecurityPolicy = [
   "frame-src https:",
 ].join("; ");
 
+const previewHeaders = (contentType: string) => ({
+  "Cache-Control": "private, no-store",
+  "Content-Disposition": "inline",
+  "Content-Security-Policy": previewContentSecurityPolicy,
+  "Content-Type": contentType,
+  "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=()",
+  "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff",
+});
+
 authComponent.registerRoutes(http, createAuth);
 
 http.route({
@@ -62,14 +72,41 @@ http.route({
       }
 
       return new Response(blob, {
+        headers: previewHeaders("text/html; charset=utf-8"),
+      });
+    } catch {
+      return new Response("Preview unavailable", { status: 500 });
+    }
+  }),
+});
+
+// Temporary staging diagnostic. Set DEBUG_PUBLIC_PREVIEW=true only on the
+// staging deployment while investigating preview failures.
+http.route({
+  path: "/debug/preview-latest",
+  method: "GET",
+  handler: httpAction(async (ctx) => {
+    if (process.env.DEBUG_PUBLIC_PREVIEW !== "true") {
+      return new Response("Not found", { status: 404 });
+    }
+
+    const document = await ctx.runQuery(internal.documents.latestContent, {});
+
+    if (!document) {
+      return new Response("No uploaded documents", { status: 404 });
+    }
+
+    try {
+      const blob = await ctx.storage.get(document.storageId);
+
+      if (!blob) {
+        return new Response("Not found", { status: 404 });
+      }
+
+      return new Response(blob, {
         headers: {
-          "Cache-Control": "private, no-store",
-          "Content-Disposition": "inline",
-          "Content-Security-Policy": previewContentSecurityPolicy,
-          "Content-Type": "text/html; charset=utf-8",
-          "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=()",
-          "Referrer-Policy": "no-referrer",
-          "X-Content-Type-Options": "nosniff",
+          ...previewHeaders("text/html; charset=utf-8"),
+          "X-Robots-Tag": "noindex, nofollow, noarchive",
         },
       });
     } catch {
