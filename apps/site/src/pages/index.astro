@@ -1,241 +1,87 @@
 ---
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references this value below.
-const baseUrl = import.meta.env.BASE_URL;
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references this value below.
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+
 // biome-ignore lint/complexity/useLiteralKeys: The site accepts an optional build-time environment variable.
 const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
-// biome-ignore lint/correctness/noUnusedVariables: Astro template references this value below.
+// biome-ignore lint/correctness/noUnusedVariables: Astro uses this value in the page template below.
 const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
 ---
 
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width" />
-    <meta
-      name="description"
-      content="plansplease gives coding agents a simple way to publish the HTML pages they make, locally or in a private cloud workspace."
-    />
-    <meta name="theme-color" content="#1d1d2d" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="icon" href={`${baseUrl}favicon.svg`} type="image/svg+xml" />
-    <title>plansplease | Give agent-made HTML a URL</title>
-  </head>
-  <body>
-    <a class="skip-link" href="#main-content">Skip to main content</a>
-
-    <div class="site-shell">
-      <header class="site-header">
-        <a class="brand" href={baseUrl} aria-label="plansplease home">
-          <span class="brand-name">plansplease</span>
-        </a>
-
-        <nav aria-label="Main navigation">
-          <a class="header-link" href={signInUrl}>Sign in</a>
-        </nav>
-      </header>
-
-      <main id="main-content" tabindex="-1">
-        <section class="hero" aria-labelledby="hero-title">
-          <div class="hero-copy">
-            <h1 id="hero-title">
-              Your agent made a page.
-              <span>Give it a URL.</span>
-            </h1>
-            <p class="hero-intro">
-              plansplease turns the HTML your coding agent makes into a page you can open. Use the
-              CLI for a local preview, or upload one file to your cloud workspace.
-            </p>
-            <a class="primary-link" href={signInUrl}>Continue with GitHub</a>
-            <p class="cta-note">Sign in or create an account.</p>
-          </div>
-
-          <div class="hero-demo" role="img" aria-label="An HTML file becoming a page you can open">
-            <div class="demo-header">
-              <span>one file in</span>
-              <span>one page out</span>
-            </div>
-
-            <div class="demo-source">
-              <div class="demo-source-row">
-                <span>file</span>
-                <code>report.html</code>
-              </div>
-              <div class="demo-source-row demo-source-result">
-                <span>local preview</span>
-                <code>localhost:4173 / snapshot</code>
-              </div>
-            </div>
-
-            <div class="demo-page">
-              <div class="demo-page-meta">
-                <span>HTML preview</span>
-                <span>ready to open</span>
-              </div>
-              <div class="demo-page-rule"></div>
-              <p class="demo-page-label">weekly report / 04 kb</p>
-              <h2>Weekly report</h2>
-              <p class="demo-page-copy">A small page made by your coding agent.</p>
-              <div class="demo-page-data">
-                <div><span>status</span><strong>ready</strong></div>
-                <div><span>format</span><strong>HTML</strong></div>
-                <div><span>where</span><strong>your browser</strong></div>
-              </div>
-            </div>
-
-            <div class="demo-destinations">
-              <div>
-                <span>local</span>
-                <strong>localhost</strong>
-              </div>
-              <div>
-                <span>cloud</span>
-                <strong>your workspace</strong>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="pitch-line" aria-label="plansplease summary">
-          <p>
-            For reports, prototypes, dashboards, and one-off pages your agent makes before they
-            become a project.
-          </p>
-          <span>One HTML file to start.</span>
-        </section>
-      </main>
-
-      <footer class="site-footer">
-        <a class="brand" href={baseUrl} aria-label="plansplease home">
-          <span class="brand-name">plansplease</span>
-        </a>
-        <p>Local CLI / cloud upload</p>
-        <a class="footer-link" href={signInUrl}>Continue with GitHub</a>
-      </footer>
+<SiteLayout
+  title="plansplease | Give agent-made HTML a URL"
+  description="plansplease gives coding agents a simple way to publish the HTML pages they make, locally or in a private cloud workspace."
+>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <h1 id="hero-title">
+        Your agent made a page.
+        <span>Give it a URL.</span>
+      </h1>
+      <p class="hero-intro">
+        plansplease turns the HTML your coding agent makes into a page you can open. Use the CLI
+        for a local preview, or upload one file to your cloud workspace.
+      </p>
+      <a class="primary-link" href={signInUrl}>Continue with GitHub</a>
+      <p class="cta-note">Sign in or create an account.</p>
     </div>
-  </body>
-</html>
+
+    <div class="hero-demo" role="img" aria-label="An HTML file becoming a page you can open">
+      <div class="demo-header">
+        <span>one file in</span>
+        <span>one page out</span>
+      </div>
+
+      <div class="demo-source">
+        <div class="demo-source-row">
+          <span>file</span>
+          <code>report.html</code>
+        </div>
+        <div class="demo-source-row demo-source-result">
+          <span>local preview</span>
+          <code>localhost:4173 / snapshot</code>
+        </div>
+      </div>
+
+      <div class="demo-page">
+        <div class="demo-page-meta">
+          <span>HTML preview</span>
+          <span>ready to open</span>
+        </div>
+        <div class="demo-page-rule"></div>
+        <p class="demo-page-label">weekly report / 04 kb</p>
+        <h2>Weekly report</h2>
+        <p class="demo-page-copy">A small page made by your coding agent.</p>
+        <div class="demo-page-data">
+          <div><span>status</span><strong>ready</strong></div>
+          <div><span>format</span><strong>HTML</strong></div>
+          <div><span>where</span><strong>your browser</strong></div>
+        </div>
+      </div>
+
+      <div class="demo-destinations">
+        <div>
+          <span>local</span>
+          <strong>localhost</strong>
+        </div>
+        <div>
+          <span>cloud</span>
+          <strong>your workspace</strong>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="pitch-line" aria-label="plansplease summary">
+    <p>
+      For reports, prototypes, dashboards, and one-off pages your agent makes before they become a
+      project.
+    </p>
+    <span>One HTML file to start.</span>
+  </section>
+</SiteLayout>
 
 <style>
-  @import url("https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
-
-  :root {
-    --night: #1d1d2d;
-    --night-soft: #29283e;
-    --night-muted: #b7b0bf;
-    --text: #f7f0e5;
-    --paper: #f5eddd;
-    --ink: #282638;
-    --butter: #e5d58d;
-    --mint: #a5d2c0;
-    --coral: #df9d8d;
-    --blue: #aebfdf;
-    --lavender: #c2b2e0;
-    --mono: "IBM Plex Mono", "SFMono-Regular", "Cascadia Code", monospace;
-    --sans: "IBM Plex Sans", "Trebuchet MS", sans-serif;
-    --display: "Chivo", "Trebuchet MS", sans-serif;
-  }
-
-  * {
-    box-sizing: border-box;
-  }
-
-  html {
-    color-scheme: dark;
-    scroll-behavior: smooth;
-  }
-
-  body {
-    min-width: 320px;
-    margin: 0;
-    overflow-x: hidden;
-    background: var(--night);
-    color: var(--text);
-    font-family: var(--sans);
-    font-size: 1rem;
-    line-height: 1.55;
-  }
-
-  a {
-    color: inherit;
-  }
-
-  .site-shell {
-    width: min(calc(100% - 3rem), 76rem);
-    margin: 0 auto;
-  }
-
-  .skip-link {
-    position: fixed;
-    z-index: 20;
-    top: 1rem;
-    left: 1rem;
-    padding: 0.7rem 1rem;
-    background: var(--text);
-    color: var(--ink);
-    font-size: 0.85rem;
-    text-decoration: none;
-    transform: translateY(-200%);
-    transition: transform 180ms ease;
-  }
-
-  .skip-link:focus-visible {
-    outline: 3px solid var(--mint);
-    outline-offset: 3px;
-    transform: translateY(0);
-  }
-
-  .site-header {
-    display: flex;
-    min-height: 5.5rem;
-    align-items: center;
-    justify-content: space-between;
-    gap: 2rem;
-    border-bottom: 1px solid rgba(247, 240, 229, 0.18);
-  }
-
-  .brand {
-    text-decoration: none;
-  }
-
-  .brand-name {
-    color: var(--text);
-    font-family: var(--display);
-    font-size: 1.2rem;
-    font-weight: 600;
-    letter-spacing: -0.06em;
-  }
-
-  nav {
-    display: flex;
-    align-items: center;
-    gap: 1.2rem;
-    color: var(--night-muted);
-    font-size: 0.9rem;
-  }
-
-  .header-link,
-  .footer-link {
-    text-decoration: none;
-    transition: background 180ms ease, color 180ms ease;
-  }
-
-  .header-link {
-    padding: 0.58rem 0.9rem;
-    border: 1px solid rgba(247, 240, 229, 0.34);
-    border-radius: 0.35rem;
-    color: var(--text);
-  }
-
-  .header-link:hover,
-  .header-link:focus-visible {
-    border-color: var(--mint);
-    background: var(--mint);
-    color: var(--ink);
-  }
-
   .hero {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(26rem, 0.9fr);
@@ -487,37 +333,6 @@ const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
     text-transform: uppercase;
   }
 
-  .site-footer {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 1rem;
-    align-items: center;
-    min-height: 5.5rem;
-    border-top: 1px solid rgba(247, 240, 229, 0.18);
-    color: var(--night-muted);
-    font-size: 0.75rem;
-  }
-
-  .site-footer p {
-    margin: 0;
-    text-align: center;
-  }
-
-  .footer-link {
-    justify-self: end;
-    color: var(--text);
-  }
-
-  .footer-link:hover,
-  .footer-link:focus-visible {
-    color: var(--mint);
-  }
-
-  :focus-visible {
-    outline: 3px solid var(--mint);
-    outline-offset: 4px;
-  }
-
   @media (max-width: 900px) {
     .hero {
       grid-template-columns: 1fr;
@@ -531,14 +346,6 @@ const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
   }
 
   @media (max-width: 620px) {
-    .site-shell {
-      width: min(calc(100% - 2rem), 76rem);
-    }
-
-    .site-header {
-      min-height: 4.75rem;
-    }
-
     .hero {
       gap: 3rem;
       padding: 4.5rem 0 3.5rem;
@@ -593,34 +400,6 @@ const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
       display: grid;
       gap: 1rem;
       padding-bottom: 3.5rem;
-    }
-
-    .site-footer {
-      grid-template-columns: 1fr;
-      gap: 0.6rem;
-      padding: 1.4rem 0;
-    }
-
-    .site-footer p {
-      text-align: left;
-    }
-
-    .footer-link {
-      justify-self: start;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    html {
-      scroll-behavior: auto;
-    }
-
-    *,
-    *::before,
-    *::after {
-      transition-duration: 0.01ms !important;
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
     }
   }
 </style>

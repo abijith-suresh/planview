@@ -1,0 +1,51 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+---
+
+<SiteLayout
+  title="Privacy | plansplease"
+  description="How local and cloud HTML pages are handled in the plansplease alpha."
+  activePath="privacy"
+>
+  <section class="prose-page" aria-labelledby="privacy-title">
+    <h1 id="privacy-title">Private by default.</h1>
+    <p>
+      plansplease is still in alpha. This page describes how the current local and cloud workflows
+      handle the HTML pages you give them.
+    </p>
+
+    <ul class="prose-list">
+      <li>
+        <h2>Cloud pages belong to your account</h2>
+        <p>
+          Files uploaded to the cloud workspace are associated with the signed-in account. The
+          dashboard only lists that account's documents.
+        </p>
+      </li>
+      <li>
+        <h2>Cloud previews require your session</h2>
+        <p>
+          In the current alpha, preview requests check the authenticated session before returning
+          the stored HTML. There is no public sharing link yet.
+        </p>
+      </li>
+      <li>
+        <h2>Local pages stay on your machine</h2>
+        <p>
+          The CLI binds its local daemon to the loopback interface. A local snapshot is served by
+          the machine where you ran the command.
+        </p>
+      </li>
+      <li>
+        <h2>Uploads start with standalone HTML</h2>
+        <p>
+          The cloud upload flow currently accepts one standalone HTML file at a time. Bundled
+          assets and page folders will come later with object storage support.
+        </p>
+      </li>
+    </ul>
+
+    <p class="page-note">This summary will be replaced with full product terms before a public launch.</p>
+  </section>
+</SiteLayout>
