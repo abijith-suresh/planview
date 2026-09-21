@@ -1,0 +1,47 @@
+import { createClient } from "@convex-dev/better-auth";
+import { convex } from "@convex-dev/better-auth/plugins";
+import type { GenericCtx } from "@convex-dev/better-auth/utils";
+import { betterAuth } from "better-auth";
+import type { BetterAuthOptions } from "better-auth";
+
+import { components } from "../_generated/api";
+import type { DataModel } from "../_generated/dataModel";
+import authConfig from "../auth.config";
+import schema from "./schema";
+
+const githubClientId = process.env.GITHUB_CLIENT_ID;
+const githubClientSecret = process.env.GITHUB_CLIENT_SECRET;
+const siteUrl = process.env.SITE_URL;
+
+const trustedOrigins = [siteUrl, "http://localhost:3000"].filter((origin): origin is string =>
+  Boolean(origin)
+);
+
+export const authComponent = createClient<DataModel, typeof schema>(components.betterAuth, {
+  local: { schema },
+  verbose: false,
+});
+
+export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
+  const socialProviders: BetterAuthOptions["socialProviders"] =
+    githubClientId && githubClientSecret
+      ? {
+          github: {
+            clientId: githubClientId,
+            clientSecret: githubClientSecret,
+          },
+        }
+      : {};
+
+  return {
+    appName: "Planview workspace",
+    baseURL: siteUrl,
+    secret: process.env.BETTER_AUTH_SECRET,
+    trustedOrigins,
+    database: authComponent.adapter(ctx),
+    socialProviders,
+    plugins: [convex({ authConfig })],
+  } satisfies BetterAuthOptions;
+};
+
+export const createAuth = (ctx: GenericCtx<DataModel>) => betterAuth(createAuthOptions(ctx));
