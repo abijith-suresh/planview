@@ -1,7 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <title>plansplease</title>
-  <rect width="64" height="64" rx="18" fill="#eae4ff"/>
-  <rect x="19" y="25" width="7" height="17" rx="3.5" fill="#6955c8" transform="rotate(-6 22.5 33.5)"/>
-  <rect x="29" y="17" width="7" height="28" rx="3.5" fill="#ee9a7a" transform="rotate(-6 32.5 31)"/>
-  <rect x="39" y="21" width="7" height="23" rx="3.5" fill="#68ad91" transform="rotate(-6 42.5 32.5)"/>
+  <rect width="64" height="64" rx="14" fill="#282638"/>
+  <path d="M21 49V15h13c8 0 12 4 12 10s-4 10-12 10H21" fill="none" stroke="#e3dca8" stroke-linecap="round" stroke-linejoin="round" stroke-width="6"/>
 </svg>

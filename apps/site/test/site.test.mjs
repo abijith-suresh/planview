@@ -109,7 +109,7 @@ const assertSkipLinkStyles = (output) => {
   assert.ok(skipLinkRule, "the skip link should be visually hidden before focus");
   assert.ok(skipLinkRule.includes("transform:translateY(-200%)"));
   assert.ok(focusRule, "the skip link should have a focus-visible rule");
-  assert.ok(focusRule.includes("outline:3px solid var(--violet)"));
+  assert.ok(focusRule.includes("outline:3px solid var(--plum)"));
   assert.ok(focusRule.includes("transform:translateY(0)"));
 };
 
@@ -119,9 +119,14 @@ const assertHomepage = (output, expectedBase) => {
 
   const html = readFileSync(homepage, "utf8");
   assert.ok(html.includes("plansplease"));
-  assert.ok(html.includes("private cloud workspace"));
-  assert.ok(html.includes("One HTML file today"));
+  assert.ok(html.includes("cloud workspace"));
+  assert.ok(html.includes("one HTML file at a time"));
+  assert.ok(html.includes("Your agent made a page."));
   assert.ok(html.includes("plansplease publish"));
+  assert.equal(html.includes("eyebrow"), false);
+  assert.equal(html.includes("hero-sticker"), false);
+  assert.equal(html.includes("↗"), false);
+  assert.equal(html.includes("<button"), false);
   assert.equal(html.includes("share on your network"), false);
   assert.equal(html.includes("permanent address"), false);
   assertSiteBasics(html);
