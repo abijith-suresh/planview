@@ -1,4 +1,4 @@
-import { MetaProvider, Title } from "@solidjs/meta";
+import { Meta, MetaProvider, Title } from "@solidjs/meta";
 import { Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
 import { Suspense } from "solid-js";
@@ -10,6 +10,7 @@ export default function App() {
       root={(props) => (
         <MetaProvider>
           <Title>plansplease workspace</Title>
+          <Meta name="theme-color" content="#faf9f6" />
           <Suspense>{props.children}</Suspense>
         </MetaProvider>
       )}
