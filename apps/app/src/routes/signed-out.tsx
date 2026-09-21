@@ -4,10 +4,7 @@ export default function SignedOut() {
   return (
     <>
       <Title>Signed out | plansplease</Title>
-      <Meta
-        name="description"
-        content="You have signed out of your plansplease workspace."
-      />
+      <Meta name="description" content="You have signed out of your plansplease workspace." />
       <main class="signed-out-page">
         <span class="wordmark">plansplease</span>
         <h1>You're signed out.</h1>

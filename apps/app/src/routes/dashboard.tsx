@@ -448,8 +448,8 @@ export default function Dashboard() {
                   <em>Keep what matters.</em>
                 </h2>
                 <p>
-                  The CLI is the fastest way to preview a page on your machine. Cloud publishing will
-                  connect to this same workspace as the product grows.
+                  The CLI is the fastest way to preview a page on your machine. Cloud publishing
+                  will connect to this same workspace as the product grows.
                 </p>
                 <div class="terminal-card">
                   <span>$</span>
@@ -463,7 +463,8 @@ export default function Dashboard() {
             </section>
 
             <p class="dashboard-footnote">
-              Private workspace <span aria-hidden="true">·</span> one standalone HTML file per upload.
+              Private workspace <span aria-hidden="true">·</span> one standalone HTML file per
+              upload.
             </p>
           </div>
         </main>

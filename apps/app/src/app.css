@@ -675,8 +675,7 @@ input {
 .dashboard-content {
   min-width: 0;
   background:
-    radial-gradient(circle at 85% 4%, rgba(200, 184, 232, 0.18), transparent 24rem),
-    var(--paper);
+    radial-gradient(circle at 85% 4%, rgba(200, 184, 232, 0.18), transparent 24rem), var(--paper);
 }
 
 .dashboard-topbar {
@@ -1267,8 +1266,7 @@ input {
   gap: 1.25rem;
   padding: clamp(2rem, 8vw, 8rem);
   background:
-    radial-gradient(circle at 75% 20%, rgba(200, 184, 232, 0.28), transparent 22rem),
-    var(--paper);
+    radial-gradient(circle at 75% 20%, rgba(200, 184, 232, 0.28), transparent 22rem), var(--paper);
 }
 
 .signed-out-page h1 {

@@ -4,6 +4,7 @@ const baseUrl = import.meta.env.BASE_URL;
 // biome-ignore lint/correctness/noUnusedVariables: Astro template references this value below.
 // biome-ignore lint/complexity/useLiteralKeys: The site accepts an optional build-time environment variable.
 const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
+// biome-ignore lint/correctness/noUnusedVariables: Astro template references this value below.
 const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
 ---
 
