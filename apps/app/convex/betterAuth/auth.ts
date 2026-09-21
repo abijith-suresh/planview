@@ -34,7 +34,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
       : {};
 
   return {
-    appName: "Planview workspace",
+    appName: "plansplease workspace",
     baseURL: siteUrl,
     secret: process.env.BETTER_AUTH_SECRET,
     trustedOrigins,

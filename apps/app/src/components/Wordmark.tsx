@@ -8,10 +8,7 @@ type WordmarkProps = {
 export default function Wordmark(props: WordmarkProps) {
   return (
     <A class="wordmark" classList={{ "wordmark-inverse": props.inverse }} href={props.href ?? "/"}>
-      <span class="wordmark-mark" aria-hidden="true">
-        pv
-      </span>
-      <span>planview</span>
+      <span>plansplease</span>
     </A>
   );
 }

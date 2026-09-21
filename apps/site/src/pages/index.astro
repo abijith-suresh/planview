@@ -4,6 +4,8 @@ const baseUrl = import.meta.env.BASE_URL;
 // biome-ignore lint/correctness/noUnusedVariables: Astro template references this value below.
 // biome-ignore lint/complexity/useLiteralKeys: The site accepts an optional build-time environment variable.
 const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
+// biome-ignore lint/correctness/noUnusedVariables: Astro template references this value below.
+const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
 ---
 
 <!doctype html>
@@ -31,7 +33,7 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
         </a>
 
         <nav aria-label="Main navigation">
-          <a class="header-link" href={appUrl}>Sign in</a>
+          <a class="header-link" href={signInUrl}>Sign in</a>
         </nav>
       </header>
 
@@ -46,7 +48,7 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
               plansplease turns the HTML your coding agent makes into a page you can open. Use the
               CLI for a local preview, or upload one file to your cloud workspace.
             </p>
-            <a class="primary-link" href={appUrl}>Continue with GitHub</a>
+            <a class="primary-link" href={signInUrl}>Continue with GitHub</a>
             <p class="cta-note">Sign in or create an account.</p>
           </div>
 
@@ -110,7 +112,7 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
           <span class="brand-name">plansplease</span>
         </a>
         <p>Local CLI / cloud upload</p>
-        <a class="footer-link" href={appUrl}>Continue with GitHub</a>
+        <a class="footer-link" href={signInUrl}>Continue with GitHub</a>
       </footer>
     </div>
   </body>

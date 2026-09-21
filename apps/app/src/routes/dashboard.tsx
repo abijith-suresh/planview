@@ -1,5 +1,4 @@
 import { Meta, Title } from "@solidjs/meta";
-import { useNavigate } from "@solidjs/router";
 import { For, Show, createEffect, createSignal } from "solid-js";
 import Wordmark from "~/components/Wordmark";
 import { authClient } from "~/lib/auth";
@@ -18,7 +17,7 @@ type ApiError = { error?: string };
 const navigation = [
   { label: "Overview", href: "#overview", active: true },
   { label: "Documents", href: "#documents", active: false },
-  { label: "CLI connection", href: "#connection", active: false },
+  { label: "Local CLI", href: "#connection", active: false },
 ];
 
 function formatBytes(bytes: number) {
@@ -50,19 +49,24 @@ async function getErrorMessage(response: Response) {
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate();
   const session = authClient.useSession();
   const [documents, setDocuments] = createSignal<DocumentRecord[]>([]);
   const [isLoading, setIsLoading] = createSignal(true);
   const [isUploading, setIsUploading] = createSignal(false);
   const [uploadError, setUploadError] = createSignal("");
   const [documentError, setDocumentError] = createSignal("");
+  let authRedirectStarted = false;
+  let isSigningOut = false;
   let fileInput: HTMLInputElement | undefined;
 
   const userName = () => session().data?.user.name || session().data?.user.email || "Workspace";
   const userInitial = () => userName().slice(0, 1).toUpperCase();
   const storageUsed = () =>
     formatBytes(documents().reduce((total, document) => total + document.sizeBytes, 0));
+
+  const redirectToSignIn = () => {
+    if (typeof window !== "undefined") window.location.assign("/auth/github");
+  };
 
   const loadDocuments = async () => {
     setIsLoading(true);
@@ -74,7 +78,7 @@ export default function Dashboard() {
       });
 
       if (response.status === 401) {
-        await navigate("/", { replace: true });
+        redirectToSignIn();
         return;
       }
 
@@ -96,7 +100,10 @@ export default function Dashboard() {
     if (currentSession.isPending) return;
 
     if (!currentSession.data) {
-      void navigate("/", { replace: true });
+      if (!isSigningOut && !authRedirectStarted) {
+        authRedirectStarted = true;
+        redirectToSignIn();
+      }
       return;
     }
 
@@ -176,7 +183,7 @@ export default function Dashboard() {
       });
 
       if (response.status === 401) {
-        await navigate("/", { replace: true });
+        redirectToSignIn();
         return;
       }
 
@@ -193,23 +200,23 @@ export default function Dashboard() {
   };
 
   const signOut = async () => {
+    isSigningOut = true;
     await authClient.signOut();
-    await navigate("/", { replace: true });
+    window.location.assign("/signed-out");
   };
 
   return (
     <div class="app-frame" data-auth-state="connected">
-      <Title>Workspace | Planview</Title>
+      <Title>Workspace | plansplease</Title>
       <Meta
         name="description"
-        content="The Planview cloud workspace for persistent HTML snapshots."
+        content="Your private plansplease workspace for HTML pages made by your coding agent."
       />
 
       <aside class="app-sidebar" aria-label="Workspace navigation">
         <div>
           <div class="sidebar-brand">
             <Wordmark inverse />
-            <span class="sidebar-build">Staging / 01</span>
           </div>
 
           <div class="workspace-switcher">
@@ -218,7 +225,7 @@ export default function Dashboard() {
             </span>
             <span>
               <strong>{userName()}'s workspace</strong>
-              <small>Personal / cloud</small>
+              <small>Private workspace</small>
             </span>
             <span class="chevron" aria-hidden="true">
               ⌄
@@ -234,9 +241,6 @@ export default function Dashboard() {
                   classList={{ "sidebar-link-active": item.active }}
                   href={item.href}
                 >
-                  <span class="sidebar-link-mark" aria-hidden="true">
-                    {item.active ? "◉" : "○"}
-                  </span>
                   {item.label}
                   {item.label === "Documents" && (
                     <span class="nav-count">{documents().length.toString().padStart(2, "0")}</span>
@@ -244,13 +248,6 @@ export default function Dashboard() {
                 </a>
               )}
             </For>
-            <p class="nav-label nav-label-spaced">Account</p>
-            <a class="sidebar-link sidebar-link-muted" href="#settings">
-              <span class="sidebar-link-mark" aria-hidden="true">
-                ◇
-              </span>
-              Settings
-            </a>
           </nav>
         </div>
 
@@ -258,12 +255,12 @@ export default function Dashboard() {
           <div class="sidebar-local-status">
             <span class="signal-dot" aria-hidden="true" />
             <span>
-              <strong>Cloud backend</strong>
+              <strong>Cloud sync</strong>
               <small>connected</small>
             </span>
           </div>
           <button class="sidebar-signout" type="button" onClick={signOut}>
-            Sign out <span aria-hidden="true">↗</span>
+            Sign out
           </button>
         </div>
       </aside>
@@ -282,12 +279,12 @@ export default function Dashboard() {
             <div class="breadcrumbs">
               <span>Workspace</span>
               <span aria-hidden="true">/</span>
-              <strong>Overview</strong>
+              <strong>Pages</strong>
             </div>
             <div class="dashboard-top-actions">
               <span class="preview-pill">
                 <span class="signal-dot" aria-hidden="true" />
-                Staging / connected
+                Connected
               </span>
               <button class="avatar-button" type="button" aria-label="Signed-in account">
                 {userInitial()}
@@ -298,38 +295,38 @@ export default function Dashboard() {
           <div class="dashboard-body">
             <section class="dashboard-intro" id="overview" aria-labelledby="dashboard-title">
               <div>
-                <p class="eyebrow">
-                  <span class="signal-dot" aria-hidden="true" />
-                  Personal cloud workspace
-                </p>
+                <p class="section-kicker">Private workspace</p>
                 <h1 id="dashboard-title">
-                  A little room for
-                  <em>good work.</em>
+                  Pages made to be
+                  <em>opened again.</em>
                 </h1>
-                <p>Your cloud workspace for the small HTML things worth keeping around.</p>
+                <p>
+                  Upload one HTML file at a time. Keep the pages your agent makes available wherever
+                  you work.
+                </p>
               </div>
               <div class="intro-stamp">
-                <span>Cloud status</span>
-                <strong>Quiet / ready</strong>
-                <small>Convex storage is connected for this staging workspace.</small>
+                <span>Workspace status</span>
+                <strong>Connected</strong>
+                <small>Files are private to this account.</small>
               </div>
             </section>
 
             <section class="metric-grid" aria-label="Workspace summary">
               <div class="metric-card metric-card-ink">
-                <span class="metric-label">Retained documents</span>
+                <span class="metric-label">Saved pages</span>
                 <strong>{documents().length.toString().padStart(2, "0")}</strong>
-                <small>private to this account</small>
+                <small>private to you</small>
               </div>
               <div class="metric-card">
-                <span class="metric-label">Published files</span>
+                <span class="metric-label">HTML files</span>
                 <strong>{documents().length.toString().padStart(2, "0")}</strong>
-                <small>standalone HTML snapshots</small>
+                <small>one file per page</small>
               </div>
               <div class="metric-card metric-card-green">
                 <span class="metric-label">Storage used</span>
                 <strong>{storageUsed()}</strong>
-                <small>Convex storage / staging</small>
+                <small>this workspace</small>
               </div>
             </section>
 
@@ -337,20 +334,20 @@ export default function Dashboard() {
               <div class="panel documents-panel" id="documents">
                 <div class="panel-heading">
                   <div>
-                    <p class="panel-kicker">Recent work</p>
-                    <h2>Documents</h2>
+                    <p class="panel-kicker">Workspace files</p>
+                    <h2>Pages</h2>
                   </div>
                   <span class="panel-index">{documents().length} items</span>
                 </div>
 
                 <form class="upload-card" onSubmit={uploadDocument}>
                   <div>
-                    <p class="panel-kicker upload-kicker">Publish one file</p>
-                    <strong>Upload a standalone HTML snapshot.</strong>
-                    <small>Bundles and asset folders arrive with the R2 slice.</small>
+                    <p class="panel-kicker upload-kicker">Add a page</p>
+                    <strong>Upload one HTML file.</strong>
+                    <small>Standalone .html files only for now.</small>
                   </div>
                   <label class="upload-field">
-                    <span class="sr-only">HTML file</span>
+                    <span>Choose an HTML file</span>
                     <input
                       ref={(element) => {
                         fileInput = element;
@@ -360,8 +357,7 @@ export default function Dashboard() {
                     />
                   </label>
                   <button class="upload-button" type="submit" disabled={isUploading()}>
-                    {isUploading() ? "Uploading..." : "Publish file"}
-                    <span aria-hidden="true">↗</span>
+                    {isUploading() ? "Uploading..." : "Upload HTML"}
                   </button>
                 </form>
 
@@ -382,8 +378,8 @@ export default function Dashboard() {
                     fallback={
                       <p class="empty-documents">
                         {isLoading()
-                          ? "Loading your documents..."
-                          : "Your first HTML snapshot will appear here."}
+                          ? "Loading your pages..."
+                          : "Upload an HTML file to see it here."}
                       </p>
                     }
                   >
@@ -416,7 +412,7 @@ export default function Dashboard() {
                             rel="noreferrer"
                             aria-label={`Open ${document.title}`}
                           >
-                            ↗
+                            Open
                           </a>
                           <button
                             class="document-delete"
@@ -424,7 +420,7 @@ export default function Dashboard() {
                             aria-label={`Delete ${document.title}`}
                             onClick={() => void removeDocument(document._id)}
                           >
-                            ×
+                            Delete
                           </button>
                         </div>
                       )}
@@ -433,9 +429,9 @@ export default function Dashboard() {
                 </div>
 
                 <div class="panel-bottomline">
-                  <span>Files are private to your account in this first pass.</span>
+                  <span>Files are private to your account.</span>
                   <a href="#connection">
-                    Connect CLI <span aria-hidden="true">↗</span>
+                    Local CLI <span aria-hidden="true">→</span>
                   </a>
                 </div>
               </div>
@@ -445,34 +441,30 @@ export default function Dashboard() {
                 id="connection"
                 aria-labelledby="connection-title"
               >
-                <div class="connection-signal" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <p class="panel-kicker">Next connection</p>
+                <span class="connection-badge">Local first</span>
+                <p class="panel-kicker">Local CLI</p>
                 <h2 id="connection-title">
-                  Bring the
-                  <em>local loop.</em>
+                  Preview locally.
+                  <em>Keep what matters.</em>
                 </h2>
                 <p>
-                  The CLI will make this workspace useful to your agents. Authenticate once, then
-                  publish an HTML file from the terminal.
+                  The CLI is the fastest way to preview a page on your machine. Cloud publishing
+                  will connect to this same workspace as the product grows.
                 </p>
                 <div class="terminal-card">
                   <span>$</span>
-                  <code>planview cloud login</code>
-                  <small>CLI slice planned next</small>
+                  <code>planview start page.html</code>
+                  <small>local preview</small>
                 </div>
                 <a class="connection-link" href="#documents">
-                  Return to documents <span aria-hidden="true">↗</span>
+                  Back to pages <span aria-hidden="true">→</span>
                 </a>
               </aside>
             </section>
 
             <p class="dashboard-footnote">
-              Staging surface <span aria-hidden="true">·</span> Better Auth sessions and Convex
-              storage are connected; CLI and MCP are still separate slices.
+              Private workspace <span aria-hidden="true">·</span> one standalone HTML file per
+              upload.
             </p>
           </div>
         </main>
