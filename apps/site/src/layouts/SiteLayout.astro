@@ -2,7 +2,7 @@
 interface Props {
   title: string;
   description: string;
-  activePath?: "features" | "cli" | "privacy" | "";
+  activePath?: "features" | "cli" | "about" | "privacy" | "";
 }
 
 // biome-ignore lint/correctness/noUnusedVariables: Astro uses these props in the document template below.
@@ -54,6 +54,11 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
             href={pageHref("cli")}
             aria-current={activePath === "cli" ? "page" : undefined}
           >CLI</a>
+          <a
+            class:list={["site-nav-link", { "is-current": activePath === "about" }]}
+            href={pageHref("about")}
+            aria-current={activePath === "about" ? "page" : undefined}
+          >About</a>
           <a class="site-nav-cta" href={signInUrl}>Sign in</a>
         </nav>
       </header>
@@ -68,6 +73,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
         </a>
         <p>Local CLI / cloud workspace</p>
         <nav class="footer-nav" aria-label="Footer navigation">
+          <a class="footer-link" href="https://github.com/abijith-suresh/planview">GitHub</a>
           <a class="footer-link" href={pageHref("privacy")}>Privacy</a>
           <a class="footer-link" href={signInUrl}>Sign in</a>
         </nav>

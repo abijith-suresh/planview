@@ -109,9 +109,10 @@ const assertSkipLinkStyles = (output) => {
 
 const assertMarketingPages = (output) => {
   const pages = [
-    ["features", "Features | plansplease", "A small home for agent-made pages."],
-    ["cli", "CLI | plansplease", "The local path is one command."],
-    ["privacy", "Privacy | plansplease", "Private by default."],
+    ["features", "Features | plansplease", "A short path from agent output to a page."],
+    ["cli", "CLI | plansplease", "Give a local HTML file a URL."],
+    ["about", "About | plansplease", "A place for the useful things agents make."],
+    ["privacy", "Privacy | plansplease", "Your pages are yours."],
   ];
 
   for (const [directory, title, heading] of pages) {
@@ -135,10 +136,11 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("cloud workspace"));
   assert.ok(html.includes("One HTML file to start"));
   assert.ok(html.includes("Your agent made a page."));
-  assert.ok(html.includes("Give it a URL."));
+  assert.ok(html.includes("Keep it somewhere useful."));
   assert.ok(html.includes("Continue with GitHub"));
-  assert.ok(html.includes("Sign in or create an account"));
-  assert.equal(html.includes("How it works"), false);
+  assert.ok(html.includes("Private cloud workspace. Local CLI included."));
+  assert.ok(html.includes("Preview locally"));
+  assert.ok(html.includes("Keep a cloud copy"));
   assert.equal(html.includes("eyebrow"), false);
   assert.equal(html.includes("hero-sticker"), false);
   assert.equal(html.includes("↗"), false);

@@ -67,17 +67,20 @@ normalized, for example `BASE_PATH=/plansplease npm run build --workspace
 @planview/site`. It is normally unset because the site is deployed at the root of
 its Railway domain.
 
-The marketing site is currently branded as plansplease. The staging service runs at
-[`plansplease-site-staging.up.railway.app`](https://plansplease-site-staging.up.railway.app)
-and uses a separate Railway service in the `planview-cloud` project. Its service
-configuration is:
+The marketing site is currently branded as plansplease and runs entirely on Railway. The staging
+service runs at [`plansplease-site-staging.up.railway.app`](https://plansplease-site-staging.up.railway.app)
+in the `planview-cloud` project. The production service currently runs at
+[`plansplease-site-production-production.up.railway.app`](https://plansplease-site-production-production.up.railway.app).
+Its custom `plansplease.dev` domain is registered in Railway and needs the DNS records shown in the
+Railway project before the certificate can be issued.
+
+Both marketing services use this configuration:
 
 - build: `npm run build --workspace @planview/site`
 - start: `npm start --workspace @planview/site`
 - health check: `/health`
 
-The production site will use `plansplease.dev` after its custom domain and DNS
-records are configured. The cloud app will live at `app.plansplease.dev`.
+The cloud app will live at `app.plansplease.dev`.
 
 CI runs the required Node 24 quality gate on Linux for pull requests and pushes to
 `main`. It also packs the public `@abijith-suresh/planview` npm package and
@@ -91,9 +94,9 @@ runs the same release command. npm publishing is disabled by default. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the release policy.
 
 Railway builds the site from the monorepo root so it can use the repository
-lockfile. The marketing service does not share a runtime with the SolidStart
-app. `server.mjs` serves the generated Astro output and exposes the health
-endpoint.
+lockfile. The marketing services do not share a runtime with the SolidStart app.
+`server.mjs` serves the generated Astro output and exposes the health endpoint.
+Vercel is not used for the marketing site.
 
 ## Security follow-up
 

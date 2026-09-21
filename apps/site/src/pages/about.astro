@@ -1,0 +1,50 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+---
+
+<SiteLayout
+  title="About | plansplease"
+  description="plansplease gives the useful pages made by coding agents a place to land."
+  activePath="about"
+>
+  <section class="prose-page" aria-labelledby="about-title">
+    <h1 id="about-title">A place for the useful things agents make.</h1>
+    <p>
+      plansplease is a small open-source project for turning agent-made HTML into something you can
+      open again.
+    </p>
+
+    <ul class="prose-list">
+      <li>
+        <h2>It starts on your machine</h2>
+        <p>
+          The CLI gives a standalone HTML file or page folder a local URL. Use it while the agent is
+          still working and keep your project setup untouched.
+        </p>
+      </li>
+      <li>
+        <h2>The cloud keeps the useful copy</h2>
+        <p>
+          The managed workspace accepts one standalone HTML file at a time. It is private to your
+          account in the current alpha.
+        </p>
+      </li>
+      <li>
+        <h2>Small is a product decision</h2>
+        <p>
+          A page does not need a full application, a deployment pipeline, or a new project before it
+          can be useful. Start with the artifact in front of you.
+        </p>
+      </li>
+      <li>
+        <h2>Built in the open</h2>
+        <p>
+          The source is available on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
+          Self-hosting and richer uploads are part of the work ahead, not promises of the current
+          alpha.
+        </p>
+      </li>
+    </ul>
+  </section>
+</SiteLayout>

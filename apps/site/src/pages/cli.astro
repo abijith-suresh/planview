@@ -10,24 +10,24 @@ const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
 
 <SiteLayout
   title="CLI | plansplease"
-  description="Install the plansplease CLI to preview HTML files and page folders on your own machine."
+  description="Install the plansplease CLI to give agent-made HTML a local URL."
   activePath="cli"
 >
   <section class="page-heading" aria-labelledby="cli-title">
     <div>
-      <h1 id="cli-title">The local path is one command.</h1>
+      <h1 id="cli-title">Give a local HTML file a URL.</h1>
       <p>
-        Install the CLI when a coding agent needs to leave a page on your machine. It serves local
-        snapshots through a loopback-only daemon and keeps the workflow out of your project.
+        Install the CLI when a coding agent makes a page you want to open on your machine. It serves
+        local snapshots through a loopback-only daemon and keeps the workflow out of your project.
       </p>
     </div>
-    <a class="page-action" href={signInUrl}>Open the cloud workspace</a>
+    <a class="page-action" href={signInUrl}>Sign in with GitHub</a>
   </section>
 
   <section class="content-section" aria-labelledby="install-title">
     <div class="command-card">
       <div>
-        <h2 id="install-title">Install once. Preview often.</h2>
+        <h2 id="install-title">Install once. Preview as needed.</h2>
         <p>
           The CLI accepts a standalone HTML file or a page folder with an <code>index.html</code>
           entry point.
