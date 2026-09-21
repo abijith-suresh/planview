@@ -1,5 +1,4 @@
 import { Meta, Title } from "@solidjs/meta";
-import { useNavigate } from "@solidjs/router";
 import { For, Show, createEffect, createSignal } from "solid-js";
 import Wordmark from "~/components/Wordmark";
 import { authClient } from "~/lib/auth";
@@ -50,19 +49,23 @@ async function getErrorMessage(response: Response) {
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate();
   const session = authClient.useSession();
   const [documents, setDocuments] = createSignal<DocumentRecord[]>([]);
   const [isLoading, setIsLoading] = createSignal(true);
   const [isUploading, setIsUploading] = createSignal(false);
   const [uploadError, setUploadError] = createSignal("");
   const [documentError, setDocumentError] = createSignal("");
+  let authRedirectStarted = false;
   let fileInput: HTMLInputElement | undefined;
 
   const userName = () => session().data?.user.name || session().data?.user.email || "Workspace";
   const userInitial = () => userName().slice(0, 1).toUpperCase();
   const storageUsed = () =>
     formatBytes(documents().reduce((total, document) => total + document.sizeBytes, 0));
+
+  const redirectToSignIn = () => {
+    if (typeof window !== "undefined") window.location.assign("/auth/github");
+  };
 
   const loadDocuments = async () => {
     setIsLoading(true);
@@ -74,7 +77,7 @@ export default function Dashboard() {
       });
 
       if (response.status === 401) {
-        await navigate("/", { replace: true });
+        redirectToSignIn();
         return;
       }
 
@@ -96,7 +99,10 @@ export default function Dashboard() {
     if (currentSession.isPending) return;
 
     if (!currentSession.data) {
-      void navigate("/", { replace: true });
+      if (!authRedirectStarted) {
+        authRedirectStarted = true;
+        redirectToSignIn();
+      }
       return;
     }
 
@@ -176,7 +182,7 @@ export default function Dashboard() {
       });
 
       if (response.status === 401) {
-        await navigate("/", { replace: true });
+        redirectToSignIn();
         return;
       }
 
@@ -194,7 +200,7 @@ export default function Dashboard() {
 
   const signOut = async () => {
     await authClient.signOut();
-    await navigate("/", { replace: true });
+    window.location.assign("/?signedOut=1");
   };
 
   return (

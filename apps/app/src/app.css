@@ -1257,6 +1257,33 @@ input {
   font-size: 0.62rem;
 }
 
+/* Redirect states */
+
+.signed-out-page {
+  display: grid;
+  min-height: 100svh;
+  align-content: center;
+  justify-items: start;
+  gap: 1.25rem;
+  padding: clamp(2rem, 8vw, 8rem);
+  background:
+    radial-gradient(circle at 75% 20%, rgba(200, 184, 232, 0.28), transparent 22rem),
+    var(--paper);
+}
+
+.signed-out-page h1 {
+  margin: 2rem 0 0;
+  font-size: clamp(3.5rem, 8vw, 7rem);
+  font-weight: 760;
+  letter-spacing: -0.08em;
+  line-height: 0.92;
+}
+
+.signed-out-page p {
+  margin: 0;
+  color: var(--muted);
+}
+
 /* Fallback route */
 
 .not-found {
