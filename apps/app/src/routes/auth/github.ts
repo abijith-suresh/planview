@@ -30,17 +30,51 @@ export const GET = async ({ request }: { request: Request }) => {
   headers.set("x-better-auth-forwarded-host", requestUrl.host);
   headers.set("x-better-auth-forwarded-proto", requestUrl.protocol.replace(/:$/, ""));
 
-  const response = await fetch(upstreamUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({
-      provider: "github",
-      callbackURL: new URL("/dashboard", requestUrl).toString(),
-    }),
-    redirect: "manual",
-  });
+  headers.delete("accept-encoding");
 
-  if (!response.ok) {
+  try {
+    const response = await fetch(upstreamUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        provider: "github",
+        callbackURL: new URL("/dashboard", requestUrl).toString(),
+      }),
+      redirect: "manual",
+    });
+
+    if (!response.ok) {
+      console.error("Better Auth social sign-in returned an error", response.status);
+      return Response.json(
+        {
+          error: "GitHub sign-in could not be started.",
+          code: "AUTH_START_FAILED",
+        },
+        { status: 502 }
+      );
+    }
+
+    const body = (await response.json()) as SocialSignInResponse;
+    const location = response.headers.get("location") ?? body.url;
+
+    if (!location) {
+      return Response.json(
+        {
+          error: "GitHub sign-in did not return a redirect.",
+          code: "AUTH_REDIRECT_MISSING",
+        },
+        { status: 502 }
+      );
+    }
+
+    const redirectHeaders = new Headers({ Location: location });
+    const setCookie = response.headers.get("set-cookie");
+
+    if (setCookie) redirectHeaders.set("set-cookie", setCookie);
+
+    return new Response(null, { status: 302, headers: redirectHeaders });
+  } catch (error) {
+    console.error("Could not reach Better Auth for GitHub sign-in", error);
     return Response.json(
       {
         error: "GitHub sign-in could not be started.",
@@ -49,24 +83,4 @@ export const GET = async ({ request }: { request: Request }) => {
       { status: 502 }
     );
   }
-
-  const body = (await response.json()) as SocialSignInResponse;
-  const location = response.headers.get("location") ?? body.url;
-
-  if (!location) {
-    return Response.json(
-      {
-        error: "GitHub sign-in did not return a redirect.",
-        code: "AUTH_REDIRECT_MISSING",
-      },
-      { status: 502 }
-    );
-  }
-
-  const redirectHeaders = new Headers({ Location: location });
-  const setCookie = response.headers.get("set-cookie");
-
-  if (setCookie) redirectHeaders.set("set-cookie", setCookie);
-
-  return new Response(null, { status: 302, headers: redirectHeaders });
 };
