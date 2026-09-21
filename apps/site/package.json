@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "astro build",
+    "start": "node server.mjs",
     "test": "node --test \"test/**/*.test.mjs\"",
     "typecheck": "astro check"
   },

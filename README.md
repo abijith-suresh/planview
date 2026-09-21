@@ -53,7 +53,7 @@ The package dry run invokes the CLI's `prepack` build, so it does not depend on
 an existing ignored `dist` directory. Workspace checks and builds run each
 package's matching script when present.
 
-## Site builds
+## Marketing site
 
 Build or smoke-test the private Astro site with:
 
@@ -62,12 +62,22 @@ npm run build --workspace @planview/site
 npm test --workspace @planview/site
 ```
 
-`BASE_PATH` sets an optional deployment prefix (leading and trailing slashes are
-normalized), for example `BASE_PATH=/planview npm run build --workspace
-@planview/site`. It is normally unset because the marketing site is deployed at
-the root of its Vercel domain.
+`BASE_PATH` sets an optional deployment prefix. Leading and trailing slashes are
+normalized, for example `BASE_PATH=/plansplease npm run build --workspace
+@planview/site`. It is normally unset because the site is deployed at the root of
+its Railway domain.
 
-## Vercel deployment
+The marketing site is currently branded as plansplease. The staging service runs at
+[`plansplease-site-staging.up.railway.app`](https://plansplease-site-staging.up.railway.app)
+and uses a separate Railway service in the `planview-cloud` project. Its service
+configuration is:
+
+- build: `npm run build --workspace @planview/site`
+- start: `npm start --workspace @planview/site`
+- health check: `/health`
+
+The production site will use `plansplease.dev` after its custom domain and DNS
+records are configured. The cloud app will live at `app.plansplease.dev`.
 
 CI runs the required Node 24 quality gate on Linux for pull requests and pushes to
 `main`. It also packs the public `@abijith-suresh/planview` npm package and
@@ -80,11 +90,10 @@ repository, then the Changesets Action creates or updates the generated
 runs the same release command. npm publishing is disabled by default. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the release policy.
 
-The marketing site is a static Astro project deployed by Vercel. Its Vercel
-project should use `apps/site` as the Root Directory, detect Astro as the
-framework, and use Node 24. Vercel's Git integration provides a preview
-deployment for each branch or pull request and promotes the `main` deployment
-to production. No repository deployment secret is required.
+Railway builds the site from the monorepo root so it can use the repository
+lockfile. The marketing service does not share a runtime with the SolidStart
+app. `server.mjs` serves the generated Astro output and exposes the health
+endpoint.
 
 ## Security follow-up
 
