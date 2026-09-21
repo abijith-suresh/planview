@@ -56,6 +56,7 @@ export default function Dashboard() {
   const [uploadError, setUploadError] = createSignal("");
   const [documentError, setDocumentError] = createSignal("");
   let authRedirectStarted = false;
+  let isSigningOut = false;
   let fileInput: HTMLInputElement | undefined;
 
   const userName = () => session().data?.user.name || session().data?.user.email || "Workspace";
@@ -99,7 +100,7 @@ export default function Dashboard() {
     if (currentSession.isPending) return;
 
     if (!currentSession.data) {
-      if (!authRedirectStarted) {
+      if (!isSigningOut && !authRedirectStarted) {
         authRedirectStarted = true;
         redirectToSignIn();
       }
@@ -199,8 +200,9 @@ export default function Dashboard() {
   };
 
   const signOut = async () => {
+    isSigningOut = true;
     await authClient.signOut();
-    window.location.assign("/?signedOut=1");
+    window.location.assign("/signed-out");
   };
 
   return (
