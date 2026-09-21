@@ -37,7 +37,7 @@ export const GET = async ({ request }: { request: Request }) => {
       headers,
       body: JSON.stringify({
         provider: "github",
-        callbackURL: new URL("/dashboard", requestUrl).toString(),
+        callbackURL: "/dashboard",
       }),
       redirect: "manual",
     });
