@@ -13,11 +13,13 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
     <meta name="viewport" content="width=device-width" />
     <meta
       name="description"
-      content="plansplease gives the small HTML pages your coding agents make a place to open, locally or in your cloud workspace."
+      content="plansplease gives coding agents a simple way to publish the HTML pages they make, locally or in a private cloud workspace."
     />
-    <meta name="theme-color" content="#f3f2ed" />
+    <meta name="theme-color" content="#1d1d2d" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="icon" href={`${baseUrl}favicon.svg`} type="image/svg+xml" />
-    <title>plansplease | A small home for agent-made HTML</title>
+    <title>plansplease | Give agent-made HTML a URL</title>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -29,8 +31,7 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
         </a>
 
         <nav aria-label="Main navigation">
-          <a href="#how-it-works">How it works</a>
-          <a class="nav-link" href={appUrl}>Open workspace</a>
+          <a class="header-link" href={appUrl}>Sign in</a>
         </nav>
       </header>
 
@@ -39,162 +40,100 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
           <div class="hero-copy">
             <h1 id="hero-title">
               Your agent made a page.
-              <span>Keep it somewhere.</span>
+              <span>Give it a URL.</span>
             </h1>
             <p class="hero-intro">
-              plansplease gives the small HTML pages your coding agents make a place to open again.
-              Run them on localhost with the CLI, or keep one in your cloud workspace.
+              plansplease turns the HTML your coding agent makes into a page you can open. Use the
+              CLI for a local preview, or upload one file to your cloud workspace.
             </p>
-            <a class="primary-link" href={appUrl}>Open the workspace</a>
-            <p class="scope-note">For now, the cloud accepts one HTML file at a time.</p>
+            <a class="primary-link" href={appUrl}>Continue with GitHub</a>
+            <p class="cta-note">Sign in or create an account.</p>
           </div>
 
-          <div class="hero-visual" role="img" aria-label="A single HTML page ready to read">
-            <div class="visual-topline">
-              <span>sample page</span>
-              <span>html</span>
+          <div class="hero-demo" role="img" aria-label="An HTML file becoming a page you can open">
+            <div class="demo-header">
+              <span>one file in</span>
+              <span>one page out</span>
             </div>
-            <div class="page-sheet">
-              <div class="page-meta">
-                <span>morning-plan.html</span>
-                <span>04 kb</span>
+
+            <div class="demo-source">
+              <div class="demo-source-row">
+                <span>file</span>
+                <code>report.html</code>
               </div>
-              <div class="page-address">localhost:4173 / morning-plan</div>
-              <div class="page-rule"></div>
-              <p class="page-kicker">monday / 08:30</p>
-              <h2>Morning plan</h2>
-              <p class="page-description">A little room to figure out what comes next.</p>
-              <div class="page-list">
-                <div class="page-row">
-                  <span class="row-number">01</span>
-                  <span>Make coffee before opening tabs</span>
-                  <span class="row-state">done</span>
-                </div>
-                <div class="page-row">
-                  <span class="row-number">02</span>
-                  <span>Read the useful bits of yesterday</span>
-                  <span class="row-state">next</span>
-                </div>
-                <div class="page-row">
-                  <span class="row-number">03</span>
-                  <span>Leave space for one good idea</span>
-                  <span class="row-state">later</span>
-                </div>
-              </div>
-              <div class="page-footer">
-                <span>ready to read</span>
-                <span>plansplease</span>
+              <div class="demo-source-row demo-source-result">
+                <span>local preview</span>
+                <code>localhost:4173 / snapshot</code>
               </div>
             </div>
-          </div>
-        </section>
 
-        <section class="plain-statement" aria-labelledby="statement-title">
-          <span class="section-number">01</span>
-          <div>
-            <h2 id="statement-title">Put the page somewhere you can open it.</h2>
-            <p>
-              That is the whole job. The local CLI gives an HTML file a localhost address. The web
-              workspace gives you a place to upload one when the page needs to leave your machine.
-            </p>
-          </div>
-        </section>
+            <div class="demo-page">
+              <div class="demo-page-meta">
+                <span>HTML preview</span>
+                <span>ready to open</span>
+              </div>
+              <div class="demo-page-rule"></div>
+              <p class="demo-page-label">weekly report / 04 kb</p>
+              <h2>Weekly report</h2>
+              <p class="demo-page-copy">A small page made by your coding agent.</p>
+              <div class="demo-page-data">
+                <div><span>status</span><strong>ready</strong></div>
+                <div><span>format</span><strong>HTML</strong></div>
+                <div><span>where</span><strong>your browser</strong></div>
+              </div>
+            </div>
 
-        <section class="workflow-section" id="how-it-works" aria-labelledby="workflow-title">
-          <div class="section-heading">
-            <span class="section-number">02</span>
-            <h2 id="workflow-title">Keep the loop short.</h2>
-          </div>
-
-          <div class="workflow-list">
-            <div class="workflow-row">
-              <span class="workflow-number">01</span>
+            <div class="demo-destinations">
               <div>
-                <h3>Make the HTML</h3>
-                <p>Your agent writes the file. You do not need a project around it.</p>
+                <span>local</span>
+                <strong>localhost</strong>
               </div>
-              <code>page.html</code>
-            </div>
-            <div class="workflow-row">
-              <span class="workflow-number">02</span>
               <div>
-                <h3>Run it locally</h3>
-                <p>Use the CLI to publish a localhost snapshot and open it in your browser.</p>
+                <span>cloud</span>
+                <strong>your workspace</strong>
               </div>
-              <code>localhost</code>
-            </div>
-            <div class="workflow-row">
-              <span class="workflow-number">03</span>
-              <div>
-                <h3>Keep one in the cloud</h3>
-                <p>Upload the file to your account when a local link is not enough.</p>
-              </div>
-              <code>your workspace</code>
             </div>
           </div>
         </section>
 
-        <section class="runtime-section" aria-labelledby="runtime-title">
-          <div class="runtime-intro">
-            <span class="section-number">03</span>
-            <div>
-              <h2 id="runtime-title">Local when you are building. Cloud when you need a link.</h2>
-              <p>Same small file. Pick the place that fits the moment.</p>
-            </div>
-          </div>
-
-          <div class="runtime-grid">
-            <article class="runtime-column runtime-local">
-              <h3>On your machine</h3>
-              <p>Keep the page close while your agent is working.</p>
-              <code class="runtime-command">plansplease publish page.html</code>
-              <span class="runtime-result">localhost:4173 / snapshot</span>
-            </article>
-            <article class="runtime-column runtime-cloud">
-              <h3>In your workspace</h3>
-              <p>Upload one HTML file and open it from another device.</p>
-              <a class="text-link" href={appUrl}>Open the cloud workspace</a>
-              <span class="runtime-result">one file / your account</span>
-            </article>
-          </div>
-        </section>
-
-        <section class="closing-section" aria-labelledby="closing-title">
-          <h2 id="closing-title">Start with one file.</h2>
-          <p>No gallery. No feed. Just a place for the page you want to read again.</p>
-          <a class="primary-link" href={appUrl}>Open the workspace</a>
+        <section class="pitch-line" aria-label="plansplease summary">
+          <p>
+            For reports, prototypes, dashboards, and one-off pages your agent makes before they
+            become a project.
+          </p>
+          <span>One HTML file to start.</span>
         </section>
       </main>
 
       <footer class="site-footer">
-        <a class="brand footer-brand" href={baseUrl} aria-label="plansplease home">
+        <a class="brand" href={baseUrl} aria-label="plansplease home">
           <span class="brand-name">plansplease</span>
         </a>
-        <p>One HTML file at a time.</p>
-        <p>Local CLI / cloud workspace</p>
+        <p>Local CLI / cloud upload</p>
+        <a class="footer-link" href={appUrl}>Continue with GitHub</a>
       </footer>
     </div>
   </body>
 </html>
 
 <style>
-  @import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..700&family=IBM+Plex+Mono:wght@400;500&display=swap");
+  @import url("https://fonts.googleapis.com/css2?family=Chivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
 
   :root {
-    --paper: #f3f2ed;
-    --paper-light: #fbfaf6;
+    --night: #1d1d2d;
+    --night-soft: #29283e;
+    --night-muted: #b7b0bf;
+    --text: #f7f0e5;
+    --paper: #f5eddd;
     --ink: #282638;
-    --muted: #6d6a76;
-    --line: #d9d7d0;
-    --plum: #75638c;
-    --plum-dark: #59486e;
-    --lavender: #d4cde7;
-    --sage: #bfd4ca;
-    --apricot: #eac5b0;
-    --pollen: #e3dca8;
-    --blue: #c8dbe0;
-    --sans: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
+    --butter: #e5d58d;
+    --mint: #a5d2c0;
+    --coral: #df9d8d;
+    --blue: #aebfdf;
+    --lavender: #c2b2e0;
     --mono: "IBM Plex Mono", "SFMono-Regular", "Cascadia Code", monospace;
+    --sans: "IBM Plex Sans", "Trebuchet MS", sans-serif;
+    --display: "Chivo", "Trebuchet MS", sans-serif;
   }
 
   * {
@@ -202,14 +141,16 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
   }
 
   html {
+    color-scheme: dark;
     scroll-behavior: smooth;
   }
 
   body {
+    min-width: 320px;
     margin: 0;
     overflow-x: hidden;
-    background: var(--paper);
-    color: var(--ink);
+    background: var(--night);
+    color: var(--text);
     font-family: var(--sans);
     font-size: 1rem;
     line-height: 1.55;
@@ -230,8 +171,8 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
     top: 1rem;
     left: 1rem;
     padding: 0.7rem 1rem;
-    background: var(--ink);
-    color: var(--paper-light);
+    background: var(--text);
+    color: var(--ink);
     font-size: 0.85rem;
     text-decoration: none;
     transform: translateY(-200%);
@@ -239,7 +180,7 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
   }
 
   .skip-link:focus-visible {
-    outline: 3px solid var(--plum);
+    outline: 3px solid var(--mint);
     outline-offset: 3px;
     transform: translateY(0);
   }
@@ -250,7 +191,7 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
     align-items: center;
     justify-content: space-between;
     gap: 2rem;
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid rgba(247, 240, 229, 0.18);
   }
 
   .brand {
@@ -258,375 +199,290 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
   }
 
   .brand-name {
-    font-size: 1.15rem;
-    font-weight: 650;
-    letter-spacing: -0.065em;
+    color: var(--text);
+    font-family: var(--display);
+    font-size: 1.2rem;
+    font-weight: 600;
+    letter-spacing: -0.06em;
   }
 
   nav {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
-    color: var(--muted);
-    font-size: 0.85rem;
+    gap: 1.2rem;
+    color: var(--night-muted);
+    font-size: 0.9rem;
   }
 
-  nav a,
-  .text-link {
+  .header-link,
+  .footer-link {
     text-decoration: none;
-    transition: color 180ms ease, border-color 180ms ease;
+    transition: background 180ms ease, color 180ms ease;
   }
 
-  nav a:hover,
-  nav a:focus-visible,
-  .text-link:hover,
-  .text-link:focus-visible {
-    color: var(--plum-dark);
+  .header-link {
+    padding: 0.58rem 0.9rem;
+    border: 1px solid rgba(247, 240, 229, 0.34);
+    border-radius: 0.35rem;
+    color: var(--text);
   }
 
-  .nav-link,
-  .text-link {
-    border-bottom: 1px solid currentColor;
+  .header-link:hover,
+  .header-link:focus-visible {
+    border-color: var(--mint);
+    background: var(--mint);
+    color: var(--ink);
   }
 
   .hero {
     display: grid;
-    min-height: 43rem;
-    grid-template-columns: minmax(0, 0.95fr) minmax(25rem, 0.85fr);
+    grid-template-columns: minmax(0, 1fr) minmax(26rem, 0.9fr);
     align-items: center;
-    gap: clamp(3rem, 8vw, 8rem);
-    padding: clamp(5rem, 10vw, 8.5rem) 0;
+    gap: clamp(3rem, 7vw, 7rem);
+    padding: clamp(4.5rem, 10vh, 7.5rem) 0 5.5rem;
   }
 
   h1,
   h2,
-  h3,
   p {
     margin-top: 0;
   }
 
   h1,
-  h2,
-  h3 {
-    letter-spacing: -0.065em;
-    line-height: 0.98;
+  h2 {
+    text-wrap: balance;
   }
 
   h1 {
-    max-width: 9ch;
-    margin-bottom: 2rem;
-    font-size: clamp(4rem, 8.6vw, 8rem);
+    max-width: 11ch;
+    margin-bottom: 1.8rem;
+    color: var(--text);
+    font-family: var(--display);
+    font-size: clamp(3.5rem, 5.9vw, 6.2rem);
     font-weight: 600;
+    letter-spacing: -0.075em;
+    line-height: 0.91;
   }
 
   h1 span {
     display: block;
-    color: var(--plum);
+    color: var(--butter);
   }
 
   .hero-intro {
-    max-width: 31rem;
+    max-width: 34rem;
     margin-bottom: 2rem;
-    color: var(--muted);
-    font-size: clamp(1.05rem, 1.5vw, 1.2rem);
-    line-height: 1.55;
+    color: var(--night-muted);
+    font-size: clamp(1rem, 1.4vw, 1.15rem);
+    line-height: 1.6;
   }
 
   .primary-link {
     display: inline-block;
-    padding-bottom: 0.25rem;
-    border-bottom: 2px solid var(--plum);
+    padding: 0.9rem 1.05rem;
+    border: 1px solid var(--mint);
+    border-radius: 0.35rem;
+    background: var(--mint);
     color: var(--ink);
-    font-size: 1rem;
-    font-weight: 650;
+    font-size: 0.95rem;
+    font-weight: 600;
     text-decoration: none;
-    transition: color 180ms ease, border-color 180ms ease, background 180ms ease;
+    transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
   }
 
   .primary-link:hover,
   .primary-link:focus-visible {
-    border-color: var(--plum-dark);
+    border-color: var(--text);
+    background: var(--text);
+    color: var(--ink);
+    transform: translateY(-2px);
+  }
+
+  .cta-note {
+    margin: 0.85rem 0 0;
+    color: var(--night-muted);
+    font-size: 0.78rem;
+  }
+
+  .hero-demo {
+    padding: 1.2rem;
     background: var(--lavender);
-    color: var(--plum-dark);
+    border-radius: 1rem 1rem 3.5rem 1rem;
+    color: var(--ink);
   }
 
-  .scope-note {
-    max-width: 22rem;
-    margin: 2.5rem 0 0;
-    padding-left: 0.8rem;
-    border-left: 2px solid var(--sage);
-    color: var(--muted);
-    font-family: var(--mono);
-    font-size: 0.68rem;
-    line-height: 1.6;
-  }
-
-  .hero-visual {
-    position: relative;
-    padding: 1.1rem;
-    background: var(--pollen);
-    border-radius: 1.25rem 1.25rem 4rem 1.25rem;
-  }
-
-  .visual-topline,
-  .page-meta,
-  .page-address,
-  .page-footer,
-  .page-kicker,
-  .row-state,
-  .section-number,
-  .workflow-number,
-  .runtime-result {
+  .demo-header,
+  .demo-page-meta,
+  .demo-page-label,
+  .demo-source-row,
+  .demo-destinations span,
+  .demo-destinations strong {
     font-family: var(--mono);
     font-size: 0.65rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
 
-  .visual-topline {
+  .demo-header {
     display: flex;
     justify-content: space-between;
-    padding: 0.15rem 0.35rem 1rem;
-    color: var(--plum-dark);
+    padding: 0 0.2rem 1rem;
+    color: var(--ink);
   }
 
-  .page-sheet {
-    min-height: 28rem;
-    padding: clamp(1.35rem, 4vw, 2.5rem);
-    border: 1px solid rgba(40, 38, 56, 0.16);
-    border-radius: 0.6rem;
-    background: var(--paper-light);
-    box-shadow: 0 1.5rem 3rem rgba(40, 38, 56, 0.12);
+  .demo-source {
+    display: grid;
+    gap: 0.4rem;
+    padding: 1rem;
+    background: var(--night-soft);
+    color: var(--text);
   }
 
-  .page-meta,
-  .page-footer {
-    display: flex;
-    justify-content: space-between;
-    color: var(--muted);
+  .demo-source-row {
+    display: grid;
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    gap: 1rem;
+    align-items: baseline;
   }
 
-  .page-address {
+  .demo-source-row > span {
+    color: var(--night-muted);
+  }
+
+  .demo-source code {
     overflow: hidden;
-    margin-top: 2.6rem;
-    color: var(--plum);
+    color: var(--mint);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .page-rule {
+  .demo-source-result code {
+    color: var(--butter);
+  }
+
+  .demo-page {
+    margin: 0 1.2rem;
+    padding: clamp(1.35rem, 3vw, 2rem);
+    background: var(--paper);
+    box-shadow: 0 1.5rem 2.5rem rgba(29, 29, 45, 0.16);
+  }
+
+  .demo-page-meta {
+    display: flex;
+    justify-content: space-between;
+    color: var(--night-soft);
+  }
+
+  .demo-page-rule {
     height: 1px;
-    margin: 1rem 0 2.2rem;
-    background: var(--line);
+    margin: 1.25rem 0 2rem;
+    background: rgba(40, 38, 56, 0.2);
   }
 
-  .page-kicker {
-    margin-bottom: 0.65rem;
-    color: var(--muted);
+  .demo-page-label {
+    margin-bottom: 0.6rem;
+    color: var(--night-soft);
   }
 
-  .page-sheet h2 {
+  .demo-page h2 {
     margin-bottom: 0.55rem;
-    font-size: clamp(2.4rem, 5vw, 4rem);
-    font-weight: 600;
-  }
-
-  .page-description {
-    margin-bottom: 2rem;
-    color: var(--muted);
-    font-size: 0.95rem;
-  }
-
-  .page-list {
-    border-top: 1px solid var(--line);
-  }
-
-  .page-row {
-    display: grid;
-    grid-template-columns: 2rem 1fr auto;
-    gap: 0.7rem;
-    align-items: center;
-    padding: 0.85rem 0;
-    border-bottom: 1px solid var(--line);
     color: var(--ink);
-    font-size: 0.78rem;
+    font-family: var(--display);
+    font-size: clamp(2.2rem, 4vw, 3.8rem);
+    font-weight: 600;
+    letter-spacing: -0.075em;
+    line-height: 0.95;
   }
 
-  .row-number,
-  .row-state {
-    color: var(--muted);
+  .demo-page-copy {
+    margin-bottom: 2rem;
+    color: #686176;
+    font-size: 0.9rem;
   }
 
-  .row-state {
-    color: var(--plum);
-  }
-
-  .page-footer {
-    padding-top: 1.3rem;
-  }
-
-  .plain-statement {
+  .demo-page-data {
     display: grid;
-    grid-template-columns: 4rem minmax(0, 42rem);
-    gap: 2rem;
-    padding: 5.5rem 0;
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    border-top: 1px solid rgba(40, 38, 56, 0.2);
   }
 
-  .section-number,
-  .workflow-number {
-    color: var(--plum);
-  }
-
-  .plain-statement h2,
-  .section-heading h2,
-  .runtime-intro h2 {
-    margin-bottom: 1.2rem;
-    font-size: clamp(2.6rem, 5.5vw, 5.2rem);
-    font-weight: 550;
-  }
-
-  .plain-statement p,
-  .runtime-intro p {
-    max-width: 35rem;
-    margin-bottom: 0;
-    color: var(--muted);
-    font-size: 1.05rem;
-  }
-
-  .workflow-section {
-    padding: 8rem 0;
-  }
-
-  .section-heading {
+  .demo-page-data div {
     display: grid;
-    grid-template-columns: 4rem minmax(0, 42rem);
-    gap: 2rem;
-    align-items: start;
-    margin-bottom: 3.5rem;
+    gap: 0.4rem;
+    padding: 1rem 0.8rem 0 0;
   }
 
-  .workflow-list {
-    border-top: 1px solid var(--line);
+  .demo-page-data div + div {
+    padding-left: 0.8rem;
+    border-left: 1px solid rgba(40, 38, 56, 0.2);
   }
 
-  .workflow-row {
-    display: grid;
-    grid-template-columns: 4rem minmax(0, 1fr) minmax(8rem, 0.55fr);
-    gap: 2rem;
-    align-items: center;
-    padding: 1.7rem 0;
-    border-bottom: 1px solid var(--line);
+  .demo-page-data span {
+    color: #686176;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    text-transform: uppercase;
   }
 
-  .workflow-row h3 {
-    margin-bottom: 0.35rem;
-    font-size: 1.45rem;
+  .demo-page-data strong {
+    color: var(--ink);
+    font-size: 0.77rem;
     font-weight: 600;
   }
 
-  .workflow-row p {
-    max-width: 31rem;
-    margin-bottom: 0;
-    color: var(--muted);
-    font-size: 0.92rem;
-  }
-
-  .workflow-row code,
-  .runtime-command {
-    color: var(--plum-dark);
-    font-family: var(--mono);
-    font-size: 0.7rem;
-  }
-
-  .workflow-row code {
-    justify-self: end;
-  }
-
-  .runtime-section {
-    padding: 5rem 0 8rem;
-  }
-
-  .runtime-intro {
-    display: grid;
-    grid-template-columns: 4rem minmax(0, 46rem);
-    gap: 2rem;
-    margin-bottom: 3rem;
-  }
-
-  .runtime-grid {
+  .demo-destinations {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    margin-top: 1rem;
   }
 
-  .runtime-column {
-    min-height: 19rem;
-    padding: 2.2rem;
+  .demo-destinations > div {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.85rem;
   }
 
-  .runtime-local {
-    background: var(--blue);
+  .demo-destinations > div:first-child {
+    background: var(--mint);
   }
 
-  .runtime-cloud {
-    background: var(--lavender);
+  .demo-destinations > div:last-child {
+    background: var(--coral);
   }
 
-  .runtime-column h3 {
-    margin-bottom: 0.7rem;
-    font-size: 1.8rem;
-    font-weight: 600;
+  .demo-destinations span,
+  .demo-destinations strong {
+    color: var(--ink);
   }
 
-  .runtime-column p {
-    max-width: 20rem;
-    min-height: 3.2rem;
-    margin-bottom: 1.8rem;
-    color: var(--plum-dark);
+  .demo-destinations strong {
+    font-size: 0.74rem;
+    font-weight: 500;
+  }
+
+  .pitch-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 2rem;
+    padding: 1.5rem 0 5rem;
+    border-top: 1px solid rgba(247, 240, 229, 0.18);
+    color: var(--night-muted);
+  }
+
+  .pitch-line p {
+    max-width: 38rem;
+    margin: 0;
     font-size: 0.95rem;
   }
 
-  .runtime-command {
-    display: block;
-    overflow-x: auto;
-    width: fit-content;
-    max-width: 100%;
-    padding: 0.75rem 0.9rem;
-    background: rgba(251, 250, 246, 0.66);
-    color: var(--ink);
-    white-space: nowrap;
-  }
-
-  .runtime-column .text-link {
-    display: inline-block;
-    margin-bottom: 1rem;
-    color: var(--ink);
-    font-weight: 600;
-  }
-
-  .runtime-result {
-    display: block;
-    margin-top: 1.8rem;
-    color: var(--plum-dark);
-  }
-
-  .closing-section {
-    padding: 7rem 0 8rem;
-    border-top: 1px solid var(--line);
-  }
-
-  .closing-section h2 {
-    max-width: 8ch;
-    margin-bottom: 1.2rem;
-    font-size: clamp(3.5rem, 8vw, 7.5rem);
-    font-weight: 600;
-  }
-
-  .closing-section p {
-    max-width: 25rem;
-    margin-bottom: 2rem;
-    color: var(--muted);
+  .pitch-line span {
+    flex: 0 0 auto;
+    color: var(--butter);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    text-transform: uppercase;
   }
 
   .site-footer {
@@ -635,13 +491,9 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
     gap: 1rem;
     align-items: center;
     min-height: 5.5rem;
-    border-top: 1px solid var(--line);
-    color: var(--muted);
+    border-top: 1px solid rgba(247, 240, 229, 0.18);
+    color: var(--night-muted);
     font-size: 0.75rem;
-  }
-
-  .footer-brand {
-    color: var(--ink);
   }
 
   .site-footer p {
@@ -649,26 +501,29 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
     text-align: center;
   }
 
-  .site-footer p:last-child {
-    text-align: right;
+  .footer-link {
+    justify-self: end;
+    color: var(--text);
+  }
+
+  .footer-link:hover,
+  .footer-link:focus-visible {
+    color: var(--mint);
   }
 
   :focus-visible {
-    outline: 3px solid var(--plum);
+    outline: 3px solid var(--mint);
     outline-offset: 4px;
   }
 
-  @media (max-width: 860px) {
+  @media (max-width: 900px) {
     .hero {
       grid-template-columns: 1fr;
       gap: 4rem;
     }
 
-    .hero-copy {
-      max-width: 42rem;
-    }
-
-    .hero-visual {
+    .hero-copy,
+    .hero-demo {
       max-width: 42rem;
     }
   }
@@ -682,112 +537,74 @@ const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app.plansplease.dev";
       min-height: 4.75rem;
     }
 
-    nav {
-      gap: 0.8rem;
-      font-size: 0.76rem;
-    }
-
-    nav > a:first-child {
-      display: none;
-    }
-
     .hero {
-      min-height: 0;
-      padding: 4.5rem 0 5rem;
+      gap: 3rem;
+      padding: 4.5rem 0 3.5rem;
     }
 
     h1 {
-      font-size: clamp(3.7rem, 17vw, 6rem);
+      max-width: 10ch;
+      font-size: clamp(3.35rem, 15vw, 5rem);
     }
 
-    .hero-visual {
+    .hero-demo {
       padding: 0.8rem;
-      border-radius: 1rem 1rem 3rem 1rem;
+      border-radius: 0.75rem 0.75rem 2.5rem 0.75rem;
     }
 
-    .page-sheet {
-      min-height: 25rem;
+    .demo-source-row {
+      grid-template-columns: 1fr;
+      gap: 0.25rem;
+    }
+
+    .demo-source-row + .demo-source-row {
+      margin-top: 0.55rem;
+    }
+
+    .demo-page {
+      margin: 0 0.7rem;
       padding: 1.1rem;
     }
 
-    .page-address {
-      margin-top: 2rem;
+    .demo-page h2 {
+      font-size: 2.35rem;
     }
 
-    .page-rule {
-      margin-bottom: 1.7rem;
-    }
-
-    .page-sheet h2 {
-      font-size: 2.5rem;
-    }
-
-    .page-row {
-      grid-template-columns: 1.7rem 1fr;
-      font-size: 0.72rem;
-    }
-
-    .row-state {
-      grid-column: 2;
-      font-size: 0.58rem;
-    }
-
-    .plain-statement,
-    .section-heading,
-    .runtime-intro {
-      grid-template-columns: 1fr;
-      gap: 1rem;
-    }
-
-    .plain-statement {
-      padding: 4rem 0;
-    }
-
-    .workflow-section {
-      padding: 5.5rem 0;
-    }
-
-    .workflow-row {
-      grid-template-columns: 2.2rem 1fr;
-      gap: 1rem;
-      padding: 1.4rem 0;
-    }
-
-    .workflow-row code {
-      grid-column: 2;
-      justify-self: start;
-    }
-
-    .runtime-section {
-      padding: 3rem 0 5.5rem;
-    }
-
-    .runtime-grid {
+    .demo-page-data {
       grid-template-columns: 1fr;
     }
 
-    .runtime-column {
-      min-height: 0;
-      padding: 1.7rem;
+    .demo-page-data div,
+    .demo-page-data div + div {
+      grid-template-columns: 5rem 1fr;
+      align-items: baseline;
+      padding: 0.7rem 0;
+      border-left: 0;
+      border-bottom: 1px solid rgba(40, 38, 56, 0.2);
     }
 
-    .runtime-column p {
-      min-height: 0;
+    .demo-page-data div:last-child {
+      border-bottom: 0;
     }
 
-    .closing-section {
-      padding: 5.5rem 0 6rem;
+    .pitch-line {
+      display: grid;
+      gap: 1rem;
+      padding-bottom: 3.5rem;
     }
 
     .site-footer {
       grid-template-columns: 1fr;
-      gap: 0.55rem;
+      gap: 0.6rem;
       padding: 1.4rem 0;
     }
 
-    .site-footer p,
-    .site-footer p:last-child {
+    .site-footer p {
       text-align: left;
+    }
+
+    .footer-link {
+      justify-self: start;
     }
   }
 
