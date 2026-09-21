@@ -17,20 +17,19 @@ export const GET = async ({ request }: { request: Request }) => {
 
   const requestUrl = new URL(request.url);
   const upstreamUrl = `${convexSiteUrl}/api/auth/sign-in/social`;
-  const headers = new Headers(request.headers);
+  const headers = new Headers({
+    accept: "application/json",
+    "content-type": "application/json",
+    origin: requestUrl.origin,
+    host: new URL(convexSiteUrl).host,
+    "x-forwarded-host": requestUrl.host,
+    "x-forwarded-proto": requestUrl.protocol.replace(/:$/, ""),
+    "x-better-auth-forwarded-host": requestUrl.host,
+    "x-better-auth-forwarded-proto": requestUrl.protocol.replace(/:$/, ""),
+  });
+  const cookie = request.headers.get("cookie");
 
-  headers.delete("content-length");
-  headers.delete("transfer-encoding");
-  headers.delete("connection");
-  headers.set("accept", "application/json");
-  headers.set("content-type", "application/json");
-  headers.set("host", new URL(convexSiteUrl).host);
-  headers.set("x-forwarded-host", requestUrl.host);
-  headers.set("x-forwarded-proto", requestUrl.protocol.replace(/:$/, ""));
-  headers.set("x-better-auth-forwarded-host", requestUrl.host);
-  headers.set("x-better-auth-forwarded-proto", requestUrl.protocol.replace(/:$/, ""));
-
-  headers.delete("accept-encoding");
+  if (cookie) headers.set("cookie", cookie);
 
   try {
     const response = await fetch(upstreamUrl, {
@@ -44,7 +43,11 @@ export const GET = async ({ request }: { request: Request }) => {
     });
 
     if (!response.ok) {
-      console.error("Better Auth social sign-in returned an error", response.status);
+      console.error(
+        "Better Auth social sign-in returned an error",
+        response.status,
+        await response.text()
+      );
       return Response.json(
         {
           error: "GitHub sign-in could not be started.",
