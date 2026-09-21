@@ -5,6 +5,7 @@ const normalizeBasePath = (value: string | undefined) => {
   return withoutOuterSlashes ? `/${withoutOuterSlashes}` : "";
 };
 
+// biome-ignore lint/complexity/useLiteralKeys: Astro's environment type uses an index signature.
 const base = normalizeBasePath(process.env["BASE_PATH"]);
 
 export default defineConfig({

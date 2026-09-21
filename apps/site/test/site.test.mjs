@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -87,7 +87,7 @@ const assertStylesheetAndInternalLinks = (html, output, expectedBase) => {
   );
 
   const expectedHomeHref = expectedBase || "/";
-  const wordmarkMarker = `<a class="wordmark" href="${expectedHomeHref}" aria-label="Planview home"`;
+  const wordmarkMarker = `<a class="brand" href="${expectedHomeHref}" aria-label="plansplease home"`;
   assert.ok(
     html.includes(wordmarkMarker),
     "the home link should exactly use the configured deployment prefix"
@@ -109,7 +109,7 @@ const assertSkipLinkStyles = (output) => {
   assert.ok(skipLinkRule, "the skip link should be visually hidden before focus");
   assert.ok(skipLinkRule.includes("transform:translateY(-200%)"));
   assert.ok(focusRule, "the skip link should have a focus-visible rule");
-  assert.ok(focusRule.includes("outline:3px solid var(--orange)"));
+  assert.ok(focusRule.includes("outline:3px solid var(--violet)"));
   assert.ok(focusRule.includes("transform:translateY(0)"));
 };
 
@@ -118,10 +118,10 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(existsSync(homepage), `${output}/index.html should exist after a build`);
 
   const html = readFileSync(homepage, "utf8");
-  assert.ok(html.includes("Planview"));
-  assert.ok(html.includes("immutable localhost URL"));
-  assert.ok(html.includes("loopback-only localhost address"));
-  assert.ok(html.includes("30-day last-access policy"));
+  assert.ok(html.includes("plansplease"));
+  assert.ok(html.includes("private cloud workspace"));
+  assert.ok(html.includes("One HTML file today"));
+  assert.ok(html.includes("plansplease publish"));
   assert.equal(html.includes("share on your network"), false);
   assert.equal(html.includes("permanent address"), false);
   assertSiteBasics(html);
