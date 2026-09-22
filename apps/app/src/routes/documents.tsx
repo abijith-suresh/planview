@@ -24,8 +24,10 @@ export default function Documents() {
   const [actionMessage, setActionMessage] = createSignal("");
   let fileInput: HTMLInputElement | undefined;
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
+  let latestUploadError = "";
   const htmlUploader = createUploadThing("htmlDocument", {
     onUploadError: (error) => {
+      latestUploadError = error.message;
       setUploadError(error.message);
     },
   });
@@ -74,6 +76,7 @@ export default function Documents() {
 
   const uploadDocument = async (event: SubmitEvent) => {
     event.preventDefault();
+    latestUploadError = "";
     setUploadError("");
 
     const file = selectedFile() ?? fileInput?.files?.[0];
@@ -97,7 +100,7 @@ export default function Documents() {
       const uploadMetadata = uploaded?.serverData;
 
       if (!uploaded || !uploadMetadata?.ownerId || !uploadMetadata.customId) {
-        throw new Error("The HTML file could not be uploaded.");
+        throw new Error(latestUploadError || "The HTML file could not be uploaded.");
       }
 
       const documentResponse = await fetch("/api/documents", {
