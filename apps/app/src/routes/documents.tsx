@@ -9,6 +9,7 @@ import {
   type DocumentRecord,
   getErrorMessage,
 } from "~/lib/documents";
+import { createUploadThing } from "~/lib/uploadthing";
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
 export default function Documents() {
@@ -23,6 +24,11 @@ export default function Documents() {
   const [actionMessage, setActionMessage] = createSignal("");
   let fileInput: HTMLInputElement | undefined;
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
+  const htmlUploader = createUploadThing("htmlDocument", {
+    onUploadError: (error) => {
+      setUploadError(error.message);
+    },
+  });
 
   const showActionMessage = (message: string) => {
     setActionMessage(message);
@@ -85,34 +91,26 @@ export default function Documents() {
     setIsUploading(true);
 
     try {
-      const uploadUrlResponse = await fetch("/api/documents/upload-url", { method: "POST" });
+      const title = file.name.replace(/\.html$/i, "").trim() || "Untitled HTML";
+      const uploadResults = await htmlUploader.startUpload([file], { title });
+      const uploaded = uploadResults?.[0];
+      const uploadMetadata = uploaded?.serverData;
 
-      if (uploadUrlResponse.status === 401) {
-        redirectToSignIn();
-        return;
+      if (!uploaded || !uploadMetadata?.ownerId || !uploadMetadata.customId) {
+        throw new Error("The HTML file could not be uploaded.");
       }
 
-      if (!uploadUrlResponse.ok) throw new Error(await getErrorMessage(uploadUrlResponse));
-
-      const { uploadUrl } = (await uploadUrlResponse.json()) as { uploadUrl: string };
-      const uploadResponse = await fetch(uploadUrl, {
-        method: "POST",
-        headers: { "Content-Type": "text/html" },
-        body: file,
-      });
-
-      if (!uploadResponse.ok) throw new Error("The HTML file could not be uploaded.");
-
-      const { storageId } = (await uploadResponse.json()) as { storageId: string };
-      const title = file.name.replace(/\.html$/i, "").trim() || "Untitled HTML";
       const documentResponse = await fetch("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           title,
-          storageId,
+          storageProvider: "uploadthing",
+          storageKey: uploaded.key,
+          uploadOwnerId: uploadMetadata.ownerId,
+          uploadCustomId: uploadMetadata.customId,
           contentType: "text/html",
-          sizeBytes: file.size,
+          sizeBytes: uploaded.size,
         }),
       });
 
@@ -187,10 +185,7 @@ export default function Documents() {
       }
     >
       <Title>Documents | plansplease</Title>
-      <Meta
-        name="description"
-        content="Manage the private HTML pages in your plansplease workspace."
-      />
+      <Meta name="description" content="Manage the HTML pages in your plansplease workspace." />
       <AppShell
         active="documents"
         onSignOut={signOut}
@@ -201,7 +196,7 @@ export default function Documents() {
           <header class="page-header documents-header">
             <div>
               <h1>Documents</h1>
-              <p>{documents().length} private HTML pages in this workspace.</p>
+              <p>{documents().length} HTML pages in this workspace.</p>
             </div>
             <form class="upload-form" onSubmit={uploadDocument}>
               <label class="button button-secondary" for="html-file">
@@ -308,7 +303,7 @@ export default function Documents() {
 
           <div class="page-note" aria-live="polite">
             <Icon name="lock" size={15} />
-            <span>Files are private to your account.</span>
+            <span>Storage is public during testing; workspace routes still require sign-in.</span>
             <Show when={actionMessage()}>
               <span class="action-message">{actionMessage()}</span>
             </Show>

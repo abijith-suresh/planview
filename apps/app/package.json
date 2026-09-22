@@ -15,11 +15,14 @@
     "@solidjs/meta": "0.29.4",
     "@solidjs/router": "1.0.0",
     "@solidjs/start": "2.0.5",
+    "@uploadthing/solid": "^7.3.3",
     "better-auth": "^1.6.33",
     "convex": "^1.46.0",
     "nitro": "3.0.260903-beta",
     "solid-js": "1.9.15",
-    "vite": "8.3.0"
+    "uploadthing": "^7.7.4",
+    "vite": "8.3.0",
+    "zod": "^4.6.5"
   },
   "engines": {
     "node": ">=24"

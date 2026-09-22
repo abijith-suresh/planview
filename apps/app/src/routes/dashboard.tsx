@@ -73,7 +73,7 @@ export default function Dashboard() {
       }
     >
       <Title>Overview | plansplease</Title>
-      <Meta name="description" content="A short overview of your private plansplease workspace." />
+      <Meta name="description" content="A short overview of your plansplease workspace." />
       <AppShell
         active="dashboard"
         onSignOut={signOut}
@@ -111,7 +111,7 @@ export default function Dashboard() {
               </div>
               <div>
                 <dt>Access</dt>
-                <dd>Private</dd>
+                <dd>Testing</dd>
               </div>
             </dl>
           </section>
@@ -126,7 +126,7 @@ export default function Dashboard() {
             <section class="overview-empty" aria-labelledby="empty-overview-title">
               <div>
                 <h2 id="empty-overview-title">Nothing here yet</h2>
-                <p>Upload your first standalone HTML page to give it a private URL.</p>
+                <p>Upload your first standalone HTML page to give it a workspace link.</p>
               </div>
               <A class="text-link" href="/documents">
                 Add a document <span aria-hidden="true">→</span>

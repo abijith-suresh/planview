@@ -1,15 +1,17 @@
-import type { Id } from "../../../../convex/_generated/dataModel";
-
 import {
   api,
   errorResponse,
   getAuthedConvexClient,
   missingServerConfigurationResponse,
 } from "~/lib/convex-server";
+import { getDocumentStorage, isDocumentStorageConfigured } from "~/lib/document-storage";
 
 type CreateDocumentBody = {
   title?: unknown;
-  storageId?: unknown;
+  storageProvider?: unknown;
+  storageKey?: unknown;
+  uploadOwnerId?: unknown;
+  uploadCustomId?: unknown;
   contentType?: unknown;
   sizeBytes?: unknown;
 };
@@ -42,13 +44,25 @@ export const POST = async ({ request }: { request: Request }) => {
   }
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
-  const storageId = typeof body.storageId === "string" ? body.storageId : "";
+  const storageProvider = typeof body.storageProvider === "string" ? body.storageProvider : "";
+  const storageKey = typeof body.storageKey === "string" ? body.storageKey : "";
+  const uploadOwnerId = typeof body.uploadOwnerId === "string" ? body.uploadOwnerId : "";
+  const uploadCustomId = typeof body.uploadCustomId === "string" ? body.uploadCustomId : "";
   const contentType = typeof body.contentType === "string" ? body.contentType : "";
   const sizeBytes = typeof body.sizeBytes === "number" ? body.sizeBytes : NaN;
 
-  if (!title || !storageId || contentType !== "text/html" || !Number.isFinite(sizeBytes)) {
+  if (
+    !title ||
+    storageProvider !== "uploadthing" ||
+    !storageKey ||
+    !uploadOwnerId ||
+    !uploadCustomId ||
+    contentType !== "text/html" ||
+    !Number.isFinite(sizeBytes) ||
+    sizeBytes < 0
+  ) {
     return Response.json(
-      { error: "A title, HTML storage id, content type, and size are required" },
+      { error: "A title, uploaded HTML file, content type, and size are required" },
       { status: 400 }
     );
   }
@@ -60,12 +74,47 @@ export const POST = async ({ request }: { request: Request }) => {
       return Response.json({ error: "Authentication required" }, { status: 401 });
     }
 
-    const id = await client.mutation(api.documents.create, {
-      title,
-      storageId: storageId as Id<"_storage">,
-      contentType,
-      sizeBytes,
-    });
+    const identity = await client.query(api.auth.currentUser, {});
+
+    if (!identity) {
+      return Response.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    if (uploadOwnerId !== identity.subject || !uploadCustomId.startsWith(`${identity.subject}:`)) {
+      return Response.json(
+        { error: "The uploaded file does not belong to this account" },
+        { status: 403 }
+      );
+    }
+
+    if (!isDocumentStorageConfigured()) {
+      return Response.json(
+        {
+          error: "File storage is not configured yet.",
+          code: "STORAGE_NOT_CONFIGURED",
+        },
+        { status: 503 }
+      );
+    }
+
+    const storage = getDocumentStorage(storageProvider);
+
+    let id: string;
+
+    try {
+      id = await client.mutation(api.documents.create, {
+        title,
+        storageProvider,
+        storageKey,
+        contentType,
+        sizeBytes,
+      });
+    } catch (error) {
+      // Avoid leaving an object behind when metadata creation fails. A later
+      // cleanup job can handle uploads abandoned before this request arrives.
+      await storage.delete(storageKey).catch(() => undefined);
+      throw error;
+    }
 
     return Response.json({ id }, { status: 201 });
   } catch (error) {
