@@ -5,7 +5,12 @@ export default defineSchema({
   documents: defineTable({
     ownerId: v.string(),
     title: v.string(),
-    storageId: v.id("_storage"),
+    // `storageId` is retained for documents created before the external
+    // storage boundary was introduced. New documents use the provider/key
+    // pair below so the storage implementation can change independently.
+    storageId: v.optional(v.id("_storage")),
+    storageProvider: v.optional(v.string()),
+    storageKey: v.optional(v.string()),
     contentType: v.string(),
     sizeBytes: v.number(),
     createdAt: v.number(),

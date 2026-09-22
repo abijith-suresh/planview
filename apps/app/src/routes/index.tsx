@@ -18,7 +18,7 @@ export default function Home() {
       <Title>plansplease</Title>
       <Meta
         name="description"
-        content="Your private plansplease workspace for HTML pages made by your coding agent."
+        content="Your plansplease workspace for HTML pages made by your coding agent."
       />
       <main class="auth-loading" aria-live="polite">
         <span class="signal-dot" aria-hidden="true" />
