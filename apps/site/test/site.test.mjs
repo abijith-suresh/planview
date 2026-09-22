@@ -34,7 +34,7 @@ const withBuild = ({ outputDirectory, basePath }, check) => {
 const assertSiteBasics = (html) => {
   assert.ok(html.includes('<header class="site-header"'), "the site header should be rendered");
   assert.ok(
-    html.includes('<nav aria-label="Main navigation"'),
+    /<nav[^>]*aria-label="Main navigation"/.test(html),
     "the main navigation should have its accessible label"
   );
   assert.ok(
@@ -56,35 +56,29 @@ const assertSiteBasics = (html) => {
 };
 
 const assertStylesheetAndInternalLinks = (html, output, expectedBase) => {
-  const stylesheetMarker = '<link rel="stylesheet" href="';
-  const stylesheetStart = html.indexOf(stylesheetMarker);
-  assert.ok(stylesheetStart >= 0, "the homepage should link its stylesheet");
-  assert.equal(html.indexOf(stylesheetMarker), html.lastIndexOf(stylesheetMarker));
-
-  const stylesheetValueStart = stylesheetStart + stylesheetMarker.length;
-  const stylesheetValueEnd = html.indexOf('"', stylesheetValueStart);
-  assert.ok(stylesheetValueEnd > stylesheetValueStart, "the stylesheet URL should be quoted");
-  assert.equal(html[stylesheetValueEnd + 1], ">");
-  const stylesheetHref = html.slice(stylesheetValueStart, stylesheetValueEnd);
+  const stylesheetHrefs = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(
+    ([, href]) => href
+  );
+  assert.ok(stylesheetHrefs.length > 0, "the homepage should link its stylesheet");
 
   const assetDirectory = resolve(output, "_astro");
   const cssFiles = readdirSync(assetDirectory).filter((file) => file.endsWith(".css"));
-  assert.equal(cssFiles.length, 1, "the build should emit one stylesheet asset");
-  const expectedStylesheetHref = `${expectedBase}/_astro/${cssFiles[0]}`;
   assert.equal(
-    stylesheetHref,
-    expectedStylesheetHref,
-    "the stylesheet link should exactly match the generated prefixed asset"
+    stylesheetHrefs.length,
+    cssFiles.length,
+    "the build should emit and link each stylesheet asset"
   );
-  assert.equal(
-    html.includes('<link rel="stylesheet" href="/_astro/'),
-    expectedBase === "",
-    "the stylesheet should not lose its deployment prefix"
-  );
-  assert.ok(
-    existsSync(resolve(assetDirectory, cssFiles[0])),
-    "the stylesheet linked by the homepage should exist"
-  );
+  const expectedStylesheetPrefix = `${expectedBase}/_astro/`;
+  for (const href of stylesheetHrefs) {
+    assert.ok(
+      href.startsWith(expectedStylesheetPrefix),
+      "the stylesheet should not lose its deployment prefix"
+    );
+    assert.ok(
+      existsSync(resolve(assetDirectory, href.slice(expectedStylesheetPrefix.length))),
+      "the stylesheet linked by the homepage should exist"
+    );
+  }
 
   const expectedHomeHref = expectedBase || "/";
   const wordmarkMarker = `<a class="brand" href="${expectedHomeHref}" aria-label="plansplease home"`;
@@ -100,10 +94,10 @@ const assertSkipLinkStyles = (output) => {
   const css = readFileSync(resolve(output, "_astro", cssFile), "utf8");
   const rules = css.split("}");
   const skipLinkRule = rules.find(
-    (rule) => rule.includes(".skip-link[") && !rule.includes(":focus-visible{")
+    (rule) => rule.includes(".skip-link") && !rule.includes(":focus-visible")
   );
   const focusRule = rules.find(
-    (rule) => rule.includes(".skip-link[") && rule.includes(":focus-visible{")
+    (rule) => rule.includes(".skip-link") && rule.includes(":focus-visible")
   );
 
   assert.ok(skipLinkRule, "the skip link should be visually hidden before focus");
@@ -111,6 +105,29 @@ const assertSkipLinkStyles = (output) => {
   assert.ok(focusRule, "the skip link should have a focus-visible rule");
   assert.ok(focusRule.includes("outline:3px solid var(--mint)"));
   assert.ok(focusRule.includes("transform:translateY(0)"));
+};
+
+const assertMarketingPages = (output) => {
+  const pages = [
+    ["features", "Features | plansplease", "A short path from agent output to a page."],
+    ["cli", "CLI | plansplease", "Give a local HTML file a URL."],
+    ["about", "About | plansplease", "A place for the useful things agents make."],
+    ["docs", "Docs | plansplease", "Docs for a small tool."],
+    ["pricing", "Pricing | plansplease", "Simple for now. Clear about later."],
+    ["faq", "FAQ | plansplease", "Questions we expect to hear."],
+    ["privacy", "Privacy | plansplease", "Your pages are yours."],
+  ];
+
+  for (const [directory, title, heading] of pages) {
+    const page = resolve(output, directory, "index.html");
+    assert.ok(existsSync(page), `${directory}/index.html should exist after a build`);
+
+    const html = readFileSync(page, "utf8");
+    assert.ok(html.includes(`<title>${title}</title>`), `${directory} should have its page title`);
+    assert.ok(html.includes(heading), `${directory} should render its primary heading`);
+    assertSiteBasics(html);
+    assert.equal(html.includes("<button"), false, `${directory} should not render a button`);
+  }
 };
 
 const assertHomepage = (output, expectedBase) => {
@@ -122,10 +139,17 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("cloud workspace"));
   assert.ok(html.includes("One HTML file to start"));
   assert.ok(html.includes("Your agent made a page."));
-  assert.ok(html.includes("Give it a URL."));
+  assert.ok(html.includes("Keep it somewhere useful."));
   assert.ok(html.includes("Continue with GitHub"));
-  assert.ok(html.includes("Sign in or create an account"));
-  assert.equal(html.includes("How it works"), false);
+  assert.ok(html.includes("Private cloud workspace. Local CLI included."));
+  assert.ok(html.includes("Preview locally"));
+  assert.ok(html.includes("Keep a cloud copy"));
+  assert.ok(html.includes("app-staging-a39a.up.railway.app/dashboard"));
+  assert.ok(html.includes('class="mobile-menu"'));
+  assert.ok(html.includes("Pricing"));
+  assert.ok(html.includes("Docs"));
+  assert.ok(html.includes("FAQ"));
+  assert.ok(html.includes('class="site-footer-main"'));
   assert.equal(html.includes("eyebrow"), false);
   assert.equal(html.includes("hero-sticker"), false);
   assert.equal(html.includes("↗"), false);
@@ -135,6 +159,7 @@ const assertHomepage = (output, expectedBase) => {
   assertSiteBasics(html);
   assertStylesheetAndInternalLinks(html, output, expectedBase);
   assertSkipLinkStyles(output);
+  assertMarketingPages(output);
 };
 
 test("root static build is hermetic and emits the project homepage", () => {

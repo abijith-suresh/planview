@@ -1,0 +1,112 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+
+// biome-ignore lint/complexity/useLiteralKeys: The site accepts an optional build-time environment variable.
+const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app-staging-a39a.up.railway.app";
+// biome-ignore lint/correctness/noUnusedVariables: Astro uses this value in the page template below.
+const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
+---
+
+<SiteLayout
+  title="Features | plansplease"
+  description="Use the plansplease CLI for local HTML previews, or keep a private cloud copy in your workspace."
+  activePath="features"
+>
+  <section class="page-heading" aria-labelledby="features-title">
+    <div>
+      <h1 id="features-title">A short path from agent output to a page.</h1>
+      <p>
+        Use the local CLI when you are still working. Save a standalone HTML file to the cloud when
+        you want to open it again later.
+      </p>
+    </div>
+    <a class="page-action" href={signInUrl}>Sign in with GitHub</a>
+  </section>
+
+  <section class="content-section" aria-labelledby="features-list-title">
+    <h2 id="features-list-title">Use the smallest path that fits.</h2>
+
+    <div class="feature-list">
+      <article class="feature-row">
+        <span class="feature-number">01</span>
+        <div>
+          <h2>Preview locally</h2>
+          <p>
+            The CLI serves an HTML file through a loopback URL on your machine. No deployment is
+            needed to open the page your agent just made.
+          </p>
+        </div>
+        <code class="feature-command">planview publish --open ./page.html</code>
+      </article>
+
+      <article class="feature-row">
+        <span class="feature-number">02</span>
+        <div>
+          <h2>Keep one in the cloud</h2>
+          <p>
+            Sign in and upload one standalone HTML file to your workspace. Open it from the
+            dashboard after the original agent session is gone.
+          </p>
+        </div>
+        <span class="feature-command">one file / private workspace</span>
+      </article>
+
+      <article class="feature-row">
+        <span class="feature-number">03</span>
+        <div>
+          <h2>Keep it private</h2>
+          <p>
+            Cloud uploads belong to your signed-in account. The current alpha does not create
+            public share links.
+          </p>
+        </div>
+        <span class="feature-command">account only</span>
+      </article>
+
+      <article class="feature-row">
+        <span class="feature-number">04</span>
+        <div>
+          <h2>Start with one file</h2>
+          <p>
+            Upload a standalone HTML file first. Bundled assets and larger page projects can come
+            after the small workflow is useful on its own.
+          </p>
+        </div>
+        <span class="feature-command">HTML in / page out</span>
+      </article>
+    </div>
+
+    <p class="page-note">
+      The current alpha is intentionally small. Read the <a href="../cli/">CLI guide</a> or see
+      the <a href="../privacy/">privacy page</a> for the current behavior.
+    </p>
+  </section>
+
+  <section class="content-section feature-reason" aria-labelledby="reason-title">
+    <h2 id="reason-title">The chat is not a home for the page.</h2>
+    <p>
+      Coding agents are good at making useful artifacts quickly. Those artifacts often disappear
+      when the session ends. plansplease keeps the HTML separate from the chat so you can reopen it,
+      inspect it, or decide what deserves more work.
+    </p>
+  </section>
+</SiteLayout>
+
+<style>
+  .feature-reason {
+    max-width: 48rem;
+    padding-top: 0;
+  }
+
+  .feature-reason h2 {
+    max-width: 12ch;
+  }
+
+  .feature-reason p {
+    max-width: 38rem;
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 1.1rem;
+  }
+</style>

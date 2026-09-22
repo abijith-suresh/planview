@@ -1,0 +1,114 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+---
+
+<SiteLayout
+  title="FAQ | plansplease"
+  description="Answers about the plansplease CLI, cloud workspace, privacy, and alpha plans."
+  activePath="faq"
+>
+  <section class="prose-page faq-page" aria-labelledby="faq-title">
+    <h1 id="faq-title">Questions we expect to hear.</h1>
+    <p>
+      plansplease is early. These answers describe what works today, not a larger product we have
+      not built yet.
+    </p>
+
+    <div class="faq-list">
+      <details class="faq-item" open>
+        <summary>What is plansplease?</summary>
+        <p>
+          It gives agent-made HTML a place to land. The CLI creates local previews. The cloud
+          workspace keeps a private copy you can open later.
+        </p>
+      </details>
+      <details class="faq-item">
+        <summary>What can I upload?</summary>
+        <p>
+          The cloud alpha accepts one standalone HTML file at a time. The local CLI can also serve
+          a page folder with an <code>index.html</code> entry point.
+        </p>
+      </details>
+      <details class="faq-item">
+        <summary>Are cloud pages public?</summary>
+        <p>
+          No. Cloud pages are tied to the signed-in account in the current alpha. Public sharing is
+          not available yet.
+        </p>
+      </details>
+      <details class="faq-item">
+        <summary>Will there be a paid plan?</summary>
+        <p>
+          Maybe. The pricing page shows the current placeholder. We are considering storage,
+          retention, and bundled uploads as paid features, but no payment plan exists yet.
+        </p>
+      </details>
+      <details class="faq-item">
+        <summary>Can I self-host it?</summary>
+        <p>
+          The source is public and self-hosting is part of the plan. The self-hosting path is not
+          documented as a supported deployment yet.
+        </p>
+      </details>
+    </div>
+  </section>
+</SiteLayout>
+
+<style>
+  .faq-page {
+    max-width: 56rem;
+  }
+
+  .faq-list {
+    margin-top: 3rem;
+    border-top: 1px solid rgba(247, 240, 229, 0.18);
+  }
+
+  .faq-item {
+    border-bottom: 1px solid rgba(247, 240, 229, 0.18);
+  }
+
+  .faq-item summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.3rem 0;
+    color: var(--text);
+    cursor: pointer;
+    font-family: var(--display);
+    font-size: clamp(1.35rem, 2.5vw, 2rem);
+    font-weight: 600;
+    letter-spacing: -0.05em;
+    list-style: none;
+  }
+
+  .faq-item summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-item summary::after {
+    content: "+";
+    flex: 0 0 auto;
+    color: var(--mint);
+    font-family: var(--mono);
+    font-size: 1.15rem;
+    font-weight: 400;
+  }
+
+  .faq-item[open] summary::after {
+    content: "−";
+  }
+
+  .faq-item summary:hover,
+  .faq-item summary:focus-visible {
+    color: var(--mint);
+  }
+
+  .faq-item p {
+    max-width: 42rem;
+    margin: -0.35rem 0 1.5rem;
+    color: var(--night-muted);
+  }
+</style>
