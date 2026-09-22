@@ -9,13 +9,29 @@ export interface DocumentStorageAdapter {
   delete(key: string): Promise<void>;
 }
 
+const uploadThingCustomIdPrefix = "uploadthing-custom-id:";
+
+function getUploadThingLocator(key: string) {
+  if (key.startsWith(uploadThingCustomIdPrefix)) {
+    return {
+      key: key.slice(uploadThingCustomIdPrefix.length),
+      keyType: "customId" as const,
+    };
+  }
+
+  // Documents created before the provider locator was introduced stored the
+  // raw UploadThing file key. Keep those records readable and deletable.
+  return { key, keyType: "fileKey" as const };
+}
+
 class UploadThingStorageAdapter implements DocumentStorageAdapter {
   readonly provider = "uploadthing" as const;
 
   constructor(private readonly api: UTApi) {}
 
   async getReadUrl(key: string) {
-    const result = await this.api.getFileUrls(key);
+    const locator = getUploadThingLocator(key);
+    const result = await this.api.getFileUrls(locator.key, { keyType: locator.keyType });
     const file = result.data[0];
 
     if (!file) {
@@ -26,7 +42,8 @@ class UploadThingStorageAdapter implements DocumentStorageAdapter {
   }
 
   async delete(key: string) {
-    await this.api.deleteFiles(key);
+    const locator = getUploadThingLocator(key);
+    await this.api.deleteFiles(locator.key, { keyType: locator.keyType });
   }
 }
 

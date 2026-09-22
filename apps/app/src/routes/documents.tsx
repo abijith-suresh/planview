@@ -109,7 +109,6 @@ export default function Documents() {
         body: JSON.stringify({
           title,
           storageProvider: "uploadthing",
-          storageKey: uploaded.key,
           uploadOwnerId: uploadMetadata.ownerId,
           uploadCustomId: uploadMetadata.customId,
           contentType: "text/html",

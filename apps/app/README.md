@@ -47,9 +47,11 @@ The first UploadThing route is deliberately limited to one standalone HTML
 file up to 8 MB. The testing tier uses public-read objects, so anyone who
 obtains an UploadThing object URL may fetch it. The plansplease preview route
 still requires the signed-in workspace session. A future provider such as S3
-or R2 only needs to implement the storage adapter in
-`src/lib/document-storage.ts`; Convex stores the provider name and object key,
-not provider-specific bytes.
+or R2 can implement the storage adapter in `src/lib/document-storage.ts`;
+Convex stores the provider name and logical storage locator, not
+provider-specific bytes. New UploadThing records use an owner-bound custom
+identifier as that locator, while older records using raw UploadThing file
+keys remain supported during the transition.
 
 ## Authentication setup
 

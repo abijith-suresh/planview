@@ -9,7 +9,6 @@ import { getDocumentStorage, isDocumentStorageConfigured } from "~/lib/document-
 type CreateDocumentBody = {
   title?: unknown;
   storageProvider?: unknown;
-  storageKey?: unknown;
   uploadOwnerId?: unknown;
   uploadCustomId?: unknown;
   contentType?: unknown;
@@ -45,16 +44,15 @@ export const POST = async ({ request }: { request: Request }) => {
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
   const storageProvider = typeof body.storageProvider === "string" ? body.storageProvider : "";
-  const storageKey = typeof body.storageKey === "string" ? body.storageKey : "";
   const uploadOwnerId = typeof body.uploadOwnerId === "string" ? body.uploadOwnerId : "";
   const uploadCustomId = typeof body.uploadCustomId === "string" ? body.uploadCustomId : "";
+  const storageKey = `uploadthing-custom-id:${uploadCustomId}`;
   const contentType = typeof body.contentType === "string" ? body.contentType : "";
   const sizeBytes = typeof body.sizeBytes === "number" ? body.sizeBytes : NaN;
 
   if (
     !title ||
     storageProvider !== "uploadthing" ||
-    !storageKey ||
     !uploadOwnerId ||
     !uploadCustomId ||
     contentType !== "text/html" ||

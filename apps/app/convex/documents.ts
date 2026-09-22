@@ -2,6 +2,8 @@ import { v } from "convex/values";
 
 import { internalQuery, mutation, query } from "./_generated/server";
 
+const uploadThingLocatorPrefix = (ownerId: string) => `uploadthing-custom-id:${ownerId}:`;
+
 const requireOwnerId = async (ctx: {
   auth: { getUserIdentity: () => Promise<{ subject: string } | null> };
 }) => {
@@ -37,6 +39,14 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const ownerId = await requireOwnerId(ctx);
+
+    if (
+      args.storageProvider !== "uploadthing" ||
+      !args.storageKey.startsWith(uploadThingLocatorPrefix(ownerId))
+    ) {
+      throw new Error("The document storage locator does not belong to this account");
+    }
+
     const now = Date.now();
 
     return await ctx.db.insert("documents", {
