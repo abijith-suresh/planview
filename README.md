@@ -67,20 +67,20 @@ normalized, for example `BASE_PATH=/plansplease npm run build --workspace
 @planview/site`. It is normally unset because the site is deployed at the root of
 its Railway domain.
 
-The marketing site is currently branded as plansplease and runs entirely on Railway. The staging
-service runs at [`plansplease-site-staging.up.railway.app`](https://plansplease-site-staging.up.railway.app)
-in the `planview-cloud` project. The production service currently runs at
-[`plansplease-site-production-production.up.railway.app`](https://plansplease-site-production-production.up.railway.app).
-Its custom `plansplease.dev` domain is registered in Railway and needs the DNS records shown in the
-Railway project before the certificate can be issued.
+The marketing site is currently branded as plansplease and runs in the staging environment on
+Railway. It is available at
+[`plansplease-site-staging.up.railway.app`](https://plansplease-site-staging.up.railway.app)
+in the `planview-cloud` project. The staging app is available at
+[`app-staging-a39a.up.railway.app`](https://app-staging-a39a.up.railway.app).
+There is no production marketing service or custom domain yet.
 
-Both marketing services use this configuration:
+The marketing staging service uses this configuration:
 
 - build: `npm run build --workspace @planview/site`
 - start: `npm start --workspace @planview/site`
 - health check: `/health`
 
-The cloud app will live at `app.plansplease.dev`.
+The cloud app will get a production domain after the product domain is purchased and configured.
 
 CI runs the required Node 24 quality gate on Linux for pull requests and pushes to
 `main`. It also packs the public `@abijith-suresh/planview` npm package and

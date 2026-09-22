@@ -112,6 +112,9 @@ const assertMarketingPages = (output) => {
     ["features", "Features | plansplease", "A short path from agent output to a page."],
     ["cli", "CLI | plansplease", "Give a local HTML file a URL."],
     ["about", "About | plansplease", "A place for the useful things agents make."],
+    ["docs", "Docs | plansplease", "Docs for a small tool."],
+    ["pricing", "Pricing | plansplease", "Simple for now. Clear about later."],
+    ["faq", "FAQ | plansplease", "Questions we expect to hear."],
     ["privacy", "Privacy | plansplease", "Your pages are yours."],
   ];
 
@@ -141,6 +144,12 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("Private cloud workspace. Local CLI included."));
   assert.ok(html.includes("Preview locally"));
   assert.ok(html.includes("Keep a cloud copy"));
+  assert.ok(html.includes("app-staging-a39a.up.railway.app/dashboard"));
+  assert.ok(html.includes('class="mobile-menu"'));
+  assert.ok(html.includes("Pricing"));
+  assert.ok(html.includes("Docs"));
+  assert.ok(html.includes("FAQ"));
+  assert.ok(html.includes('class="site-footer-main"'));
   assert.equal(html.includes("eyebrow"), false);
   assert.equal(html.includes("hero-sticker"), false);
   assert.equal(html.includes("↗"), false);

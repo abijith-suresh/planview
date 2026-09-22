@@ -1,0 +1,64 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+---
+
+<SiteLayout
+  title="Docs | plansplease"
+  description="Short guides for the plansplease CLI and private cloud workspace."
+  activePath="docs"
+>
+  <section class="page-heading" aria-labelledby="docs-title">
+    <div>
+      <h1 id="docs-title">Docs for a small tool.</h1>
+      <p>
+        The alpha has two paths. Run a page locally with the CLI, or save one standalone HTML file
+        in your private cloud workspace.
+      </p>
+    </div>
+    <a class="page-action" href="../cli/">Start with the CLI</a>
+  </section>
+
+  <section class="content-section" aria-labelledby="docs-list-title">
+    <h2 id="docs-list-title">Start here.</h2>
+
+    <div class="feature-list">
+      <article class="feature-row">
+        <span class="feature-number">01</span>
+        <div>
+          <h2>Install the CLI</h2>
+          <p>Install the command once, then give an HTML file a local URL whenever an agent makes one.</p>
+        </div>
+        <code class="feature-command">npm install --global @abijith-suresh/planview</code>
+      </article>
+
+      <article class="feature-row">
+        <span class="feature-number">02</span>
+        <div>
+          <h2>Publish a local page</h2>
+          <p>
+            Publish a file or page folder. The CLI keeps the snapshot on your machine and prints the
+            URL.
+          </p>
+        </div>
+        <code class="feature-command">planview publish --open ./page.html</code>
+      </article>
+
+      <article class="feature-row">
+        <span class="feature-number">03</span>
+        <div>
+          <h2>Save a cloud copy</h2>
+          <p>
+            Sign in to the staging app and upload one standalone HTML file. The current cloud
+            workflow does not accept bundled assets yet.
+          </p>
+        </div>
+        <span class="feature-command">private / one file</span>
+      </article>
+    </div>
+
+    <p class="page-note">
+      More detailed API and self-hosting docs will come after the alpha workflow settles.
+    </p>
+  </section>
+</SiteLayout>
