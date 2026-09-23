@@ -40,6 +40,12 @@ import {
   openStorage,
 } from "@planview/storage";
 import { Data, Effect } from "effect";
+import { createOperationGate, type OperationGate } from "./operation-gate.js";
+import {
+  createDocumentReadAdmission,
+  DocumentReadAdmissionError,
+  type DocumentReadPermit,
+} from "./document-read-admission.js";
 
 export const DAEMON_HOST = "127.0.0.1" as const;
 /** Preferred listener port for the public CLI. */
@@ -1167,271 +1173,6 @@ const readJsonBody = async (request: import("node:http").IncomingMessage, signal
   }
 };
 
-type OperationGate = {
-  <Value>(
-    operation: (signal: AbortSignal) => Promise<Value>,
-    requestSignal?: AbortSignal
-  ): Promise<Value>;
-  readonly close: (cause?: unknown) => void;
-  readonly abortActive: (cause?: unknown) => void;
-  readonly isIdle: () => boolean;
-  readonly waitForIdle: () => Promise<void>;
-};
-
-type OperationEntry = {
-  readonly controller: AbortController;
-  readonly start: () => void;
-  readonly reject: (cause: unknown) => void;
-  readonly requestSignal?: AbortSignal;
-  readonly onRequestAbort?: () => void;
-};
-
-// Publication and cleanup still share a short mutation gate. It preserves the
-// publication file-to-metadata commit boundary, while reads use independent
-// leases and never wait behind an arbitrary response transfer. Unlike a bare
-// promise tail, the gate can reject queued work and abort the operation that is
-// currently at the mutation boundary during daemon shutdown.
-const createOperationGate = () => {
-  const queued: OperationEntry[] = [];
-  const idleWaiters = new Set<() => void>();
-  let running: OperationEntry | undefined;
-  let closed = false;
-
-  const notifyIdle = () => {
-    if (running !== undefined || queued.length > 0) {
-      return;
-    }
-    for (const resolvePromise of idleWaiters) {
-      resolvePromise();
-    }
-    idleWaiters.clear();
-  };
-
-  const pump = () => {
-    if (closed || running !== undefined) {
-      return;
-    }
-    const next = queued.shift();
-    if (next === undefined) {
-      notifyIdle();
-      return;
-    }
-    running = next;
-    next.start();
-  };
-
-  const run = <Value>(
-    operation: (signal: AbortSignal) => Promise<Value>,
-    requestSignal?: AbortSignal
-  ) => {
-    if (closed) {
-      return Promise.reject(new Error("The daemon is shutting down."));
-    }
-    if (requestSignal?.aborted) {
-      return Promise.reject(requestSignal.reason);
-    }
-
-    return new Promise<Value>((resolvePromise, rejectPromise) => {
-      const controller = new AbortController();
-      let entry: OperationEntry;
-      const onRequestAbort = () => {
-        controller.abort(requestSignal?.reason ?? new Error("The operation request was aborted."));
-        const index = queued.indexOf(entry);
-        if (index >= 0) {
-          queued.splice(index, 1);
-          rejectPromise(controller.signal.reason);
-          notifyIdle();
-        }
-      };
-      const start = () => {
-        void Promise.resolve()
-          .then(() => operation(controller.signal))
-          .then(resolvePromise, rejectPromise)
-          .finally(() => {
-            if (requestSignal !== undefined) {
-              requestSignal.removeEventListener("abort", onRequestAbort);
-            }
-            if (running === entry) {
-              running = undefined;
-            }
-            pump();
-            notifyIdle();
-          });
-      };
-      entry = {
-        controller,
-        start,
-        reject: rejectPromise,
-        ...(requestSignal === undefined ? {} : { requestSignal, onRequestAbort }),
-      };
-      queued.push(entry);
-      requestSignal?.addEventListener("abort", onRequestAbort, { once: true });
-      pump();
-    });
-  };
-
-  const close = (cause: unknown = new Error("The daemon is shutting down.")) => {
-    if (closed) {
-      return;
-    }
-    closed = true;
-    for (const entry of queued.splice(0)) {
-      entry.controller.abort(cause);
-      if (entry.requestSignal !== undefined && entry.onRequestAbort !== undefined) {
-        entry.requestSignal.removeEventListener("abort", entry.onRequestAbort);
-      }
-      entry.reject(cause);
-    }
-    notifyIdle();
-  };
-
-  const abortActive = (cause: unknown = new Error("The daemon shutdown deadline elapsed.")) => {
-    running?.controller.abort(cause);
-  };
-
-  const isIdle = () => running === undefined && queued.length === 0;
-  const waitForIdle = () =>
-    isIdle()
-      ? Promise.resolve()
-      : new Promise<void>((resolvePromise) => idleWaiters.add(resolvePromise));
-
-  return Object.assign(run, { close, abortActive, isIdle, waitForIdle }) satisfies OperationGate;
-};
-
-class DocumentReadAdmissionError extends Error {
-  readonly code: "capacity" | "closed" | "timeout";
-
-  constructor(code: "capacity" | "closed" | "timeout") {
-    super(
-      code === "capacity"
-        ? "The daemon has reached its bounded document-read capacity."
-        : code === "timeout"
-          ? "The daemon document-read queue deadline elapsed."
-          : "The daemon is shutting down."
-    );
-    this.name = "DocumentReadAdmissionError";
-    this.code = code;
-  }
-}
-
-const createDocumentReadAdmission = () => {
-  const active = new Set<{
-    readonly controller: AbortController;
-    released: boolean;
-  }>();
-  const queued: Array<{
-    readonly resolve: (permit: DocumentReadPermit) => void;
-    readonly reject: (cause: unknown) => void;
-    readonly signal?: AbortSignal;
-    readonly onAbort?: () => void;
-    readonly timer: NodeJS.Timeout;
-  }> = [];
-  let closing = false;
-
-  const removeQueued = (entry: (typeof queued)[number]) => {
-    const index = queued.indexOf(entry);
-    if (index < 0) {
-      return false;
-    }
-    queued.splice(index, 1);
-    clearTimeout(entry.timer);
-    if (entry.signal !== undefined && entry.onAbort !== undefined) {
-      entry.signal.removeEventListener("abort", entry.onAbort);
-    }
-    return true;
-  };
-
-  const makePermit = () => {
-    const state = { controller: new AbortController(), released: false };
-    active.add(state);
-    return {
-      signal: state.controller.signal,
-      release: () => {
-        if (state.released) {
-          return;
-        }
-        state.released = true;
-        active.delete(state);
-        drain();
-      },
-    } satisfies DocumentReadPermit;
-  };
-
-  const drain = () => {
-    while (!closing && active.size < DAEMON_MAX_ACTIVE_DOCUMENT_READS) {
-      const next = queued.shift();
-      if (next === undefined) {
-        return;
-      }
-      clearTimeout(next.timer);
-      if (next.signal !== undefined && next.onAbort !== undefined) {
-        next.signal.removeEventListener("abort", next.onAbort);
-      }
-      next.resolve(makePermit());
-    }
-  };
-
-  const acquire = (signal?: AbortSignal) => {
-    if (signal?.aborted) {
-      return Promise.reject(signal.reason);
-    }
-    if (closing) {
-      return Promise.reject(new DocumentReadAdmissionError("closed"));
-    }
-    if (active.size < DAEMON_MAX_ACTIVE_DOCUMENT_READS) {
-      return Promise.resolve(makePermit());
-    }
-    if (queued.length >= DAEMON_MAX_QUEUED_DOCUMENT_READS) {
-      return Promise.reject(new DocumentReadAdmissionError("capacity"));
-    }
-    return new Promise<DocumentReadPermit>((resolvePromise, rejectPromise) => {
-      let entry: (typeof queued)[number];
-      const onAbort = () => {
-        if (removeQueued(entry)) {
-          rejectPromise(signal?.reason);
-        }
-      };
-      const timer = setTimeout(() => {
-        if (removeQueued(entry)) {
-          rejectPromise(new DocumentReadAdmissionError("timeout"));
-        }
-      }, DAEMON_DOCUMENT_READ_QUEUE_TIMEOUT_MS);
-      entry = {
-        resolve: resolvePromise,
-        reject: rejectPromise,
-        ...(signal === undefined ? {} : { signal, onAbort }),
-        timer,
-      };
-      queued.push(entry);
-      signal?.addEventListener("abort", onAbort, { once: true });
-    });
-  };
-
-  const close = () => {
-    if (closing) {
-      return;
-    }
-    closing = true;
-    for (const queuedRead of queued.splice(0)) {
-      clearTimeout(queuedRead.timer);
-      if (queuedRead.signal !== undefined && queuedRead.onAbort !== undefined) {
-        queuedRead.signal.removeEventListener("abort", queuedRead.onAbort);
-      }
-      queuedRead.reject(new DocumentReadAdmissionError("closed"));
-    }
-    for (const state of active) {
-      state.controller.abort(new Error("The daemon is shutting down."));
-    }
-  };
-
-  return { acquire, close };
-};
-
-type DocumentReadPermit = Readonly<{
-  readonly signal: AbortSignal;
-  readonly release: () => void;
-}>;
-
 const PRIVATE_MANAGEMENT_PATHS = new Set([
   DAEMON_READY_PATH,
   DAEMON_STARTUP_ACK_PATH,
@@ -2071,7 +1812,11 @@ const openDaemon = async (config: DaemonConfig) => {
   let shutdownForceCloseTimer: NodeJS.Timeout | undefined;
   let shutdownForceTimer: NodeJS.Timeout | undefined;
   let shutdownCompleted = false;
-  const documentReadAdmission = createDocumentReadAdmission();
+  const documentReadAdmission = createDocumentReadAdmission({
+    maxActiveReads: DAEMON_MAX_ACTIVE_DOCUMENT_READS,
+    maxQueuedReads: DAEMON_MAX_QUEUED_DOCUMENT_READS,
+    queueTimeoutMs: DAEMON_DOCUMENT_READ_QUEUE_TIMEOUT_MS,
+  });
   const operationGate = createOperationGate();
   const terminateUncooperativeProcess = () => {
     try {
