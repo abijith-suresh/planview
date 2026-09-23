@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
 import { platform, tmpdir } from "node:os";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { auditWorkspaceBoundaries } from "./workspace-boundary.mjs";
+import {
+  auditWorkspaceBoundaries,
+  isWithinPath,
+  readDirectoryEntries,
+} from "./workspace-boundary.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -54,6 +58,44 @@ const withFixture = (run) => {
 
 test("the repository source and workspace manifests follow the allowed dependency direction", () => {
   assert.deepEqual(auditWorkspaceBoundaries(repositoryRoot), []);
+});
+
+test("directory traversal ignores only missing-path errors", () => {
+  const errorWithCode = (code) => Object.assign(new Error(code), { code });
+  assert.deepEqual(
+    readDirectoryEntries("missing", () => {
+      throw errorWithCode("ENOENT");
+    }),
+    []
+  );
+  assert.deepEqual(
+    readDirectoryEntries("not-a-directory", () => {
+      throw errorWithCode("ENOTDIR");
+    }),
+    []
+  );
+
+  for (const code of ["EACCES", "EIO"]) {
+    assert.throws(
+      () =>
+        readDirectoryEntries("unreadable", () => {
+          throw errorWithCode(code);
+        }),
+      (error) => error.code === code
+    );
+  }
+});
+
+test("path containment rejects Windows paths on different drives or UNC roots", () => {
+  const win32PathApi = {
+    relative: win32.relative,
+    isAbsolute: win32.isAbsolute,
+    sep: win32.sep,
+  };
+
+  assert.equal(isWithinPath("C:\\repo\\packages", "C:\\repo", win32PathApi), true);
+  assert.equal(isWithinPath("D:\\repo\\packages", "C:\\repo", win32PathApi), false);
+  assert.equal(isWithinPath("\\\\other-server\\share\\repo", "C:\\repo", win32PathApi), false);
 });
 
 test("workspace manifests cannot declare dependencies against the package DAG", () => {
@@ -153,6 +195,53 @@ test("unsupported workspace patterns and missing required workspaces fail closed
       /did not find required workspace.*@planview\/core/
     );
   });
+});
+
+test("malformed workspace manifests fail closed", () => {
+  withFixture((root) => {
+    writeFileSync(join(root, "packages/core/package.json"), "{\n");
+    assert.throws(() => auditWorkspaceBoundaries(root), SyntaxError);
+  });
+});
+
+test("root and workspace package manifest symlinks are rejected", {
+  skip: platform === "win32",
+}, () => {
+  const root = makeFixture();
+  const outside = mkdtempSync(join(tmpdir(), "planview-outside-manifest-"));
+  try {
+    const rootManifestOutside = join(outside, "root-package.json");
+    writeFileSync(
+      rootManifestOutside,
+      JSON.stringify({ private: true, workspaces: ["apps/*", "packages/*"] })
+    );
+    rmSync(join(root, "package.json"));
+    symlinkSync(rootManifestOutside, join(root, "package.json"), "file");
+    assert.throws(
+      () => auditWorkspaceBoundaries(root),
+      /Package manifest symlinks are unsupported/
+    );
+
+    rmSync(join(root, "package.json"));
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ private: true, workspaces: ["apps/*", "packages/*"] })
+    );
+    const workspaceManifestOutside = join(outside, "core-package.json");
+    writeFileSync(
+      workspaceManifestOutside,
+      JSON.stringify({ name: "@planview/core", version: "1.0.0" })
+    );
+    rmSync(join(root, "packages/core/package.json"));
+    symlinkSync(workspaceManifestOutside, join(root, "packages/core/package.json"), "file");
+    assert.throws(
+      () => auditWorkspaceBoundaries(root),
+      /Package manifest symlinks are unsupported/
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
 });
 
 test("type, dynamic, require, module.require, re-export, relative, and Astro frontmatter imports are checked", () => {

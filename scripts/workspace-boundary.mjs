@@ -61,8 +61,6 @@ const sourceExtensions = new Set([
   ".tsx",
 ]);
 
-const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
-
 const expectedWorkspaceNames = [...allowedDependencies.keys()];
 
 const getWorkspacePatterns = (manifest) => {
@@ -72,6 +70,41 @@ const getWorkspacePatterns = (manifest) => {
     throw new Error("Root package.json must define npm workspaces as an array of patterns.");
   }
   return patterns;
+};
+
+const isMissingPathError = (error) => error?.code === "ENOENT" || error?.code === "ENOTDIR";
+
+export const readDirectoryEntries = (
+  path,
+  readDirectory = (directory) => readdirSync(directory, { withFileTypes: true })
+) => {
+  try {
+    return readDirectory(path);
+  } catch (error) {
+    if (isMissingPathError(error)) return [];
+    throw error;
+  }
+};
+
+const readManifest = (path, repositoryRoot, { optional = false } = {}) => {
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch (error) {
+    if (optional && isMissingPathError(error)) return undefined;
+    throw error;
+  }
+
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Package manifest symlinks are unsupported: ${path}`);
+  }
+  if (!stat.isFile()) throw new Error(`Package manifest is not a regular file: ${path}`);
+
+  const realPath = realpathSync(path);
+  if (!isWithinPath(realPath, repositoryRoot)) {
+    throw new Error(`Package manifest escapes the repository root: ${path}`);
+  }
+  return JSON.parse(readFileSync(path, "utf8"));
 };
 
 const isExcludedWorkspaceDirectory = (name) =>
@@ -113,12 +146,7 @@ const parseWorkspacePattern = (pattern) => {
 };
 
 const childDirectories = (path, { includeHidden = false } = {}) => {
-  let entries;
-  try {
-    entries = readdirSync(path, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+  const entries = readDirectoryEntries(path);
 
   return entries
     .filter(
@@ -172,7 +200,7 @@ const expandWorkspacePattern = (root, rootRealPath, pattern) => {
 };
 
 const discoverWorkspaces = (root) => {
-  const rootManifest = readJson(join(root, "package.json"));
+  const rootManifest = readManifest(join(root, "package.json"), root);
   const rootRealPath = realpathSync(root);
   const paths = new Set(
     getWorkspacePatterns(rootManifest).flatMap((pattern) =>
@@ -183,14 +211,13 @@ const discoverWorkspaces = (root) => {
   const workspaces = [...paths]
     .sort((left, right) => left.localeCompare(right))
     .flatMap((path) => {
-      try {
-        const manifestPath = join(path, "package.json");
-        const manifest = readJson(manifestPath);
-        if (typeof manifest.name !== "string") return [];
-        return [{ path, manifest, manifestPath, name: manifest.name }];
-      } catch {
-        return [];
+      const manifestPath = join(path, "package.json");
+      const manifest = readManifest(manifestPath, root, { optional: true });
+      if (!manifest) return [];
+      if (typeof manifest.name !== "string") {
+        throw new Error(`Workspace package manifest is missing its name field: ${manifestPath}`);
       }
+      return [{ path, manifest, manifestPath, name: manifest.name }];
     });
 
   const names = new Set(workspaces.map((workspace) => workspace.name));
@@ -214,10 +241,13 @@ const discoverWorkspaces = (root) => {
   return workspaces;
 };
 
-const isWithin = (candidate, parent) => {
-  const pathFromParent = relative(parent, candidate);
+export const isWithinPath = (candidate, parent, pathApi = { relative, isAbsolute, sep }) => {
+  const pathFromParent = pathApi.relative(parent, candidate);
   return (
-    pathFromParent === "" || (!pathFromParent.startsWith(`..${sep}`) && pathFromParent !== "..")
+    pathFromParent === "" ||
+    (!pathApi.isAbsolute(pathFromParent) &&
+      !pathFromParent.startsWith(`..${pathApi.sep}`) &&
+      pathFromParent !== "..")
   );
 };
 
@@ -236,7 +266,7 @@ const isDirectoryWithinRepository = (candidate, repositoryRoot) => {
   if (!stat.isDirectory()) return false;
 
   const realPath = realpathSync(candidate);
-  if (!isWithin(realPath, repositoryRoot)) {
+  if (!isWithinPath(realPath, repositoryRoot)) {
     throw new Error(`Workspace pattern escapes the repository root: ${candidate}`);
   }
   return true;
@@ -244,7 +274,7 @@ const isDirectoryWithinRepository = (candidate, repositoryRoot) => {
 
 const workspaceForPath = (path, workspaces) =>
   workspaces
-    .filter((workspace) => isWithin(path, workspace.path))
+    .filter((workspace) => isWithinPath(path, workspace.path))
     .sort((left, right) => right.path.length - left.path.length)[0];
 
 const packageForSpecifier = (specifier, workspaceTargets) => {
@@ -277,12 +307,12 @@ const workspaceForLocalAlias = (pathValue, sourceWorkspace, root, workspaces, de
     throw new Error(`Cannot resolve local workspace alias ${JSON.stringify(description)}.`);
   }
 
-  if (isWithin(candidate, root) && !isWithin(realPath, root)) {
+  if (isWithinPath(candidate, root) && !isWithinPath(realPath, root)) {
     throw new Error(
       `Local workspace alias escapes the repository root: ${JSON.stringify(description)}.`
     );
   }
-  if (!isWithin(realPath, root)) return undefined;
+  if (!isWithinPath(realPath, root)) return undefined;
 
   const target = workspaceForPath(realPath, workspaces);
   if (!target) {
@@ -379,12 +409,7 @@ const collectSourceFiles = (workspace, workspaces) => {
       if (childWorkspace && childWorkspace.path !== workspace.path) continue;
       visit(childPath);
     }
-    let entries;
-    try {
-      entries = readdirSync(path, { withFileTypes: true });
-    } catch {
-      return;
-    }
+    const entries = readDirectoryEntries(path);
     for (const entry of entries) {
       if (entry.isSymbolicLink() || !entry.isFile()) continue;
       const childPath = join(path, entry.name);
