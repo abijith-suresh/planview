@@ -16,14 +16,44 @@ export const GET = async ({ request }: { request: Request }) => {
   }
 
   const requestUrl = new URL(request.url);
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const requestHost = request.headers.get("host");
+  const railwayPublicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  const isInternalHost = (host: string) => {
+    const hostname = host.replace(/^\[([^\]]+)\](?::\d+)?$/, "$1").replace(/:\d+$/, "");
+    return (
+      hostname === "localhost" ||
+      hostname === "::1" ||
+      hostname.startsWith("127.") ||
+      hostname.endsWith(".railway.internal")
+    );
+  };
+  const appHost =
+    (railwayPublicDomain &&
+    (requestHost === railwayPublicDomain || forwardedHost === railwayPublicDomain)
+      ? railwayPublicDomain
+      : undefined) ??
+    (requestHost && !isInternalHost(requestHost) ? requestHost : undefined) ??
+    (forwardedHost && !isInternalHost(forwardedHost) ? forwardedHost : undefined) ??
+    railwayPublicDomain ??
+    requestHost ??
+    requestUrl.host;
+  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const appProtocol =
+    forwardedProtocol === "https" || forwardedProtocol === "http"
+      ? forwardedProtocol
+      : appHost === railwayPublicDomain
+        ? "https"
+        : requestUrl.protocol.replace(/:$/, "");
+  const appUrl = new URL(`${appProtocol}://${appHost}`);
   const upstreamUrl = `${convexSiteUrl}/api/auth/sign-in/social`;
   const requestedReturnTo = requestUrl.searchParams.get("returnTo");
   let callbackURL = "/dashboard";
 
   if (requestedReturnTo) {
-    const returnUrl = new URL(requestedReturnTo, requestUrl.origin);
+    const returnUrl = new URL(requestedReturnTo, appUrl.origin);
 
-    if (returnUrl.origin !== requestUrl.origin) {
+    if (returnUrl.origin !== appUrl.origin) {
       return Response.json(
         { error: "The sign-in return URL must stay within this app." },
         { status: 400 }
@@ -35,12 +65,12 @@ export const GET = async ({ request }: { request: Request }) => {
   const headers = new Headers({
     accept: "application/json",
     "content-type": "application/json",
-    origin: requestUrl.origin,
+    origin: appUrl.origin,
     host: new URL(convexSiteUrl).host,
-    "x-forwarded-host": requestUrl.host,
-    "x-forwarded-proto": requestUrl.protocol.replace(/:$/, ""),
-    "x-better-auth-forwarded-host": requestUrl.host,
-    "x-better-auth-forwarded-proto": requestUrl.protocol.replace(/:$/, ""),
+    "x-forwarded-host": appUrl.host,
+    "x-forwarded-proto": appUrl.protocol.replace(/:$/, ""),
+    "x-better-auth-forwarded-host": appUrl.host,
+    "x-better-auth-forwarded-proto": appUrl.protocol.replace(/:$/, ""),
   });
   const cookie = request.headers.get("cookie");
 
