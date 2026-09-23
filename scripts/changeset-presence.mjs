@@ -13,6 +13,9 @@ const readJson = (root, path) => JSON.parse(readFileSync(resolve(root, path), "u
 
 const isReleasableCliPath = (path) => {
   const normalized = path.replaceAll("\\", "/");
+  if (normalized.endsWith("/tsconfig.test.json")) {
+    return false;
+  }
   if (
     excludedCliPaths.some((excluded) => normalized === excluded || normalized.startsWith(excluded))
   ) {
