@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import {
-  spawn,
-  spawnSync,
   type ChildProcess,
   type ChildProcessByStdio,
   type SpawnOptions,
+  spawn,
+  spawnSync,
 } from "node:child_process";
 import { EventEmitter } from "node:events";
 import {
@@ -152,6 +152,9 @@ test("help exposes the root and command-specific documentation", () => {
 
   for (const command of [
     "publish",
+    "upload",
+    "login",
+    "logout",
     "get",
     "start",
     "status",
@@ -181,6 +184,9 @@ test("help exposes the root and command-specific documentation", () => {
 test("command options reject unknown flags before doing work", () => {
   const commands = [
     ["publish", "--unknown"],
+    ["upload", "--unknown"],
+    ["login", "--unknown"],
+    ["logout", "--unknown"],
     ["get", "--unknown"],
     ["start", "--unknown"],
     ["status", "--unknown"],
@@ -383,6 +389,22 @@ test("publish explains that it needs a source path", async () => {
     1
   );
   assert.match(stderr[0] ?? "", /^Missing source file or folder:/);
+});
+
+test("cloud commands explain their required input without starting network work", () => {
+  const upload = execute("upload");
+  assert.equal(upload.status, 1);
+  assert.equal(upload.stdout, "");
+  assert.match(upload.stderr, /^Missing HTML file:/);
+
+  const login = execute("login", "--cloud-url");
+  assert.equal(login.status, 1);
+  assert.equal(login.stdout, "");
+  assert.match(login.stderr, /^Option --cloud-url requires a URL/);
+
+  const uploadHelp = execute("help", "upload");
+  assert.equal(uploadHelp.status, 0, uploadHelp.stderr);
+  assert.match(uploadHelp.stdout, /Upload one standalone HTML file/);
 });
 
 test("publish --open is recognized and preview is not a command", () => {

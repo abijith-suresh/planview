@@ -1,5 +1,8 @@
 export const COMMANDS = [
   "publish",
+  "upload",
+  "login",
+  "logout",
   "get",
   "start",
   "status",
@@ -17,6 +20,9 @@ const ROOT_HELP = `Usage: planview [global-options] <command> [options]
 
 Commands:
   publish <file|folder>  Publish a snapshot and print its URL
+  upload <file>          Upload an HTML page to your cloud workspace
+  login                  Sign in to your cloud workspace
+  logout                 Remove this computer's saved cloud sign-in
   get <id|url>           Write a stored snapshot to standard output
   start                  Start or reuse the daemon for the selected profile
   status                 Show daemon status without starting it
@@ -46,6 +52,32 @@ Options:
   -h, --help             Show this help message
   --open                 Open the published URL in the default browser
   --json                 Print the snapshot id and URL as one JSON object
+`,
+  upload: `Usage: planview upload [options] <file.html>
+
+Upload one standalone HTML file to your cloud workspace and print its link.
+Run planview login first. The cloud upload limit is 8 MiB.
+
+Options:
+  -h, --help             Show this help message
+  --open                 Open the returned link in the default browser
+  --json                 Print the document id and URL as one JSON object
+`,
+  login: `Usage: planview login [options]
+
+Open GitHub sign-in in your browser and authorize this computer for cloud uploads.
+Credentials are saved in the selected Planview profile's private data directory.
+
+Options:
+  -h, --help             Show this help message
+  --cloud-url <url>      Sign in to a specific cloud app origin
+
+The default cloud app is the current alpha staging site. Set PLANVIEW_CLOUD_URL
+or use --cloud-url to select another app origin.
+`,
+  logout: `Usage: planview logout
+
+Remove the saved cloud sign-in from the selected Planview profile on this computer.
 `,
   get: `Usage: planview get [options] <id|url>
 

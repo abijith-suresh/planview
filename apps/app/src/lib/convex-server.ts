@@ -18,6 +18,18 @@ export async function getAuthedConvexClient(request: Request) {
   headers.delete("transfer-encoding");
   headers.set("accept-encoding", "identity");
 
+  const authorization = request.headers.get("authorization");
+  const cliSessionToken = authorization?.match(/^Bearer\s+planview_cli_(.+)$/i)?.[1];
+
+  if (cliSessionToken) {
+    headers.delete("authorization");
+    const encodedSessionToken = encodeURIComponent(cliSessionToken);
+    headers.set(
+      "cookie",
+      `better-auth.session_token=${encodedSessionToken}; __Secure-better-auth.session_token=${encodedSessionToken}`
+    );
+  }
+
   const { token } = await getToken(convexSiteUrl, headers);
   const client = new ConvexHttpClient(convexUrl);
 

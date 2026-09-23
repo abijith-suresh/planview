@@ -1,7 +1,8 @@
 # Planview CLI
 
 The public `@abijith-suresh/planview` command-line package. It publishes immutable,
-30-day-last-access-retained HTML snapshots through the private localhost daemon:
+30-day-last-access-retained HTML snapshots through the private localhost daemon and
+can upload standalone HTML files to the alpha cloud workspace:
 
 Install it once:
 
@@ -22,6 +23,11 @@ planview publish ./site
 # Publish and open the URL in the default browser
 planview publish --open ./site
 
+# Sign in to the cloud app, then upload a standalone HTML page
+planview login
+planview upload ./report.html
+# https://app-staging-a39a.up.railway.app/api/documents/<id>
+
 # Keep a feature build separate from the default installation
 planview --profile feature publish ./site
 
@@ -33,12 +39,14 @@ Get help for the whole CLI or for one command:
 planview help
 planview help publish
 planview publish --help
+planview help upload
 ```
 
 Commands that return metadata also support one JSON object on stdout:
 
 ```sh
 planview publish --json ./report.html
+planview upload --json ./report.html
 planview status --json
 ```
 
@@ -72,6 +80,21 @@ with its `profile`, `host`, `port`, `pid`, and `startedAt`. `start --json` adds 
 `stop --json` reports the stopped state. `clean --json` returns cleanup counts
 and failure messages without internal causes. `publish --open` keeps the
 normal publish result and adds the browser-opening side effect.
+
+## Cloud uploads
+
+`planview login` opens GitHub sign-in in a browser and asks you to authorize the
+local CLI. The CLI stores the cloud credential in the selected profile's
+Planview data directory. On POSIX systems the directory is mode `0700` and the
+credential file is mode `0600`. `planview logout` removes that local credential.
+Set `PLANVIEW_CLOUD_URL` or pass `--cloud-url <origin>` to `planview login` to
+use another cloud app. The alpha default is
+`https://app-staging-a39a.up.railway.app`.
+
+`planview upload <file.html>` accepts one standalone `.html` file up to 8 MiB
+and returns its workspace preview link. The preview requires the same account to
+be signed in in the browser; it is not an anonymous share link. Use `--open` to
+open the returned link or `--json` to print the document ID and URL.
 
 The daemon can also be managed directly:
 
