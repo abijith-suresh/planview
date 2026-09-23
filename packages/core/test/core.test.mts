@@ -4,6 +4,7 @@ import {
   DEFAULT_PROFILE_NAME,
   type AppDataPlatform,
   isValidProfileName,
+  normalizeMacosSystemPath,
   resolveAppDataPaths,
   V1_CLEANUP_INTERVAL_HOURS,
   V1_MAX_HTML_SIZE_BYTES,
@@ -93,6 +94,14 @@ test("uses macOS Application Support and ignores Linux and Windows variables", (
     ),
     paths("/Users/alice/Library/Application Support/Planview")
   );
+});
+
+test("normalizes only the stable macOS system path aliases", () => {
+  assert.equal(normalizeMacosSystemPath("/tmp/planview", "darwin"), "/private/tmp/planview");
+  assert.equal(normalizeMacosSystemPath("/var/folders", "darwin"), "/private/var/folders");
+  assert.equal(normalizeMacosSystemPath("/etc", "darwin"), "/private/etc");
+  assert.equal(normalizeMacosSystemPath("/temporary", "darwin"), "/temporary");
+  assert.equal(normalizeMacosSystemPath("/tmp/planview", "linux"), "/tmp/planview");
 });
 
 test("uses LOCALAPPDATA on Windows with Windows path semantics", () => {

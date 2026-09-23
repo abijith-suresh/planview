@@ -223,7 +223,12 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
   return { publish, get, start, stop, restart, inspect, clean };
 };
 
-export { isValidProfileName, resolveAppDataPaths, validateProfileName } from "@planview/core";
+export {
+  isValidProfileName,
+  normalizeMacosSystemPath,
+  resolveAppDataPaths,
+  validateProfileName,
+} from "@planview/core";
 export {
   parseDocumentReference,
   parseDocumentReferenceDetails,

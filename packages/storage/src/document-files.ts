@@ -27,6 +27,7 @@ import {
   InvalidBundleError,
   InvalidSourceFileSizeError,
   isBundleHeader,
+  normalizeMacosSystemPath,
   parseBundleHeader,
   parseBundleManifest,
   SourceFileTooLargeError,
@@ -408,27 +409,6 @@ const isNotFound = (error: unknown) => errorCode(error) === "ENOENT";
 
 const describe = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
-// macOS keeps several writable system roots behind stable aliases. Resolve
-// those aliases before the no-symlink walk so a normal temp directory such as
-// /var/folders remains usable without allowing arbitrary user symlinks.
-const MACOS_SYSTEM_PATH_ALIASES = [
-  ["/etc", "/private/etc"],
-  ["/tmp", "/private/tmp"],
-  ["/var", "/private/var"],
-] as const;
-
-const normalizeStoragePath = (path: string) => {
-  if (process.platform !== "darwin") {
-    return path;
-  }
-  for (const [alias, target] of MACOS_SYSTEM_PATH_ALIASES) {
-    if (path === alias || path.startsWith(`${alias}/`)) {
-      return `${target}${path.slice(alias.length)}`;
-    }
-  }
-  return path;
-};
-
 const readFileRange = async (
   file: Awaited<ReturnType<typeof open>>,
   position: number,
@@ -474,7 +454,7 @@ const validateDirectoryPath = (path: unknown, label: string) => {
     });
   }
 
-  const normalized = normalizeStoragePath(resolve(path));
+  const normalized = normalizeMacosSystemPath(resolve(path));
   if (normalized === parse(normalized).root) {
     throw new DocumentFileStorePathError({
       path,
@@ -1851,7 +1831,7 @@ const createStore = ({
       ensureTrustedRoots();
       validateSourceFileExtension(sourcePath);
 
-      const absoluteSourcePath = normalizeStoragePath(resolve(sourcePath));
+      const absoluteSourcePath = normalizeMacosSystemPath(resolve(sourcePath));
       let source: Awaited<ReturnType<typeof open>> | undefined;
       let staged: Awaited<ReturnType<typeof open>> | undefined;
       let sourceStream: ReadStream | undefined;
