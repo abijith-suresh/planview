@@ -5,7 +5,6 @@ import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "
 import { Data, Effect } from "effect";
 
 export {
-  createCleanupCoordinator,
   createDocumentCleanupCoordinator,
   type DocumentCleanupCoordinatorOptions,
   type DocumentCleanupCoordinator,
@@ -55,7 +54,6 @@ export {
 export {
   createDocumentPublicationCoordinator,
   createMetadataGatedDocumentReader,
-  createPublicationCoordinator,
   type DocumentPublicationCoordinator,
   type DocumentPublicationCoordinatorOptions,
   DocumentPublicationError,

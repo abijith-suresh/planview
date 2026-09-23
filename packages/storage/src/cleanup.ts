@@ -533,6 +533,4 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
   return { clean } satisfies DocumentCleanupCoordinator;
 };
 
-/** Short daemon-internal alias. */
-export const createCleanupCoordinator = createDocumentCleanupCoordinator;
 export const V1_RETENTION_MILLISECONDS = V1_RETENTION_DAYS * DAY_MS;

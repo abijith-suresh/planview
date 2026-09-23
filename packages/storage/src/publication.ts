@@ -1209,7 +1209,4 @@ export const createDocumentPublicationCoordinator = (
   };
 };
 
-/** Alias kept short for daemon-internal call sites. */
-export const createPublicationCoordinator = createDocumentPublicationCoordinator;
-
 export { defaultIsMetadataUniquenessCollision };
