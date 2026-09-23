@@ -23,8 +23,11 @@ const fixtureWorkspaces = [
   ["apps/site", "@planview/site"],
 ];
 
-const makeFixture = ({ patterns = ["apps/*", "packages/*"], nestedCore = false } = {}) => {
-  const root = mkdtempSync(join(tmpdir(), "planview-workspace-boundary-"));
+const populateFixture = (
+  root,
+  { patterns = ["apps/*", "packages/*"], nestedCore = false } = {}
+) => {
+  mkdirSync(root, { recursive: true });
   writeFileSync(
     join(root, "package.json"),
     JSON.stringify({ private: true, workspaces: patterns })
@@ -39,6 +42,11 @@ const makeFixture = ({ patterns = ["apps/*", "packages/*"], nestedCore = false }
   }
 
   return root;
+};
+
+const makeFixture = (options = {}) => {
+  const root = mkdtempSync(join(tmpdir(), "planview-workspace-boundary-"));
+  return populateFixture(root, options);
 };
 
 const writeFixtureFile = (root, path, contents) => {
@@ -58,6 +66,22 @@ const withFixture = (run) => {
 
 test("the repository source and workspace manifests follow the allowed dependency direction", () => {
   assert.deepEqual(auditWorkspaceBoundaries(repositoryRoot), []);
+});
+
+test("source exclusions are relative to the workspace even when the checkout path contains test", () => {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "planview-workspace-boundary-test-path-"));
+  const root = join(temporaryRoot, "test", "checkout");
+  try {
+    populateFixture(root);
+    writeFixtureFile(root, "packages/core/src/dependencies.ts", 'import "@planview/daemon";\n');
+
+    assert.deepEqual(
+      auditWorkspaceBoundaries(root).map(({ file, target }) => ({ file, target })),
+      [{ file: "packages/core/src/dependencies.ts", target: "@planview/daemon" }]
+    );
+  } finally {
+    rmSync(temporaryRoot, { recursive: true, force: true });
+  }
 });
 
 test("directory traversal ignores only missing-path errors", () => {
@@ -314,6 +338,78 @@ test("type, dynamic, require, module.require, re-export, relative, and Astro fro
   });
 });
 
+test("nonliteral import and require calls fail closed with source locations", () => {
+  withFixture((root) => {
+    writeFixtureFile(
+      root,
+      "apps/app/src/nonliteral.mjs",
+      [
+        "const moduleName = getModuleName();",
+        "import(moduleName);",
+        "require(moduleName);",
+        "module.require(moduleName);",
+        "import('@planview/' + moduleName);",
+      ].join("\n")
+    );
+
+    assert.deepEqual(
+      auditWorkspaceBoundaries(root).map(({ file, kind, message }) => ({ file, kind, message })),
+      [2, 3, 4, 5].map((line) => ({
+        file: "apps/app/src/nonliteral.mjs",
+        kind: "unresolved-import",
+        message: `apps/app/src/nonliteral.mjs:${line}:1: module call must use a statically resolvable string literal`,
+      }))
+    );
+  });
+});
+
+test("nonliteral module diagnostics in Astro scripts use source-file line numbers", () => {
+  withFixture((root) => {
+    writeFixtureFile(
+      root,
+      "apps/site/src/nonliteral.astro",
+      [
+        "---",
+        "const moduleName = getModuleName();",
+        "import(moduleName);",
+        "---",
+        "<script>",
+        "import(moduleName);",
+        "</script>",
+        "<script>import(moduleName);</script>",
+      ].join("\n")
+    );
+
+    assert.deepEqual(
+      auditWorkspaceBoundaries(root).map(({ file, kind, message }) => ({
+        file,
+        kind,
+        message,
+      })),
+      [
+        {
+          file: "apps/site/src/nonliteral.astro",
+          kind: "unresolved-import",
+          message:
+            "apps/site/src/nonliteral.astro:3:1: module call must use a statically resolvable string literal",
+        },
+        {
+          file: "apps/site/src/nonliteral.astro",
+          kind: "unresolved-import",
+          message:
+            "apps/site/src/nonliteral.astro:6:1: module call must use a statically resolvable string literal",
+        },
+        {
+          file: "apps/site/src/nonliteral.astro",
+          kind: "unresolved-import",
+          message:
+            "apps/site/src/nonliteral.astro:8:9: module call must use a statically resolvable string literal",
+        },
+      ]
+    );
+  });
+});
+
 test("npm and local path aliases preserve manifest and source dependency direction", () => {
   withFixture((root) => {
     const appManifest = join(root, "apps/app/package.json");
@@ -428,5 +524,64 @@ test("workspace-root configs, scripts, and Astro inline scripts are scanned", ()
         left.file.localeCompare(right.file) || left.specifier.localeCompare(right.specifier)
     );
     assert.deepEqual(actual, expected);
+  });
+});
+
+test("TypeScript paths aliases are resolved to their target workspace", () => {
+  withFixture((root) => {
+    writeFixtureFile(root, "packages/daemon/src/entry.ts", "export const entry = true;\n");
+    writeFixtureFile(
+      root,
+      "apps/app/tsconfig.json",
+      JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: { "@internal-daemon/*": ["../../packages/daemon/src/*"] },
+        },
+      })
+    );
+    writeFixtureFile(root, "apps/app/src/alias.ts", 'import "@internal-daemon/entry";\n');
+
+    assert.deepEqual(
+      auditWorkspaceBoundaries(root).map(({ file, target, specifier }) => ({
+        file,
+        target,
+        specifier,
+      })),
+      [
+        {
+          file: "apps/app/src/alias.ts",
+          target: "@planview/daemon",
+          specifier: "@internal-daemon/entry",
+        },
+      ]
+    );
+  });
+});
+
+test("relative imports through a symlink are classified by their resolved workspace", {
+  skip: platform === "win32",
+}, () => {
+  withFixture((root) => {
+    writeFixtureFile(root, "packages/daemon/src/target.js", "export const target = true;\n");
+    const symlinkPath = join(root, "apps/app/src/daemon");
+    mkdirSync(dirname(symlinkPath), { recursive: true });
+    symlinkSync(join(root, "packages/daemon/src"), symlinkPath, "dir");
+    writeFixtureFile(root, "apps/app/src/importer.mjs", 'import "./daemon/target.js";\n');
+
+    assert.deepEqual(
+      auditWorkspaceBoundaries(root).map(({ file, target, specifier }) => ({
+        file,
+        target,
+        specifier,
+      })),
+      [
+        {
+          file: "apps/app/src/importer.mjs",
+          target: "@planview/daemon",
+          specifier: "./daemon/target.js",
+        },
+      ]
+    );
   });
 });

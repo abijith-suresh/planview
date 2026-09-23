@@ -390,8 +390,9 @@ const resolveManifestDependency = (
   return { target: workspaceByName.get(dependencyName), isAlias: false };
 };
 
-const isExcludedPath = (path) => {
-  const segments = path.split(/[\\/]+/);
+const isExcludedPath = (path, workspaceRoot) => {
+  const relativePath = relative(workspaceRoot, path);
+  const segments = relativePath.split(/[\\/]+/);
   const fileName = segments.at(-1) ?? "";
   return (
     segments.some((segment) => excludedDirectoryNames.has(segment)) ||
@@ -413,7 +414,10 @@ const collectSourceFiles = (workspace, workspaces) => {
     for (const entry of entries) {
       if (entry.isSymbolicLink() || !entry.isFile()) continue;
       const childPath = join(path, entry.name);
-      if (!isExcludedPath(childPath) && sourceExtensions.has(extname(childPath).toLowerCase())) {
+      if (
+        !isExcludedPath(childPath, workspace.path) &&
+        sourceExtensions.has(extname(childPath).toLowerCase())
+      ) {
         files.push(childPath);
       }
     }
@@ -426,16 +430,33 @@ const collectSourceFiles = (workspace, workspaces) => {
 const extractAstroScripts = (contents) => {
   const scripts = [];
   const frontmatter = contents.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-  if (frontmatter) scripts.push(frontmatter[1]);
+  if (frontmatter) {
+    const opening = contents.match(/^\uFEFF?---\r?\n/)?.[0] ?? "";
+    scripts.push({
+      text: frontmatter[1],
+      lineOffset: contents.slice(0, opening.length).split("\n").length - 1,
+      columnOffset: 0,
+    });
+  }
 
   const inlineScript = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
-  for (const match of contents.matchAll(inlineScript)) scripts.push(match[1]);
-  return scripts.join("\n;\n");
+  for (const match of contents.matchAll(inlineScript)) {
+    const contentStart = match.index + match[0].indexOf(">") + 1;
+    const lineStart = contents.lastIndexOf("\n", contentStart - 1) + 1;
+    scripts.push({
+      text: match[1],
+      lineOffset: contents.slice(0, contentStart).split("\n").length - 1,
+      columnOffset: contentStart - lineStart,
+    });
+  }
+  return scripts;
 };
 
-const sourceTextForFile = (path) => {
+const sourceTextsForFile = (path) => {
   const contents = readFileSync(path, "utf8");
-  return path.endsWith(".astro") ? extractAstroScripts(contents) : contents;
+  return path.endsWith(".astro")
+    ? extractAstroScripts(contents)
+    : [{ text: contents, lineOffset: 0, columnOffset: 0 }];
 };
 
 const sourceKindForFile = (path) => {
@@ -459,9 +480,9 @@ const moduleSpecifierFromImportType = (node) => {
 
 const getModuleSpecifiers = (sourceFile) => {
   const specifiers = [];
-  const addLiteral = (node) => {
+  const addLiteral = (node, sourceNode = node) => {
     if (node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) {
-      specifiers.push(node.text);
+      specifiers.push({ specifier: node.text, node: sourceNode });
     }
   };
 
@@ -473,20 +494,27 @@ const getModuleSpecifiers = (sourceFile) => {
       if (ts.isExternalModuleReference(reference)) addLiteral(reference.expression);
     } else if (ts.isImportTypeNode(node)) {
       const specifier = moduleSpecifierFromImportType(node);
-      if (specifier !== undefined) specifiers.push(specifier);
+      if (specifier !== undefined) specifiers.push({ specifier, node });
     } else if (ts.isCallExpression(node)) {
       const isModuleRequire =
         ts.isPropertyAccessExpression(node.expression) &&
         ts.isIdentifier(node.expression.expression) &&
         node.expression.expression.text === "module" &&
         node.expression.name.text === "require";
-      if (
-        (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-          (ts.isIdentifier(node.expression) && node.expression.text === "require") ||
-          isModuleRequire) &&
-        node.arguments.length > 0
-      ) {
-        addLiteral(node.arguments[0]);
+      const isModuleCall =
+        node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+        (ts.isIdentifier(node.expression) && node.expression.text === "require") ||
+        isModuleRequire;
+      if (isModuleCall) {
+        const argument = node.arguments[0];
+        if (
+          argument &&
+          (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument))
+        ) {
+          addLiteral(argument, node);
+        } else {
+          specifiers.push({ specifier: undefined, node });
+        }
       }
     }
 
@@ -495,6 +523,66 @@ const getModuleSpecifiers = (sourceFile) => {
 
   visit(sourceFile);
   return specifiers;
+};
+
+const collectTypeScriptConfigs = (workspace) =>
+  readDirectoryEntries(workspace.path)
+    .filter(
+      (entry) =>
+        entry.isFile() && !entry.isSymbolicLink() && /^tsconfig(?:\..+)?\.json$/i.test(entry.name)
+    )
+    .map((entry) => join(workspace.path, entry.name))
+    .sort((left, right) => left.localeCompare(right));
+
+const getCompilerOptionsForWorkspace = (workspace) => {
+  const options = [];
+  for (const configPath of collectTypeScriptConfigs(workspace)) {
+    const unrecoverableDiagnostics = [];
+    const parsed = ts.getParsedCommandLineOfConfigFile(
+      configPath,
+      {},
+      {
+        ...ts.sys,
+        onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+          unrecoverableDiagnostics.push(diagnostic);
+        },
+      }
+    );
+    const diagnostics = [...(parsed?.errors ?? []), ...unrecoverableDiagnostics];
+    if (!parsed || diagnostics.length > 0) {
+      const details = diagnostics
+        .map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, " "))
+        .join("; ");
+      throw new Error(
+        `Cannot parse TypeScript config ${configPath}${details ? `: ${details}` : "."}`
+      );
+    }
+    options.push(parsed.options);
+  }
+  if (options.length === 0) options.push({ moduleResolution: ts.ModuleResolutionKind.Node10 });
+  return options;
+};
+
+const resolvedWorkspaceTargets = (specifier, containingFile, compilerOptions, workspaces) => {
+  const targets = new Set();
+  let isResolved = false;
+  for (const options of compilerOptions) {
+    const result = ts.resolveModuleName(specifier, containingFile, options, ts.sys);
+    const resolvedFileName = result.resolvedModule?.resolvedFileName;
+    if (!resolvedFileName) continue;
+    isResolved = true;
+
+    let canonicalPath;
+    try {
+      canonicalPath = realpathSync(resolvedFileName);
+    } catch (error) {
+      if (isMissingPathError(error)) continue;
+      throw error;
+    }
+    const target = workspaceForPath(canonicalPath, workspaces);
+    if (target) targets.add(target);
+  }
+  return { isResolved, targets };
 };
 
 const isDependencyAllowed = (sourceWorkspace, targetWorkspace) => {
@@ -551,32 +639,67 @@ export const auditWorkspaceBoundaries = (repositoryRoot) => {
       }
     }
 
+    const compilerOptions = getCompilerOptionsForWorkspace(workspace);
     for (const filePath of collectSourceFiles(workspace, workspaces)) {
       const fileName = relative(root, filePath).split(sep).join("/");
-      const sourceFile = ts.createSourceFile(
-        filePath,
-        sourceTextForFile(filePath),
-        ts.ScriptTarget.Latest,
-        true,
-        sourceKindForFile(filePath)
-      );
-
-      for (const specifier of getModuleSpecifiers(sourceFile)) {
-        const packageTarget = packageForSpecifier(specifier, workspaceImportTargets);
-        const relativeTarget = specifier.startsWith(".")
-          ? workspaceForPath(resolve(dirname(filePath), specifier), workspaces)
-          : undefined;
-        const target = packageTarget !== undefined ? packageTarget : relativeTarget;
-        if (target && !isDependencyAllowed(workspace, target)) {
-          violations.push(
-            createViolation({
+      for (const { text, lineOffset, columnOffset } of sourceTextsForFile(filePath)) {
+        const sourceFile = ts.createSourceFile(
+          filePath,
+          text,
+          ts.ScriptTarget.Latest,
+          true,
+          sourceKindForFile(filePath)
+        );
+        for (const { specifier, node } of getModuleSpecifiers(sourceFile)) {
+          const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+          if (specifier === undefined) {
+            const sourceColumn = start.character + (start.line === 0 ? columnOffset : 0) + 1;
+            const location = `${fileName}:${start.line + lineOffset + 1}:${sourceColumn}`;
+            violations.push({
               file: fileName,
-              kind: "import",
+              kind: "unresolved-import",
               source: workspace.name,
-              target: target.name,
-              specifier,
-            })
+              target: "<unresolved>",
+              specifier: "<non-literal module call>",
+              message: `${location}: module call must use a statically resolvable string literal`,
+            });
+            continue;
+          }
+
+          const resolution = resolvedWorkspaceTargets(
+            specifier,
+            filePath,
+            compilerOptions,
+            workspaces
           );
+          const targets = resolution.targets;
+
+          if (!resolution.isResolved) {
+            const packageTarget = packageForSpecifier(specifier, workspaceImportTargets);
+            if (packageTarget) targets.add(packageTarget);
+
+            if (specifier.startsWith(".")) {
+              const relativeTarget = workspaceForPath(
+                resolve(dirname(filePath), specifier),
+                workspaces
+              );
+              if (relativeTarget) targets.add(relativeTarget);
+            }
+          }
+
+          for (const target of targets) {
+            if (!isDependencyAllowed(workspace, target)) {
+              violations.push(
+                createViolation({
+                  file: fileName,
+                  kind: "import",
+                  source: workspace.name,
+                  target: target.name,
+                  specifier,
+                })
+              );
+            }
+          }
         }
       }
     }
