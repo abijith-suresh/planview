@@ -12,7 +12,6 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
-import type { Socket } from "node:net";
 import { hostname } from "node:os";
 import { dirname, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -23,8 +22,8 @@ import {
   V1_CLEANUP_INTERVAL_HOURS,
   V1_MAX_HTML_SIZE_BYTES,
   V1_PORT,
-  validateProfileName,
   validateDocumentId,
+  validateProfileName,
 } from "@planview/core";
 import {
   createDocumentCleanupCoordinator,
@@ -40,12 +39,13 @@ import {
   openStorageScoped,
 } from "@planview/storage";
 import { Data, Effect, Exit, Scope } from "effect";
-import { createOperationGate, type OperationGate } from "./operation-gate.js";
 import {
   createDocumentReadAdmission,
   DocumentReadAdmissionError,
   type DocumentReadPermit,
 } from "./document-read-admission.js";
+import { createDaemonHttpServer, type DaemonHttpServer } from "./http-server.js";
+import { createOperationGate, type OperationGate } from "./operation-gate.js";
 
 export const DAEMON_HOST = "127.0.0.1" as const;
 /** Preferred listener port for the public CLI. */
@@ -1015,95 +1015,10 @@ const removeDescriptorFor = async (paths: DaemonPaths, descriptor: RuntimeDescri
   }
 };
 
-const listen = (
-  server: import("node:http").Server,
-  host: string,
-  preferredPort: number,
-  strictPort: boolean
-) =>
-  new Promise<number>((resolvePromise, rejectPromise) => {
-    let fallbackAttempt = 0;
-    let candidatePort = preferredPort;
-
-    const tryCandidate = () => {
-      const onError = (cause: Error) => {
-        server.off("listening", onListening);
-        server.off("error", onError);
-        if (
-          isAddressInUse(cause) &&
-          !strictPort &&
-          fallbackAttempt < DAEMON_PORT_FALLBACK_ATTEMPTS &&
-          candidatePort < 65_535
-        ) {
-          fallbackAttempt += 1;
-          candidatePort += 1;
-          tryCandidate();
-          return;
-        }
-        rejectPromise(cause);
-      };
-      const onListening = () => {
-        server.off("error", onError);
-        const address = server.address();
-        if (address === null || typeof address === "string") {
-          rejectPromise(new Error("The daemon listener did not report a TCP address."));
-          return;
-        }
-        resolvePromise(address.port);
-      };
-      server.once("error", onError);
-      server.once("listening", onListening);
-      server.listen(candidatePort, host);
-    };
-
-    tryCandidate();
-  });
-
 const portInUseMessage = (config: Pick<DaemonConfig, "host" | "port" | "strictPort">) =>
   config.strictPort
     ? `Port ${config.port} on ${config.host} is occupied by an unknown process; Planview will not stop it.`
     : `No available port was found on ${config.host} from ${config.port} through ${Math.min(65_535, config.port + DAEMON_PORT_FALLBACK_ATTEMPTS)}.`;
-
-const forceCloseServer = (server: import("node:http").Server, connections: ReadonlySet<Socket>) => {
-  server.closeIdleConnections();
-  server.closeAllConnections();
-  for (const connection of connections) {
-    connection.destroy();
-  }
-};
-
-const closeServer = (server: import("node:http").Server, connections: ReadonlySet<Socket>) =>
-  new Promise<void>((resolvePromise, rejectPromise) => {
-    let settled = false;
-    const finish = (cause?: Error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (cause === undefined) {
-        resolvePromise();
-      } else {
-        rejectPromise(cause);
-      }
-    };
-
-    if (!server.listening) {
-      forceCloseServer(server, connections);
-      finish();
-      return;
-    }
-    // close() does not make an unref'd keep-alive socket observable to its
-    // callback on every supported Node release. Close idle sockets before
-    // waiting, while active requests still get the normal graceful path.
-    server.closeIdleConnections();
-    server.close((cause) => {
-      if (cause === undefined || ("code" in cause && cause.code === "ERR_SERVER_NOT_RUNNING")) {
-        finish();
-      } else {
-        finish(cause);
-      }
-    });
-  });
 
 const response = (
   res: import("node:http").ServerResponse,
@@ -1661,115 +1576,6 @@ const handleRequest = async (
   response(res, 405, JSON.stringify({ error: "method_not_allowed" }));
 };
 
-const createDaemonServer = (
-  descriptor: RuntimeDescriptor,
-  requestShutdown: () => void,
-  publicationCoordinator: DocumentPublicationCoordinator,
-  metadataStore: MetadataStore,
-  runCleanup: (signal?: AbortSignal) => Promise<DocumentCleanupResult>,
-  isReady: () => boolean,
-  documentReadAdmission: ReturnType<typeof createDocumentReadAdmission>,
-  operationGate: OperationGate,
-  acknowledgeStartup: () => void
-) => {
-  const server = import("node:http").then(({ createServer }) => {
-    const connections = new Set<Socket>();
-    const requests = new Set<{
-      readonly controller: AbortController;
-      readonly request: import("node:http").IncomingMessage;
-    }>();
-    const requestIdleWaiters = new Set<() => void>();
-    let accepting = true;
-    const notifyRequestsIdle = () => {
-      if (requests.size !== 0) {
-        return;
-      }
-      for (const resolvePromise of requestIdleWaiters) {
-        resolvePromise();
-      }
-      requestIdleWaiters.clear();
-    };
-    const stopAccepting = () => {
-      if (!accepting) {
-        return;
-      }
-      accepting = false;
-      // Do this as the first shutdown action. Otherwise an idle keep-alive
-      // socket can make server.close() wait until the same instant as the
-      // process SIGKILL fallback.
-      httpServer.closeIdleConnections();
-    };
-    const abortRequests = () => {
-      for (const { controller } of requests) {
-        controller.abort(new Error("The daemon shutdown deadline elapsed."));
-      }
-    };
-    const waitForRequests = () =>
-      requests.size === 0
-        ? Promise.resolve()
-        : new Promise<void>((resolvePromise) => requestIdleWaiters.add(resolvePromise));
-    const httpServer = createServer((request, res) => {
-      const controller = new AbortController();
-      const activeRequest = { controller, request };
-      requests.add(activeRequest);
-      const abortIfIncomplete = (cause: Error) => {
-        if (!res.writableFinished) {
-          controller.abort(cause);
-        }
-      };
-      const onRequestAborted = () => abortIfIncomplete(new Error("The client disconnected."));
-      const onResponseClosed = () => {
-        // IncomingMessage#aborted does not fire when a peer stops consuming a
-        // response after its request body has already been read.
-        abortIfIncomplete(new Error("The client closed the response."));
-      };
-      request.once("aborted", onRequestAborted);
-      res.once("close", onResponseClosed);
-      void handleRequest(
-        request,
-        res,
-        descriptor,
-        requestShutdown,
-        publicationCoordinator,
-        metadataStore,
-        runCleanup,
-        isReady,
-        documentReadAdmission,
-        operationGate,
-        acknowledgeStartup,
-        controller.signal,
-        () => accepting
-      )
-        .catch((cause) => {
-          if (!res.headersSent) {
-            response(res, 500, JSON.stringify({ error: "internal_error" }));
-          } else {
-            res.destroy(cause instanceof Error ? cause : undefined);
-          }
-        })
-        .finally(() => {
-          request.off("aborted", onRequestAborted);
-          res.off("close", onResponseClosed);
-          requests.delete(activeRequest);
-          notifyRequestsIdle();
-        });
-    });
-    httpServer.on("connection", (connection) => {
-      connections.add(connection);
-      connection.once("close", () => connections.delete(connection));
-    });
-    return {
-      server: httpServer,
-      connections,
-      stopAccepting,
-      forceClose: () => forceCloseServer(httpServer, connections),
-      abortRequests,
-      waitForRequests,
-    };
-  });
-  return server;
-};
-
 const openDaemon = async (config: DaemonConfig) => {
   const paths = resolveDaemonPaths(config);
   await ensurePrivateDirectory(paths.appDataDir);
@@ -1792,10 +1598,8 @@ const openDaemon = async (config: DaemonConfig) => {
       await wait(pauseMilliseconds);
     }
   }
-  let server: import("node:http").Server | undefined;
-  let connections: Set<Socket> | undefined;
+  let httpServer: DaemonHttpServer | undefined;
   let descriptor: RuntimeDescriptor | undefined;
-  let metadataStore: MetadataStore | undefined;
   let storageScope: Scope.Closeable | undefined;
   let cleanupTimer: NodeJS.Timeout | undefined;
   let cleanupDrain: Promise<void> | undefined;
@@ -1872,7 +1676,6 @@ const openDaemon = async (config: DaemonConfig) => {
         openStorageScoped(join(config.appDataDir, "metadata.sqlite"))
       )
     );
-    metadataStore = openedMetadataStore;
     const openedDocumentFileStore = Effect.runSync(
       Scope.provide(openedStorageScope)(
         openDocumentFileStoreScoped({
@@ -1957,26 +1760,44 @@ const openDaemon = async (config: DaemonConfig) => {
       startedAt: Date.now(),
     };
     descriptor = runtimeDescriptor;
-    const daemonServer = await createDaemonServer(
-      runtimeDescriptor,
-      requestShutdown,
-      publicationCoordinator,
-      metadataStore,
-      runCleanup,
-      () => startupReady,
-      documentReadAdmission,
-      operationGate,
-      acknowledgeStartup
+    const daemonHttpServer = createDaemonHttpServer(
+      (request, res, requestSignal, isAccepting) =>
+        handleRequest(
+          request,
+          res,
+          runtimeDescriptor,
+          requestShutdown,
+          publicationCoordinator,
+          openedMetadataStore,
+          runCleanup,
+          () => startupReady,
+          documentReadAdmission,
+          operationGate,
+          acknowledgeStartup,
+          requestSignal,
+          isAccepting
+        ),
+      (res, cause) => {
+        if (!res.headersSent) {
+          response(res, 500, JSON.stringify({ error: "internal_error" }));
+        } else {
+          res.destroy(cause instanceof Error ? cause : undefined);
+        }
+      }
     );
-    server = daemonServer.server;
-    connections = daemonServer.connections;
-    stopAccepting = daemonServer.stopAccepting;
-    forceCloseConnections = daemonServer.forceClose;
-    abortRequests = daemonServer.abortRequests;
-    waitForRequests = daemonServer.waitForRequests;
-    const actualPort = await listen(server, config.host, config.port, config.strictPort);
+    httpServer = daemonHttpServer;
+    stopAccepting = daemonHttpServer.stopAccepting;
+    forceCloseConnections = daemonHttpServer.forceClose;
+    abortRequests = daemonHttpServer.abortRequests;
+    waitForRequests = daemonHttpServer.waitForRequests;
+    const actualPort = await daemonHttpServer.listen(
+      config.host,
+      config.port,
+      config.strictPort,
+      DAEMON_PORT_FALLBACK_ATTEMPTS
+    );
     runtimeDescriptor.port = actualPort;
-    if (server === undefined || descriptor === undefined || connections === undefined) {
+    if (httpServer === undefined || descriptor === undefined) {
       throw new Error("The daemon listener was not initialized.");
     }
     // Publish the endpoint while startup cleanup is in progress, but keep
@@ -1998,11 +1819,10 @@ const openDaemon = async (config: DaemonConfig) => {
     // fallback releases the lock without stranding future operations.
     await Promise.race([startupAcknowledgement, wait(DAEMON_STARTUP_GRACE_MS)]);
     await lock.release();
-    const runningServer = server;
-    const runningConnections = connections;
+    const runningHttpServer = httpServer;
     const runningDescriptor = descriptor;
     return {
-      server: runningServer,
+      server: runningHttpServer.server,
       descriptor: runningDescriptor,
       paths,
       close: (() => {
@@ -2043,7 +1863,7 @@ const openDaemon = async (config: DaemonConfig) => {
               }
             };
 
-            const serverClose = closeServer(runningServer, runningConnections);
+            const serverClose = runningHttpServer.close();
             const workSettled = await settleBeforeDeadline(
               Promise.all([operationGate.waitForIdle(), waitForRequests()])
             );
@@ -2128,8 +1948,8 @@ const openDaemon = async (config: DaemonConfig) => {
     }
     documentReadAdmission.close();
     await lock.release().catch(() => undefined);
-    if (server !== undefined && connections !== undefined) {
-      await closeServer(server, connections).catch(() => undefined);
+    if (httpServer !== undefined) {
+      await httpServer.close().catch(() => undefined);
     }
     if (storageScope !== undefined) {
       await Effect.runPromise(Scope.close(storageScope, Exit.void)).catch(() => undefined);
