@@ -12,7 +12,7 @@ import {
 } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { basename, join } from "node:path";
-import { resolveAppDataPaths } from "@planview/core";
+import { resolveAppDataPaths } from "@planview/local";
 
 const DEFAULT_CLOUD_URL = "https://app-staging-a39a.up.railway.app";
 const CLI_CREDENTIAL_PREFIX = "planview_cli_";

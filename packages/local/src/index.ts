@@ -1,6 +1,8 @@
-import { Data, Effect } from "effect";
+import { DEFAULT_PROFILE_NAME, type DocumentId } from "@planview/core";
 import {
   cleanDaemon,
+  type DaemonConfig,
+  type DaemonError,
   inspectDaemon,
   publishDocument,
   resolveDaemonConfig,
@@ -9,11 +11,9 @@ import {
   retrieveDocument,
   startDetachedDaemon,
   stopDaemon,
-  type DaemonConfig,
-  type DaemonError,
 } from "@planview/daemon";
-import { DEFAULT_PROFILE_NAME, type DocumentId } from "@planview/core";
 import type { DocumentCleanupResult } from "@planview/storage";
+import { Data, Effect } from "effect";
 import { preparePublishSource } from "./publish-source.js";
 import { parseDocumentReferenceDetails } from "./reference.js";
 
@@ -223,9 +223,9 @@ export const createLocalApplication = (options: LocalApplicationOptions): LocalA
   return { publish, get, start, stop, restart, inspect, clean };
 };
 
+export { isValidProfileName, resolveAppDataPaths, validateProfileName } from "@planview/core";
 export {
   parseDocumentReference,
   parseDocumentReferenceDetails,
 } from "./reference.js";
 export { preparePublishSource };
-export { isValidProfileName, validateProfileName } from "@planview/core";
