@@ -26,7 +26,7 @@ import {
   type BundleManifestEntry,
   type DocumentId,
 } from "@planview/core";
-import { Effect } from "effect";
+import { Effect, Exit, Scope } from "effect";
 import {
   DocumentFileAlreadyExistsError,
   DocumentFileCloneError,
@@ -39,6 +39,7 @@ import {
   DocumentFileTargetBusyError,
   InvalidStagedDocumentFileHandleError,
   openDocumentFileStore,
+  openDocumentFileStoreScoped,
 } from "../dist/index.js";
 import type { DocumentFileStore, StagedDocumentFileHandle } from "../dist/index.js";
 
@@ -437,6 +438,56 @@ test("close waits for an active operation and rejects new operations", () =>
       store.readDocument(validId),
       (error) => error instanceof DocumentFileStoreClosedError
     );
+  }));
+
+test("a document store scope waits for active operations before finalizing", () =>
+  withTempDirectory(async (directory) => {
+    const source = join(directory, "active.html");
+    await writeFile(source, "active scoped operation");
+    let signalCopyStarted!: () => void;
+    let releaseCopy!: () => void;
+    const copyStarted = new Promise<void>((resolve) => {
+      signalCopyStarted = resolve;
+    });
+    const copyGate = new Promise<void>((resolve) => {
+      releaseCopy = resolve;
+    });
+    const scope = Effect.runSync(Scope.make("sequential"));
+    const store = Effect.runSync(
+      Scope.provide(scope)(
+        openDocumentFileStoreScoped({
+          documentsDir: join(directory, "documents"),
+          stagingDir: join(directory, "staging"),
+          beforeStagedSourceCopy: async () => {
+            signalCopyStarted();
+            await copyGate;
+          },
+        })
+      )
+    );
+    const staging = store.stageSourceFile(source);
+    await copyStarted;
+
+    let scopeClosed = false;
+    const closing = Effect.runPromise(Scope.close(scope, Exit.void)).then(() => {
+      scopeClosed = true;
+    });
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.equal(scopeClosed, false);
+      releaseCopy();
+      const handle = await staging;
+      await closing;
+      assert.equal(scopeClosed, true);
+      assert.equal((await stat(join(directory, "staging", handle))).isFile(), true);
+      await assert.rejects(
+        store.stageSourceFile(source),
+        (error) => error instanceof DocumentFileStoreClosedError
+      );
+    } finally {
+      releaseCopy();
+      await closing;
+    }
   }));
 
 test("recovers a crash-stale finalization lock", () =>

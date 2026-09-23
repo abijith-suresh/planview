@@ -3529,4 +3529,10 @@ export const openDocumentFileStore = (options: DocumentFileStoreOptions) =>
           }),
   });
 
+/** Acquires the document file store and closes it with the surrounding Effect scope. */
+export const openDocumentFileStoreScoped = (options: DocumentFileStoreOptions) =>
+  Effect.acquireRelease(openDocumentFileStore(options), (store) =>
+    Effect.promise(() => store.close())
+  );
+
 export { isValidStagedHandle };

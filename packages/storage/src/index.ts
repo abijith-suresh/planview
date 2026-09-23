@@ -4,7 +4,6 @@ import { DatabaseSync } from "node:sqlite";
 import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
 import { Effect } from "effect";
 import {
-  type DocumentAggregate,
   type DocumentMetadata,
   type DocumentMetadataAccessCursor,
   type DocumentMetadataMatch,
@@ -67,6 +66,7 @@ export {
   type DocumentFileTargetRecoveryPolicy,
   InvalidStagedDocumentFileHandleError,
   openDocumentFileStore,
+  openDocumentFileStoreScoped,
   type StagedDocumentFileHandle,
 } from "./document-files.js";
 export {
@@ -914,5 +914,9 @@ export const openStorage = (databasePath: string) =>
             }`,
           }),
   });
+
+/** Acquires metadata storage and closes it with the surrounding Effect scope. */
+export const openStorageScoped = (databasePath: string) =>
+  Effect.acquireRelease(openStorage(databasePath), (store) => Effect.sync(() => store.close()));
 
 export { CURRENT_SCHEMA_VERSION };
