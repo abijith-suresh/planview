@@ -1,7 +1,7 @@
 # Planview
 
-Planview is a TypeScript ESM monorepo for turning an HTML file or page folder into a retained,
-immutable localhost URL.
+Planview is a TypeScript ESM monorepo for previewing HTML locally and saving standalone pages in a
+private alpha cloud workspace.
 
 ## Bootstrap status
 

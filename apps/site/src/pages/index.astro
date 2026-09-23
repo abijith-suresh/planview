@@ -1,11 +1,8 @@
 ---
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
 import SiteLayout from "../layouts/SiteLayout.astro";
-
-// biome-ignore lint/complexity/useLiteralKeys: The site accepts an optional build-time environment variable.
-const appUrl = process.env["PUBLIC_APP_URL"] ?? "https://app-staging-a39a.up.railway.app";
-// biome-ignore lint/correctness/noUnusedVariables: Astro uses this value in the page template below.
-const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
+import { appSignInUrl } from "../lib/app-url";
 ---
 
 <SiteLayout
@@ -22,7 +19,7 @@ const signInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
         plansplease turns standalone HTML into a page you can open. Preview it on your machine with
         the CLI, or keep a private copy in the cloud when you need to come back to it.
       </p>
-      <a class="primary-link" href={signInUrl}>Continue with GitHub</a>
+      <a class="primary-link" href={appSignInUrl}>Continue with GitHub</a>
       <p class="cta-note">Private cloud workspace. Local CLI included.</p>
     </div>
 
