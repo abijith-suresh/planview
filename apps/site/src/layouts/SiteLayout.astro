@@ -14,8 +14,6 @@ const baseUrl = import.meta.env.BASE_URL;
 // biome-ignore lint/correctness/noUnusedVariables: Astro uses this value in the document template below.
 const assetBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
 const homeHref = baseUrl === "/" ? "/" : baseUrl.replace(/\/$/, "");
-// biome-ignore lint/correctness/noUnusedVariables: Astro uses this value in the document template below.
-const signInUrl = appSignInUrl;
 // biome-ignore lint/correctness/noUnusedVariables: Astro uses this helper in the document template below.
 const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/`;
 ---
@@ -65,7 +63,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
             href={pageHref("faq")}
             aria-current={activePath === "faq" ? "page" : undefined}
           >FAQ</a>
-          <a class="site-nav-cta" href={signInUrl}>Sign in</a>
+          <a class="site-nav-cta" href={appSignInUrl}>Sign in</a>
         </nav>
 
         <details class="mobile-menu">
@@ -96,7 +94,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
             >FAQ</a>
             <a class="mobile-menu-link" href={pageHref("cli")}>CLI</a>
             <a class="mobile-menu-link" href={pageHref("about")}>About</a>
-            <a class="mobile-menu-cta" href={signInUrl}>Sign in with GitHub</a>
+            <a class="mobile-menu-cta" href={appSignInUrl}>Sign in with GitHub</a>
           </nav>
         </details>
       </header>
@@ -137,7 +135,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
             <nav class="footer-links" aria-label="Project links">
               <a class="footer-link" href="https://github.com/abijith-suresh/planview">GitHub</a>
               <a class="footer-link" href={pageHref("privacy")}>Privacy</a>
-              <a class="footer-link" href={signInUrl}>Sign in</a>
+              <a class="footer-link" href={appSignInUrl}>Sign in</a>
             </nav>
           </div>
         </div>
