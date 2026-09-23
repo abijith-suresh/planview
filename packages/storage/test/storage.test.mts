@@ -5,11 +5,12 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { Worker } from "node:worker_threads";
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
 import {
   CURRENT_SCHEMA_VERSION,
   openStorage,
+  openStorageScoped,
   StorageClosedError,
   StorageQuotaExceededError,
   StorageInvariantError,
@@ -105,6 +106,27 @@ const createDatabase = (databasePath: string, schema: string, version = 1) => {
     database.close();
   }
 };
+
+test("scoped metadata storage closes after the using effect fails", async () =>
+  withTempDirectory("planview-storage-scope-", async (directory) => {
+    const databasePath = join(directory, "metadata.sqlite");
+    let scopedStorage: MetadataStore | undefined;
+    const exit = Effect.runSyncExit(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const storage = yield* openStorageScoped(databasePath);
+          scopedStorage = storage;
+          storage.insertDocumentMetadata(metadata("scoped", 1, 10));
+          return yield* Effect.fail("stop after acquisition");
+        })
+      )
+    );
+
+    assert.equal(Exit.isFailure(exit), true);
+    assert.ok(scopedStorage);
+    const closedStorage = scopedStorage;
+    assert.throws(() => closedStorage.getDocumentMetadata("scoped"), StorageClosedError);
+  }));
 
 const waitForWorkerMessage = (worker: Worker, expected: string): Promise<void> =>
   new Promise<void>((resolve, reject) => {

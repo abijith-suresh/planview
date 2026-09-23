@@ -31,15 +31,15 @@ import {
   createDocumentPublicationCoordinator,
   type DocumentCleanupFailure,
   type DocumentCleanupResult,
-  type DocumentFileStore,
   type DocumentPublicationCoordinator,
   DocumentPublicationNotFoundError,
   DocumentPublicationReadError,
   type MetadataStore,
-  openDocumentFileStore,
+  openDocumentFileStoreScoped,
   openStorage,
+  openStorageScoped,
 } from "@planview/storage";
-import { Data, Effect } from "effect";
+import { Data, Effect, Exit, Scope } from "effect";
 import { createOperationGate, type OperationGate } from "./operation-gate.js";
 import {
   createDocumentReadAdmission,
@@ -1795,8 +1795,8 @@ const openDaemon = async (config: DaemonConfig) => {
   let server: import("node:http").Server | undefined;
   let connections: Set<Socket> | undefined;
   let descriptor: RuntimeDescriptor | undefined;
-  let documentFileStore: DocumentFileStore | undefined;
   let metadataStore: MetadataStore | undefined;
+  let storageScope: Scope.Closeable | undefined;
   let cleanupTimer: NodeJS.Timeout | undefined;
   let cleanupDrain: Promise<void> | undefined;
   let startupReady = false;
@@ -1864,17 +1864,23 @@ const openDaemon = async (config: DaemonConfig) => {
     beginShutdown();
   };
   try {
+    // Sequential finalization is LIFO, closing the file store before SQLite.
+    const openedStorageScope = Effect.runSync(Scope.make("sequential"));
+    storageScope = openedStorageScope;
     const openedMetadataStore = Effect.runSync(
-      openStorage(join(config.appDataDir, "metadata.sqlite"))
+      Scope.provide(openedStorageScope)(
+        openStorageScoped(join(config.appDataDir, "metadata.sqlite"))
+      )
     );
     metadataStore = openedMetadataStore;
     const openedDocumentFileStore = Effect.runSync(
-      openDocumentFileStore({
-        documentsDir: join(config.appDataDir, "documents"),
-        stagingDir: join(config.appDataDir, "staging"),
-      })
+      Scope.provide(openedStorageScope)(
+        openDocumentFileStoreScoped({
+          documentsDir: join(config.appDataDir, "documents"),
+          stagingDir: join(config.appDataDir, "staging"),
+        })
+      )
     );
-    documentFileStore = openedDocumentFileStore;
     const publicationCoordinator = createDocumentPublicationCoordinator({
       documentFileStore: openedDocumentFileStore,
       metadataStore: openedMetadataStore,
@@ -2057,13 +2063,9 @@ const openDaemon = async (config: DaemonConfig) => {
             }
 
             const storageSettled = await settleBeforeDeadline(
-              (async () => {
-                try {
-                  await documentFileStore?.close();
-                } finally {
-                  metadataStore?.close();
-                }
-              })()
+              storageScope === undefined
+                ? Promise.resolve()
+                : Effect.runPromise(Scope.close(storageScope, Exit.void))
             );
             if (!storageSettled) {
               terminateUncooperativeProcess();
@@ -2129,8 +2131,9 @@ const openDaemon = async (config: DaemonConfig) => {
     if (server !== undefined && connections !== undefined) {
       await closeServer(server, connections).catch(() => undefined);
     }
-    await documentFileStore?.close().catch(() => undefined);
-    metadataStore?.close();
+    if (storageScope !== undefined) {
+      await Effect.runPromise(Scope.close(storageScope, Exit.void)).catch(() => undefined);
+    }
     if (descriptor !== undefined) {
       await removeDescriptorFor(paths, descriptor).catch(() => undefined);
     }
