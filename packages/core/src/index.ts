@@ -31,6 +31,7 @@ export {
   type AppDataPlatform,
   DEFAULT_PROFILE_NAME,
   isValidProfileName,
+  normalizeMacosSystemPath,
   resolveAppDataPaths,
   validateProfileName,
 } from "./paths.js";

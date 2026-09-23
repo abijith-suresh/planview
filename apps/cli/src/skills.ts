@@ -5,6 +5,7 @@ import { lstat, mkdir, mkdtemp, open, readdir, rename, rm, unlink } from "node:f
 import { homedir, hostname } from "node:os";
 import { dirname, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeMacosSystemPath } from "@planview/local";
 
 const SKILL_NAMES = ["planview", "create-html"] as const;
 type SkillName = (typeof SKILL_NAMES)[number];
@@ -29,23 +30,6 @@ const TEST_PAUSE_AT_ENV = "PLANVIEW_TEST_SKILLS_PAUSE_AT";
 const NO_FOLLOW = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
 const DIRECTORY = process.platform === "win32" ? 0 : constants.O_DIRECTORY;
 const LOCAL_HOSTNAME = hostname();
-const MACOS_SYSTEM_PATH_ALIASES = [
-  ["/etc", "/private/etc"],
-  ["/tmp", "/private/tmp"],
-  ["/var", "/private/var"],
-] as const;
-
-const normalizeHomePath = (path: string) => {
-  if (process.platform !== "darwin") {
-    return path;
-  }
-  for (const [alias, target] of MACOS_SYSTEM_PATH_ALIASES) {
-    if (path === alias || path.startsWith(`${alias}/`)) {
-      return `${target}${path.slice(alias.length)}`;
-    }
-  }
-  return path;
-};
 
 const errorCode = (cause: unknown) =>
   typeof cause === "object" && cause !== null && "code" in cause
@@ -215,7 +199,7 @@ const assertSafeAncestor = (path: string, stats: Stats, isHome: boolean) => {
 };
 
 const ensureHomePath = async (homePath: string) => {
-  const absolute = normalizeHomePath(resolve(homePath));
+  const absolute = normalizeMacosSystemPath(resolve(homePath));
   const root = parse(absolute).root;
   const segments = relative(root, absolute)
     .split(sep)
@@ -1113,12 +1097,13 @@ const readExistingSkills = async (skillsDirectory: string) => {
   return existing;
 };
 
-export const skillsInstallPath = () => join(normalizeHomePath(homedir()), ".agents", "skills");
+export const skillsInstallPath = () =>
+  join(normalizeMacosSystemPath(homedir()), ".agents", "skills");
 
 export const installSkills = async ({ force = false } = {}) => {
   await validateBundle();
 
-  const home = normalizeHomePath(homedir());
+  const home = normalizeMacosSystemPath(homedir());
   await ensureHomePath(home);
   const agentsDirectory = join(home, ".agents");
   const skillsDirectory = join(agentsDirectory, "skills");

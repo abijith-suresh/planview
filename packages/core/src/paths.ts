@@ -23,6 +23,26 @@ const LOCAL_APP_DATA_KEY = "LOCALAPPDATA";
 const XDG_DATA_HOME_KEY = "XDG_DATA_HOME";
 export const DEFAULT_PROFILE_NAME = "default";
 const PROFILE_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9_-]{0,31})$/;
+const MACOS_SYSTEM_PATH_ALIASES = [
+  ["/etc", "/private/etc"],
+  ["/tmp", "/private/tmp"],
+  ["/var", "/private/var"],
+] as const;
+
+export const normalizeMacosSystemPath = (
+  path: string,
+  platform: AppDataPlatform = process.platform
+) => {
+  if (platform !== "darwin") {
+    return path;
+  }
+  for (const [alias, target] of MACOS_SYSTEM_PATH_ALIASES) {
+    if (path === alias || path.startsWith(`${alias}/`)) {
+      return `${target}${path.slice(alias.length)}`;
+    }
+  }
+  return path;
+};
 
 export const isValidProfileName = (value: string) => PROFILE_NAME_PATTERN.test(value);
 
