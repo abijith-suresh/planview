@@ -8,7 +8,11 @@ import {
   type DocumentFileScanWatermark,
   type DocumentFileStore,
 } from "./document-files.js";
-import type { DocumentMetadata, DocumentMetadataAccessCursor, MetadataStore } from "./index.js";
+import type {
+  DocumentMetadata,
+  DocumentMetadataAccessCursor,
+  MetadataStore,
+} from "./metadata-contracts.js";
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 const CLEANUP_PAGE_SIZE = 128;

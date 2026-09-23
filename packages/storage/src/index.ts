@@ -2,7 +2,25 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
-import { Data, Effect } from "effect";
+import { Effect } from "effect";
+import {
+  type DocumentAggregate,
+  type DocumentMetadata,
+  type DocumentMetadataAccessCursor,
+  type DocumentMetadataMatch,
+  type DocumentMetadataPage,
+  type DocumentMetadataSnapshot,
+  type DocumentStorageUsage,
+  type MetadataStore,
+  StorageClosedError,
+  StorageInvariantError,
+  StorageMigrationError,
+  StorageOpenError,
+  StoragePathError,
+  StorageQuotaExceededError,
+} from "./metadata-contracts.js";
+
+export * from "./metadata-contracts.js";
 
 export {
   createDocumentCleanupCoordinator,
@@ -68,112 +86,6 @@ export {
   type MetadataGatedDocumentReader,
   type MetadataGatedDocumentReaderOptions,
 } from "./publication.js";
-
-export type DocumentMetadata = {
-  readonly id: string;
-  readonly createdAt: number;
-  readonly lastAccessedAt: number;
-  readonly size: number;
-};
-
-export type DocumentAggregate = {
-  readonly count: number;
-  readonly size: number;
-};
-
-export type DocumentStorageUsage = Readonly<{
-  /** Published HTML bytes plus the fixed metadata charge per document. */
-  readonly bytes: number;
-  readonly documentBytes: number;
-  readonly metadataBytes: number;
-  readonly documentCount: number;
-}>;
-
-export class StorageQuotaExceededError extends Data.TaggedError("StorageQuotaExceededError")<{
-  readonly currentBytes: number;
-  readonly requestedBytes: number;
-  readonly quotaBytes: number;
-  readonly message: string;
-}> {}
-
-export type DocumentMetadataSnapshot = Readonly<
-  DocumentMetadata & {
-    /** Immutable token for conditional cleanup deletion. */
-    readonly generation: string;
-  }
->;
-
-export type DocumentMetadataMatch = DocumentMetadataSnapshot;
-
-export type DocumentMetadataAccessCursor = Readonly<{
-  readonly lastAccessedAt: number;
-  readonly id: string;
-}>;
-
-export type DocumentMetadataPage = Readonly<{
-  readonly rows: readonly DocumentMetadataSnapshot[];
-  readonly hasMore: boolean;
-}>;
-
-export class StoragePathError extends Data.TaggedError("StoragePathError")<{
-  readonly path: string;
-  readonly reason: string;
-  readonly message: string;
-}> {}
-
-export class StorageOpenError extends Data.TaggedError("StorageOpenError")<{
-  readonly path: string;
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
-
-export class StorageMigrationError extends Data.TaggedError("StorageMigrationError")<{
-  readonly path: string;
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
-
-export class StorageClosedError extends Data.TaggedError("StorageClosedError")<{
-  readonly message: string;
-}> {}
-
-export class StorageInvariantError extends Data.TaggedError("StorageInvariantError")<{
-  readonly field: string;
-  readonly message: string;
-}> {}
-
-export interface MetadataStore {
-  readonly close: () => void;
-  readonly insertDocumentMetadata: (metadata: DocumentMetadata) => void;
-  readonly getDocumentMetadata: (id: string) => DocumentMetadata | undefined;
-  readonly listDocumentMetadata: () => readonly DocumentMetadata[];
-  /** The rowid high-water mark for a mutation-safe metadata pass. */
-  readonly getDocumentMetadataScanWatermark: () => number;
-  /** Returns a bounded, access-ordered page for retention cleanup. */
-  readonly listDocumentMetadataCandidates: (
-    cutoff: number,
-    limit: number,
-    after?: DocumentMetadataAccessCursor,
-    watermark?: number
-  ) => DocumentMetadataPage;
-  /** Returns a bounded id-ordered page for reconciliation. */
-  readonly listDocumentMetadataPage: (
-    limit: number,
-    afterId?: string,
-    watermark?: number
-  ) => DocumentMetadataPage;
-  readonly recordDocumentAccess: (id: string, accessedAt?: number) => boolean;
-  readonly getDocumentAggregate: () => DocumentAggregate;
-  readonly getDocumentStorageUsage: () => DocumentStorageUsage;
-  readonly deleteDocument: (id: string) => boolean;
-  /** Deletes only if the row is still older than the supplied retention cutoff. */
-  readonly deleteDocumentIfLastAccessedBefore: (
-    candidate: string | DocumentMetadataSnapshot,
-    cutoff: number
-  ) => DocumentMetadata | undefined;
-  /** Deletes only when every immutable field and generation still match. */
-  readonly deleteDocumentIfMatches: (metadata: DocumentMetadataMatch) => boolean;
-}
 
 const CURRENT_SCHEMA_VERSION = 2;
 const MEMORY_DATABASE_PATH = ":memory:";
