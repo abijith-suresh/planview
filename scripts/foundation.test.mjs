@@ -119,6 +119,22 @@ test("repository foundation has the expected configuration", () => {
   expectEqual(rootTsConfig.files, [], "root TypeScript files");
   expectEqual(rootTsConfig.include, [], "root TypeScript include");
 
+  const buildTsConfig = readJson("tsconfig.build.base.json");
+  expectEqual(buildTsConfig.extends, "./tsconfig.base.json", "build TypeScript extends");
+  expectEqual(
+    buildTsConfig.compilerOptions,
+    { declaration: true, composite: true, noEmitOnError: true, types: ["node"] },
+    "shared TypeScript build options"
+  );
+
+  const testTsConfig = readJson("tsconfig.test.base.json");
+  expectEqual(testTsConfig.extends, "./tsconfig.base.json", "test TypeScript extends");
+  expectEqual(
+    testTsConfig.compilerOptions,
+    { noEmit: true, types: ["node"] },
+    "shared TypeScript test options"
+  );
+
   const packageJson = readJson("package.json");
   expectEqual(packageJson.private, true, "package privacy");
   expectEqual(packageJson.type, "module", "package module type");
@@ -318,7 +334,7 @@ test("repository foundation has the expected configuration", () => {
     "local dependencies"
   );
   const localTsConfig = readJson("packages/local/tsconfig.json");
-  expectProperty(localTsConfig.compilerOptions, "composite", true, "local composite build setting");
+  expectEqual(localTsConfig.extends, "../../tsconfig.build.base.json", "local shared build config");
   expectProperty(
     localTsConfig.compilerOptions,
     "tsBuildInfoFile",
@@ -360,7 +376,7 @@ test("repository foundation has the expected configuration", () => {
     "core test typecheck script"
   );
   const coreTsConfig = readJson("packages/core/tsconfig.json");
-  expectProperty(coreTsConfig.compilerOptions, "composite", true, "core composite build setting");
+  expectEqual(coreTsConfig.extends, "../../tsconfig.build.base.json", "core shared build config");
   expectProperty(
     coreTsConfig.compilerOptions,
     "tsBuildInfoFile",
@@ -403,11 +419,10 @@ test("repository foundation has the expected configuration", () => {
     "storage typecheck script"
   );
   const storageTsConfig = readJson("packages/storage/tsconfig.json");
-  expectProperty(
-    storageTsConfig.compilerOptions,
-    "composite",
-    true,
-    "storage composite build setting"
+  expectEqual(
+    storageTsConfig.extends,
+    "../../tsconfig.build.base.json",
+    "storage shared build config"
   );
   expectProperty(
     storageTsConfig.compilerOptions,

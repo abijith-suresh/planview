@@ -22,6 +22,19 @@ A maintainer decides when the package is ready for a public release. They review
 the generated release pull request and explicitly enable publishing credentials.
 Do not enable npm publishing or add registry credentials in a feature change.
 
+## Workspace boundaries
+
+`apps/` contains deployable applications and the public CLI. `packages/` contains
+reusable implementation with explicit package boundaries. Keep code with its
+application until another workspace needs it or a distinct build, test, or API
+boundary justifies a package. Declare cross-workspace dependencies by package
+name in the owning `package.json`; npm links configured workspaces during install.
+
+For composite TypeScript libraries, record dependency edges in `references` and
+add the project to the root solution `tsconfig.json`. Keep shared compiler
+settings in the root TypeScript base configs, and keep source includes and output
+paths in leaf configs. Run `npm run verify` before review.
+
 Before opening a change, run:
 
 ```sh

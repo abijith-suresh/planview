@@ -1,13 +1,9 @@
 {
-  "extends": "../../tsconfig.base.json",
+  "extends": "../../tsconfig.build.base.json",
   "compilerOptions": {
     "outDir": "dist",
     "tsBuildInfoFile": "dist/.tsbuildinfo",
-    "rootDir": "src",
-    "declaration": true,
-    "composite": true,
-    "noEmitOnError": true,
-    "types": ["node"]
+    "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
   "references": [{ "path": "../core" }, { "path": "../storage" }, { "path": "../daemon" }]
