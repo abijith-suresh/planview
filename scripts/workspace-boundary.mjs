@@ -1,5 +1,5 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -23,15 +23,30 @@ const dependencyFields = [
 ];
 
 const excludedDirectoryNames = new Set([
+  ".astro",
+  ".git",
+  ".next",
+  ".output",
+  ".turbo",
+  ".vercel",
   "__tests__",
+  "__generated__",
   "_generated",
   "build",
   "coverage",
   "dist",
   "generated",
   "node_modules",
+  "out",
   "test",
   "tests",
+]);
+
+const additionalExcludedDirectoryNames = new Set([
+  ".cache",
+  ".vercel",
+  ".wrangler",
+  "test-results",
 ]);
 
 const sourceExtensions = new Set([
@@ -46,54 +61,107 @@ const sourceExtensions = new Set([
   ".tsx",
 ]);
 
-const regexMetacharacters = new Set([".", "+", "^", "$", "{", "}", "(", ")", "|", "[", "]", "\\"]);
-
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+
+const expectedWorkspaceNames = [...allowedDependencies.keys()];
 
 const getWorkspacePatterns = (manifest) => {
   const workspaces = manifest.workspaces;
-  return Array.isArray(workspaces) ? workspaces : (workspaces?.packages ?? []);
+  const patterns = Array.isArray(workspaces) ? workspaces : workspaces?.packages;
+  if (!Array.isArray(patterns)) {
+    throw new Error("Root package.json must define npm workspaces as an array of patterns.");
+  }
+  return patterns;
 };
 
-const matchesPatternSegment = (name, pattern) => {
-  if (pattern === "*") return true;
-  if (!pattern.includes("*") && !pattern.includes("?")) return name === pattern;
+const isExcludedWorkspaceDirectory = (name) =>
+  excludedDirectoryNames.has(name) || additionalExcludedDirectoryNames.has(name);
 
-  const escapedPattern = [...pattern]
-    .map((character) => {
-      if (character === "*") return ".*";
-      if (character === "?") return ".";
-      return regexMetacharacters.has(character) ? `\\${character}` : character;
-    })
-    .join("");
-  const expression = new RegExp(`^${escapedPattern}$`);
-  return expression.test(name);
+const unsupportedWorkspacePattern = (pattern) => {
+  throw new Error(
+    `Unsupported npm workspace pattern ${JSON.stringify(pattern)}. ` +
+      'Supported syntax uses literal path segments, "*" for one directory, and "**" for zero or more directories.'
+  );
 };
 
-const expandWorkspacePattern = (root, pattern) => {
+const parseWorkspacePattern = (pattern) => {
+  if (
+    typeof pattern !== "string" ||
+    pattern.length === 0 ||
+    isAbsolute(pattern) ||
+    pattern.includes("\\") ||
+    pattern.includes("//")
+  ) {
+    return unsupportedWorkspacePattern(pattern);
+  }
+
+  const segments = pattern.split("/");
+  for (const segment of segments) {
+    if (
+      segment === "" ||
+      segment === ".." ||
+      (segment !== "." &&
+        segment !== "*" &&
+        segment !== "**" &&
+        !/^[A-Za-z0-9._@-]+$/.test(segment))
+    ) {
+      return unsupportedWorkspacePattern(pattern);
+    }
+  }
+
+  return segments.filter((segment) => segment !== ".");
+};
+
+const childDirectories = (path, { includeHidden = false } = {}) => {
+  let entries;
+  try {
+    entries = readdirSync(path, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  return entries
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        !entry.isSymbolicLink() &&
+        !isExcludedWorkspaceDirectory(entry.name) &&
+        (includeHidden || !entry.name.startsWith("."))
+    )
+    .map((entry) => join(path, entry.name));
+};
+
+const recursiveDirectories = (path) => {
+  const descendants = [];
+  const visit = (directory) => {
+    for (const child of childDirectories(directory)) {
+      descendants.push(child);
+      visit(child);
+    }
+  };
+  visit(path);
+  return descendants;
+};
+
+const expandWorkspacePattern = (root, rootRealPath, pattern) => {
+  const segments = parseWorkspacePattern(pattern);
   let paths = [root];
 
-  for (const segment of pattern.split(/[\\/]+/).filter(Boolean)) {
+  for (const [index, segment] of segments.entries()) {
     const nextPaths = [];
     for (const path of paths) {
-      if (segment === "*" || segment.includes("?") || segment.includes("*")) {
-        let entries;
-        try {
-          entries = readdirSync(path, { withFileTypes: true });
-        } catch {
-          continue;
-        }
-        for (const entry of entries) {
-          if (entry.isDirectory() && matchesPatternSegment(entry.name, segment)) {
-            nextPaths.push(join(path, entry.name));
-          }
-        }
+      if (segment === "*") {
+        nextPaths.push(...childDirectories(path));
+      } else if (segment === "**") {
+        if (path !== root || index < segments.length - 1) nextPaths.push(path);
+        nextPaths.push(...recursiveDirectories(path));
       } else {
         const candidate = join(path, segment);
-        try {
-          if (statSync(candidate).isDirectory()) nextPaths.push(candidate);
-        } catch {
-          // A workspace pattern may match no directories in this checkout.
+        if (
+          isDirectoryWithinRepository(candidate, rootRealPath) &&
+          !isExcludedWorkspaceDirectory(segment)
+        ) {
+          nextPaths.push(candidate);
         }
       }
     }
@@ -105,11 +173,14 @@ const expandWorkspacePattern = (root, pattern) => {
 
 const discoverWorkspaces = (root) => {
   const rootManifest = readJson(join(root, "package.json"));
+  const rootRealPath = realpathSync(root);
   const paths = new Set(
-    getWorkspacePatterns(rootManifest).flatMap((pattern) => expandWorkspacePattern(root, pattern))
+    getWorkspacePatterns(rootManifest).flatMap((pattern) =>
+      expandWorkspacePattern(root, rootRealPath, pattern)
+    )
   );
 
-  return [...paths]
+  const workspaces = [...paths]
     .sort((left, right) => left.localeCompare(right))
     .flatMap((path) => {
       try {
@@ -121,6 +192,26 @@ const discoverWorkspaces = (root) => {
         return [];
       }
     });
+
+  const names = new Set(workspaces.map((workspace) => workspace.name));
+  const missing = expectedWorkspaceNames.filter((name) => !names.has(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `Workspace discovery did not find required workspace(s): ${missing.join(", ")}. ` +
+        `Discovered: ${[...names].sort().join(", ") || "none"}.`
+    );
+  }
+
+  const duplicates = workspaces
+    .map((workspace) => workspace.name)
+    .filter((name, index, allNames) => allNames.indexOf(name) !== index);
+  if (duplicates.length > 0) {
+    throw new Error(
+      `Workspace discovery found duplicate package name(s): ${[...new Set(duplicates)].join(", ")}.`
+    );
+  }
+
+  return workspaces;
 };
 
 const isWithin = (candidate, parent) => {
@@ -130,39 +221,164 @@ const isWithin = (candidate, parent) => {
   );
 };
 
+const isDirectoryWithinRepository = (candidate, repositoryRoot) => {
+  let stat;
+  try {
+    stat = lstatSync(candidate);
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") return false;
+    throw error;
+  }
+
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Workspace pattern resolved to a symlink, which is unsupported: ${candidate}`);
+  }
+  if (!stat.isDirectory()) return false;
+
+  const realPath = realpathSync(candidate);
+  if (!isWithin(realPath, repositoryRoot)) {
+    throw new Error(`Workspace pattern escapes the repository root: ${candidate}`);
+  }
+  return true;
+};
+
 const workspaceForPath = (path, workspaces) =>
   workspaces
     .filter((workspace) => isWithin(path, workspace.path))
     .sort((left, right) => right.path.length - left.path.length)[0];
 
-const packageForSpecifier = (specifier, workspaceByName) => {
-  for (const [name, workspace] of workspaceByName) {
-    if (specifier === name || specifier.startsWith(`${name}/`)) return workspace;
+const packageForSpecifier = (specifier, workspaceTargets) => {
+  const name = [...workspaceTargets.keys()]
+    .filter((candidate) => specifier === candidate || specifier.startsWith(`${candidate}/`))
+    .sort((left, right) => right.length - left.length)[0];
+  return name === undefined ? undefined : workspaceTargets.get(name);
+};
+
+const workspaceForNpmAlias = (specifier, workspaceByName) => {
+  if (specifier.length === 0) {
+    throw new Error("Unsupported empty npm alias target.");
   }
+
+  for (const [name, workspace] of workspaceByName) {
+    if (specifier === name || specifier.startsWith(`${name}@`)) return workspace;
+  }
+};
+
+const workspaceForLocalAlias = (pathValue, sourceWorkspace, root, workspaces, description) => {
+  if (pathValue.length === 0 || pathValue.includes("?") || pathValue.includes("#")) {
+    throw new Error(`Cannot safely resolve local workspace alias ${JSON.stringify(description)}.`);
+  }
+
+  const candidate = resolve(dirname(sourceWorkspace.manifestPath), pathValue);
+  let realPath;
+  try {
+    realPath = realpathSync(candidate);
+  } catch {
+    throw new Error(`Cannot resolve local workspace alias ${JSON.stringify(description)}.`);
+  }
+
+  if (isWithin(candidate, root) && !isWithin(realPath, root)) {
+    throw new Error(
+      `Local workspace alias escapes the repository root: ${JSON.stringify(description)}.`
+    );
+  }
+  if (!isWithin(realPath, root)) return undefined;
+
+  const target = workspaceForPath(realPath, workspaces);
+  if (!target) {
+    throw new Error(
+      `Local workspace alias resolves inside the repository but outside a known workspace: ${JSON.stringify(description)}.`
+    );
+  }
+  return target;
+};
+
+const resolveManifestDependency = (
+  workspace,
+  dependencyName,
+  dependencyValue,
+  root,
+  workspaces,
+  workspaceByName
+) => {
+  if (typeof dependencyValue !== "string") {
+    return { target: workspaceByName.get(dependencyName), isAlias: false };
+  }
+
+  if (dependencyValue.startsWith("npm:")) {
+    return {
+      target: workspaceForNpmAlias(dependencyValue.slice("npm:".length), workspaceByName),
+      isAlias: true,
+    };
+  }
+
+  for (const protocol of ["file:", "link:"]) {
+    if (dependencyValue.startsWith(protocol)) {
+      return {
+        target: workspaceForLocalAlias(
+          dependencyValue.slice(protocol.length),
+          workspace,
+          root,
+          workspaces,
+          dependencyValue
+        ),
+        isAlias: true,
+      };
+    }
+  }
+
+  if (dependencyValue.startsWith("workspace:")) {
+    const targetSpecifier = dependencyValue.slice("workspace:".length);
+    if (
+      targetSpecifier.startsWith("./") ||
+      targetSpecifier.startsWith("../") ||
+      isAbsolute(targetSpecifier)
+    ) {
+      return {
+        target: workspaceForLocalAlias(
+          targetSpecifier,
+          workspace,
+          root,
+          workspaces,
+          dependencyValue
+        ),
+        isAlias: true,
+      };
+    }
+
+    const explicitTarget = workspaceForNpmAlias(targetSpecifier, workspaceByName);
+    if (explicitTarget) return { target: explicitTarget, isAlias: true };
+
+    const directTarget = workspaceByName.get(dependencyName);
+    if (directTarget) return { target: directTarget, isAlias: false };
+
+    throw new Error(
+      `Cannot safely resolve workspace protocol alias ${JSON.stringify(dependencyValue)} for ${dependencyName}.`
+    );
+  }
+
+  return { target: workspaceByName.get(dependencyName), isAlias: false };
 };
 
 const isExcludedPath = (path) => {
   const segments = path.split(/[\\/]+/);
+  const fileName = segments.at(-1) ?? "";
   return (
     segments.some((segment) => excludedDirectoryNames.has(segment)) ||
-    /(?:^|\.)(?:test|spec)\.[^.]+$/i.test(segments.at(-1) ?? "")
+    /(?:^|\.)(?:test|spec)\.[^.]+$/i.test(fileName) ||
+    /(?:^|[._-])(?:gen|generated)\.[^.]+$/i.test(fileName)
   );
 };
 
-const collectSourceFiles = (workspace) => {
+const collectSourceFiles = (workspace, workspaces) => {
   const files = [];
-  const sourceRoots = ["src", "convex"]
-    .map((name) => join(workspace.path, name))
-    .filter((path) => {
-      try {
-        return statSync(path).isDirectory();
-      } catch {
-        return false;
-      }
-    });
 
   const visit = (path) => {
-    if (isExcludedPath(path)) return;
+    for (const childPath of childDirectories(path, { includeHidden: true })) {
+      const childWorkspace = workspaceForPath(childPath, workspaces);
+      if (childWorkspace && childWorkspace.path !== workspace.path) continue;
+      visit(childPath);
+    }
     let entries;
     try {
       entries = readdirSync(path, { withFileTypes: true });
@@ -170,33 +386,35 @@ const collectSourceFiles = (workspace) => {
       return;
     }
     for (const entry of entries) {
-      if (entry.isSymbolicLink()) continue;
+      if (entry.isSymbolicLink() || !entry.isFile()) continue;
       const childPath = join(path, entry.name);
-      if (entry.isDirectory()) {
-        if (!excludedDirectoryNames.has(entry.name)) visit(childPath);
-      } else if (entry.isFile() && !isExcludedPath(childPath)) {
-        const extension = childPath.slice(childPath.lastIndexOf(".")).toLowerCase();
-        if (sourceExtensions.has(extension)) files.push(childPath);
+      if (!isExcludedPath(childPath) && sourceExtensions.has(extname(childPath).toLowerCase())) {
+        files.push(childPath);
       }
     }
   };
 
-  for (const sourceRoot of sourceRoots) visit(sourceRoot);
+  visit(workspace.path);
   return files.sort((left, right) => left.localeCompare(right));
 };
 
-const extractAstroFrontmatter = (contents) => {
-  const match = contents.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-  return match?.[1] ?? "";
+const extractAstroScripts = (contents) => {
+  const scripts = [];
+  const frontmatter = contents.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  if (frontmatter) scripts.push(frontmatter[1]);
+
+  const inlineScript = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
+  for (const match of contents.matchAll(inlineScript)) scripts.push(match[1]);
+  return scripts.join("\n;\n");
 };
 
 const sourceTextForFile = (path) => {
   const contents = readFileSync(path, "utf8");
-  return path.endsWith(".astro") ? extractAstroFrontmatter(contents) : contents;
+  return path.endsWith(".astro") ? extractAstroScripts(contents) : contents;
 };
 
 const sourceKindForFile = (path) => {
-  const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
+  const extension = extname(path).toLowerCase();
   if (extension === ".astro" || extension === ".tsx" || extension === ".jsx") {
     return ts.ScriptKind.TSX;
   }
@@ -232,9 +450,15 @@ const getModuleSpecifiers = (sourceFile) => {
       const specifier = moduleSpecifierFromImportType(node);
       if (specifier !== undefined) specifiers.push(specifier);
     } else if (ts.isCallExpression(node)) {
+      const isModuleRequire =
+        ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === "module" &&
+        node.expression.name.text === "require";
       if (
         (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-          (ts.isIdentifier(node.expression) && node.expression.text === "require")) &&
+          (ts.isIdentifier(node.expression) && node.expression.text === "require") ||
+          isModuleRequire) &&
         node.arguments.length > 0
       ) {
         addLiteral(node.arguments[0]);
@@ -267,15 +491,24 @@ const createViolation = ({ file, kind, source, target, specifier }) => ({
  * The repository root is configurable so the scanner can be exercised with fixtures.
  */
 export const auditWorkspaceBoundaries = (repositoryRoot) => {
-  const root = resolve(repositoryRoot);
+  const root = realpathSync(resolve(repositoryRoot));
   const workspaces = discoverWorkspaces(root);
   const workspaceByName = new Map(workspaces.map((workspace) => [workspace.name, workspace]));
   const violations = [];
 
   for (const workspace of workspaces) {
+    const workspaceImportTargets = new Map(workspaceByName);
     for (const field of dependencyFields) {
-      for (const name of Object.keys(workspace.manifest[field] ?? {})) {
-        const target = workspaceByName.get(name);
+      for (const [name, value] of Object.entries(workspace.manifest[field] ?? {})) {
+        const { target, isAlias } = resolveManifestDependency(
+          workspace,
+          name,
+          value,
+          root,
+          workspaces,
+          workspaceByName
+        );
+
         if (target && !isDependencyAllowed(workspace, target)) {
           violations.push(
             createViolation({
@@ -287,10 +520,13 @@ export const auditWorkspaceBoundaries = (repositoryRoot) => {
             })
           );
         }
+
+        if (target) workspaceImportTargets.set(name, target);
+        else if (isAlias) workspaceImportTargets.set(name, null);
       }
     }
 
-    for (const filePath of collectSourceFiles(workspace)) {
+    for (const filePath of collectSourceFiles(workspace, workspaces)) {
       const fileName = relative(root, filePath).split(sep).join("/");
       const sourceFile = ts.createSourceFile(
         filePath,
@@ -301,11 +537,11 @@ export const auditWorkspaceBoundaries = (repositoryRoot) => {
       );
 
       for (const specifier of getModuleSpecifiers(sourceFile)) {
-        const packageTarget = packageForSpecifier(specifier, workspaceByName);
+        const packageTarget = packageForSpecifier(specifier, workspaceImportTargets);
         const relativeTarget = specifier.startsWith(".")
           ? workspaceForPath(resolve(dirname(filePath), specifier), workspaces)
           : undefined;
-        const target = packageTarget ?? relativeTarget;
+        const target = packageTarget !== undefined ? packageTarget : relativeTarget;
         if (target && !isDependencyAllowed(workspace, target)) {
           violations.push(
             createViolation({

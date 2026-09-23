@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { tmpdir } from "node:os";
+import { platform, tmpdir } from "node:os";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -19,15 +19,17 @@ const fixtureWorkspaces = [
   ["apps/site", "@planview/site"],
 ];
 
-const makeFixture = () => {
+const makeFixture = ({ patterns = ["apps/*", "packages/*"], nestedCore = false } = {}) => {
   const root = mkdtempSync(join(tmpdir(), "planview-workspace-boundary-"));
   writeFileSync(
     join(root, "package.json"),
-    JSON.stringify({ private: true, workspaces: ["apps/*", "packages/*"] })
+    JSON.stringify({ private: true, workspaces: patterns })
   );
 
   for (const [directory, name] of fixtureWorkspaces) {
-    const workspace = join(root, directory);
+    const workspaceDirectory =
+      nestedCore && directory === "packages/core" ? "packages/nested/core" : directory;
+    const workspace = join(root, workspaceDirectory);
     mkdirSync(workspace, { recursive: true });
     writeFileSync(join(workspace, "package.json"), JSON.stringify({ name, version: "1.0.0" }));
   }
@@ -84,7 +86,76 @@ test("workspace manifests cannot declare dependencies against the package DAG", 
   });
 });
 
-test("type, dynamic, require, re-export, relative, and Astro frontmatter imports are checked", () => {
+test("globstar workspace patterns discover nested workspaces and their violations", () => {
+  const root = makeFixture({ patterns: ["apps/*", "packages/**"], nestedCore: true });
+  try {
+    const manifestPath = join(root, "packages/nested/core/package.json");
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        name: "@planview/core",
+        dependencies: { "@planview/storage": "workspace:*" },
+      })
+    );
+
+    assert.deepEqual(
+      auditWorkspaceBoundaries(root).map(({ file, kind, source, target }) => ({
+        file,
+        kind,
+        source,
+        target,
+      })),
+      [
+        {
+          file: "packages/nested/core/package.json",
+          kind: "manifest",
+          source: "@planview/core",
+          target: "@planview/storage",
+        },
+      ]
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("literal workspace patterns reject symlinks instead of following them", {
+  skip: platform === "win32",
+}, () => {
+  const root = makeFixture({ patterns: ["apps/*", "packages/*", "packages/escaped"] });
+  const outside = mkdtempSync(join(tmpdir(), "planview-outside-workspace-"));
+  try {
+    writeFileSync(
+      join(outside, "package.json"),
+      JSON.stringify({ name: "@planview/external", version: "1.0.0" })
+    );
+    symlinkSync(outside, join(root, "packages/escaped"), "dir");
+    assert.throws(() => auditWorkspaceBoundaries(root), /resolved to a symlink/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("unsupported workspace patterns and missing required workspaces fail closed", () => {
+  withFixture((root) => {
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({ private: true, workspaces: ["apps/{app,site}", "packages/*"] })
+    );
+    assert.throws(() => auditWorkspaceBoundaries(root), /Unsupported npm workspace pattern/);
+  });
+
+  withFixture((root) => {
+    rmSync(join(root, "packages/core"), { recursive: true, force: true });
+    assert.throws(
+      () => auditWorkspaceBoundaries(root),
+      /did not find required workspace.*@planview\/core/
+    );
+  });
+});
+
+test("type, dynamic, require, module.require, re-export, relative, and Astro frontmatter imports are checked", () => {
   withFixture((root) => {
     writeFixtureFile(
       root,
@@ -115,6 +186,27 @@ test("type, dynamic, require, re-export, relative, and Astro frontmatter imports
       'import "@planview/daemon";\n'
     );
     writeFixtureFile(root, "packages/core/src/ignored.test.ts", 'import "@planview/daemon";\n');
+    writeFixtureFile(
+      root,
+      "packages/core/src/ignored.generated.ts",
+      'import "@planview/daemon";\n'
+    );
+    writeFixtureFile(root, "packages/core/test/ignored.ts", 'import "@planview/daemon";\n');
+    writeFixtureFile(root, "packages/core/dist/ignored.ts", 'import "@planview/daemon";\n');
+    writeFixtureFile(root, "packages/core/build/ignored.ts", 'import "@planview/daemon";\n');
+    writeFixtureFile(
+      root,
+      "packages/core/node_modules/fake/ignored.ts",
+      'import "@planview/daemon";\n'
+    );
+    writeFixtureFile(root, "packages/core/.astro/ignored.ts", 'import "@planview/daemon";\n');
+    writeFixtureFile(root, "packages/core/.output/ignored.ts", 'import "@planview/daemon";\n');
+    writeFixtureFile(root, "packages/core/coverage/ignored.ts", 'import "@planview/daemon";\n');
+    writeFixtureFile(
+      root,
+      "packages/core/src/module-require.cjs",
+      'module.require("@planview/daemon");\n'
+    );
 
     const violations = auditWorkspaceBoundaries(root);
     assert.deepEqual(
@@ -127,7 +219,125 @@ test("type, dynamic, require, re-export, relative, and Astro frontmatter imports
         { file: "packages/core/src/dependencies.ts", specifier: "@planview/daemon" },
         { file: "packages/core/src/dependencies.ts", specifier: "@planview/storage" },
         { file: "packages/core/src/dependencies.ts", specifier: "@planview/storage" },
+        { file: "packages/core/src/module-require.cjs", specifier: "@planview/daemon" },
       ]
     );
+  });
+});
+
+test("npm and local path aliases preserve manifest and source dependency direction", () => {
+  withFixture((root) => {
+    const appManifest = join(root, "apps/app/package.json");
+    writeFileSync(
+      appManifest,
+      JSON.stringify({
+        name: "@planview/app",
+        dependencies: {
+          "daemon-alias": "npm:@planview/daemon@1.2.3",
+          "daemon-file": "file:../../packages/daemon",
+          "storage-link": "link:../../packages/storage",
+        },
+      })
+    );
+    writeFixtureFile(
+      root,
+      "apps/app/src/aliases.ts",
+      ['import "daemon-alias/client";', 'import "daemon-file";', 'import "storage-link";'].join(
+        "\n"
+      )
+    );
+
+    assert.deepEqual(
+      auditWorkspaceBoundaries(root).map(({ file, kind, target, specifier }) => ({
+        file,
+        kind,
+        target,
+        specifier,
+      })),
+      [
+        {
+          file: "apps/app/package.json",
+          kind: "manifest",
+          target: "@planview/daemon",
+          specifier: "dependencies.daemon-alias",
+        },
+        {
+          file: "apps/app/package.json",
+          kind: "manifest",
+          target: "@planview/daemon",
+          specifier: "dependencies.daemon-file",
+        },
+        {
+          file: "apps/app/package.json",
+          kind: "manifest",
+          target: "@planview/storage",
+          specifier: "dependencies.storage-link",
+        },
+        {
+          file: "apps/app/src/aliases.ts",
+          kind: "import",
+          target: "@planview/daemon",
+          specifier: "daemon-alias/client",
+        },
+        {
+          file: "apps/app/src/aliases.ts",
+          kind: "import",
+          target: "@planview/daemon",
+          specifier: "daemon-file",
+        },
+        {
+          file: "apps/app/src/aliases.ts",
+          kind: "import",
+          target: "@planview/storage",
+          specifier: "storage-link",
+        },
+      ]
+    );
+  });
+});
+
+test("unresolved workspace aliases fail closed", () => {
+  withFixture((root) => {
+    writeFileSync(
+      join(root, "apps/app/package.json"),
+      JSON.stringify({
+        name: "@planview/app",
+        dependencies: { "daemon-alias": "workspace:*" },
+      })
+    );
+    assert.throws(
+      () => auditWorkspaceBoundaries(root),
+      /Cannot safely resolve workspace protocol alias/
+    );
+  });
+});
+
+test("workspace-root configs, scripts, and Astro inline scripts are scanned", () => {
+  withFixture((root) => {
+    writeFixtureFile(root, "apps/app/vite.config.ts", 'import "@planview/core";\n');
+    writeFixtureFile(root, "apps/site/astro.config.ts", 'import "@planview/daemon";\n');
+    writeFixtureFile(root, "apps/site/server.mjs", 'require("@planview/storage");\n');
+    writeFixtureFile(root, "apps/site/.storybook/main.ts", 'import "@planview/daemon";\n');
+    writeFixtureFile(
+      root,
+      "apps/site/src/inline-script.astro",
+      '<script>\nimport "@planview/core";\n</script>\n'
+    );
+
+    const actual = auditWorkspaceBoundaries(root).map(({ file, specifier }) => ({
+      file,
+      specifier,
+    }));
+    const expected = [
+      { file: "apps/app/vite.config.ts", specifier: "@planview/core" },
+      { file: "apps/site/astro.config.ts", specifier: "@planview/daemon" },
+      { file: "apps/site/server.mjs", specifier: "@planview/storage" },
+      { file: "apps/site/src/inline-script.astro", specifier: "@planview/core" },
+      { file: "apps/site/.storybook/main.ts", specifier: "@planview/daemon" },
+    ].sort(
+      (left, right) =>
+        left.file.localeCompare(right.file) || left.specifier.localeCompare(right.specifier)
+    );
+    assert.deepEqual(actual, expected);
   });
 });
