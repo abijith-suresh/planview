@@ -55,9 +55,14 @@ test("does not let a private or non-patch Changeset satisfy the CLI requirement"
   assert.deepEqual(result.publicPatchChangesets, []);
 });
 
-test("ignores tests, site changes, and Changesets support files", () => {
+test("ignores test-only, site, and Changesets support paths", () => {
   for (const changedFiles of [
     ["apps/cli/test/cli.test.mjs"],
+    ["apps/cli/tsconfig.test.json"],
+    ["packages/core/tsconfig.test.json"],
+    ["packages/daemon/tsconfig.test.json"],
+    ["packages/storage/tsconfig.test.json"],
+    ["packages/local/tsconfig.test.json"],
     ["apps/site/src/pages/index.astro"],
     [".changeset/README.md"],
   ]) {
