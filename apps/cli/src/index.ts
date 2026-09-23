@@ -5,16 +5,17 @@ import { fileURLToPath } from "node:url";
 import {
   createLocalApplication,
   isValidProfileName,
-  parseDocumentReference,
   type LocalApplication,
   type LocalDaemonStatus,
+  parseDocumentReference,
 } from "@planview/local";
 import { Data, Effect } from "effect";
 import packageJson from "../package.json" with { type: "json" };
-import { COMMANDS, formatHelp, type Command, type HelpTopic } from "./help.js";
+import { loginToCloud, removeCloudCredentials, uploadCloudDocument } from "./cloud.js";
+import { COMMANDS, type Command, formatHelp, type HelpTopic } from "./help.js";
 import { installSkills } from "./skills.js";
 
-export { HELP, formatHelp } from "./help.js";
+export { formatHelp, HELP } from "./help.js";
 
 const SEMVER_PATTERN =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
@@ -146,6 +147,13 @@ export class SkillsCommandError extends Data.TaggedError("SkillsCommandError")<{
   readonly message: string;
 }> {}
 
+export class CloudCommandError extends Data.TaggedError("CloudCommandError")<{
+  readonly operation: "login" | "logout" | "upload";
+  readonly cause: unknown;
+  readonly message: string;
+  readonly sourcePath?: string;
+}> {}
+
 export class OutputCommandError extends Data.TaggedError("OutputCommandError")<{
   readonly cause: unknown;
   readonly message: string;
@@ -161,6 +169,7 @@ export type CliError =
   | OpenBrowserCommandError
   | GetCommandError
   | SkillsCommandError
+  | CloudCommandError
   | OutputCommandError;
 
 const isCommand = (value: string | undefined): value is Command =>
@@ -179,6 +188,7 @@ type ParsedArguments = Readonly<{
   readonly json: boolean;
   readonly force: boolean;
   readonly open: boolean;
+  readonly cloudUrl?: string;
   readonly operands: readonly string[];
 }>;
 
@@ -189,6 +199,7 @@ type ParsedGlobalArguments = Readonly<{
 
 type OptionParserOptions = Readonly<{
   readonly allowForce?: boolean;
+  readonly allowCloudUrl?: boolean;
   readonly allowJson?: boolean;
   readonly allowOpen?: boolean;
   readonly allowLeadingHyphenOperand?: (argument: string) => boolean;
@@ -223,9 +234,13 @@ const parseOptions = (
   let json = false;
   let force = false;
   let open = false;
+  let cloudUrl: string | undefined;
   const operands: string[] = [];
 
-  for (const argument of args) {
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === undefined) continue;
+
     if (!optionsEnded && argument === "--") {
       optionsEnded = true;
       continue;
@@ -260,6 +275,35 @@ const parseOptions = (
       continue;
     }
 
+    if (!optionsEnded && argument === "--cloud-url") {
+      if (options.allowCloudUrl !== true) {
+        return Effect.fail(unknownOption(argument, options.helpTopic));
+      }
+      const value = args[index + 1];
+      if (value === undefined || value.startsWith("-")) {
+        return Effect.fail(
+          invalidOptionValue("--cloud-url", undefined, "Option --cloud-url requires a URL.")
+        );
+      }
+      cloudUrl = value;
+      index += 1;
+      continue;
+    }
+
+    if (!optionsEnded && argument.startsWith("--cloud-url=")) {
+      if (options.allowCloudUrl !== true) {
+        return Effect.fail(unknownOption("--cloud-url", options.helpTopic));
+      }
+      const value = argument.slice("--cloud-url=".length);
+      if (value.length === 0) {
+        return Effect.fail(
+          invalidOptionValue("--cloud-url", value, "Option --cloud-url requires a URL.")
+        );
+      }
+      cloudUrl = value;
+      continue;
+    }
+
     if (
       !optionsEnded &&
       argument.startsWith("-") &&
@@ -272,7 +316,14 @@ const parseOptions = (
     operands.push(argument);
   }
 
-  return Effect.succeed({ help, json, force, open, operands });
+  return Effect.succeed({
+    help,
+    json,
+    force,
+    open,
+    ...(cloudUrl === undefined ? {} : { cloudUrl }),
+    operands,
+  });
 };
 
 const parseGlobalOptions = (
@@ -409,6 +460,7 @@ type JsonErrorDetails = {
   arguments?: readonly string[];
   sourcePath?: string;
   reference?: string;
+  operation?: string;
 };
 
 const formatError = (error: CliError, format: OutputFormat) => {
@@ -439,6 +491,9 @@ const formatError = (error: CliError, format: OutputFormat) => {
     details.sourcePath = error.sourcePath;
   } else if (error instanceof GetCommandError) {
     details.reference = error.reference;
+  } else if (error instanceof CloudCommandError) {
+    details.operation = error.operation;
+    if (error.sourcePath !== undefined) details.sourcePath = error.sourcePath;
   }
   return formatJson({ error: details });
 };
@@ -584,7 +639,10 @@ const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
 
 const runDaemonCommand = Effect.fnUntraced(
   function* (
-    command: Exclude<Command, "publish" | "get" | "skills" | "help">,
+    command: Exclude<
+      Command,
+      "publish" | "upload" | "login" | "logout" | "get" | "skills" | "help"
+    >,
     application: LocalApplication,
     format: OutputFormat,
     stdout: StdoutWriter
@@ -743,6 +801,130 @@ const runSkillsCommand = (
   );
 };
 
+const runLoginCommand = (
+  args: readonly string[],
+  stdout: StdoutWriter,
+  profile?: string
+): Effect.Effect<number, CliError> =>
+  parseOptions(args, { allowCloudUrl: true, helpTopic: "login" }).pipe(
+    Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
+      if (parsed.help) return writeHelp(stdout, "login");
+      if (parsed.operands.length > 0) {
+        return Effect.fail(
+          unexpectedArguments(
+            parsed.operands,
+            `Unexpected arguments: ${parsed.operands.join(" ")}\n\n${formatHelp("login")}`
+          )
+        );
+      }
+
+      return Effect.tryPromise({
+        try: () =>
+          loginToCloud({
+            ...(profile === undefined ? {} : { profile }),
+            ...(parsed.cloudUrl === undefined ? {} : { cloudUrl: parsed.cloudUrl }),
+            openBrowser: openUrl,
+            writeStatus: (message) => stdout(message),
+          }),
+        catch: (cause) =>
+          new CloudCommandError({
+            operation: "login",
+            cause,
+            message: `Cloud sign-in failed: ${describe(cause)}`,
+          }),
+      }).pipe(
+        Effect.flatMap(({ cloudUrl }) =>
+          writeOutput(stdout, `Signed in to ${cloudUrl}.\n`).pipe(Effect.as(0))
+        )
+      );
+    })
+  );
+
+const runLogoutCommand = (
+  args: readonly string[],
+  stdout: StdoutWriter,
+  profile?: string
+): Effect.Effect<number, CliError> =>
+  parseOptions(args, { helpTopic: "logout" }).pipe(
+    Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
+      if (parsed.help) return writeHelp(stdout, "logout");
+      if (parsed.operands.length > 0) {
+        return Effect.fail(
+          unexpectedArguments(
+            parsed.operands,
+            `Unexpected arguments: ${parsed.operands.join(" ")}\n\n${formatHelp("logout")}`
+          )
+        );
+      }
+
+      return Effect.tryPromise({
+        try: async () => {
+          await removeCloudCredentials(profile);
+          return 0;
+        },
+        catch: (cause) =>
+          new CloudCommandError({
+            operation: "logout",
+            cause,
+            message: `Could not remove the saved cloud sign-in: ${describe(cause)}`,
+          }),
+      }).pipe(
+        Effect.flatMap(() =>
+          writeOutput(stdout, "Removed the cloud sign-in saved on this computer.\n").pipe(
+            Effect.as(0)
+          )
+        )
+      );
+    })
+  );
+
+const runCloudUploadCommand = (
+  args: readonly string[],
+  stdout: StdoutWriter,
+  profile?: string
+): Effect.Effect<number, CliError> =>
+  parseOptions(args, { allowJson: true, allowOpen: true, helpTopic: "upload" }).pipe(
+    Effect.flatMap((parsed): Effect.Effect<number, CliError> => {
+      if (parsed.help) return writeHelp(stdout, "upload");
+      if (parsed.operands.length !== 1 || parsed.operands[0] === undefined) {
+        const label = parsed.operands.length === 0 ? "Missing HTML file:" : "Unexpected arguments:";
+        return Effect.fail(
+          unexpectedArguments(
+            parsed.operands,
+            `${label}${parsed.operands.length === 0 ? "" : ` ${parsed.operands.join(" ")}`}\n\n${formatHelp("upload")}`
+          )
+        );
+      }
+
+      const sourcePath = parsed.operands[0];
+      const format: OutputFormat = parsed.json ? "json" : "text";
+      return Effect.tryPromise({
+        try: () => uploadCloudDocument(sourcePath, profile),
+        catch: (cause) =>
+          new CloudCommandError({
+            operation: "upload",
+            sourcePath,
+            cause,
+            message: `Could not upload ${sourcePath}: ${describe(cause)}`,
+          }),
+      }).pipe(
+        Effect.flatMap((uploaded) =>
+          writeCommandResult(stdout, format, uploaded, ({ url }) => `${url}\n`).pipe(
+            Effect.flatMap(() =>
+              parsed.open
+                ? Effect.tryPromise({
+                    try: () => openUrl(uploaded.url),
+                    catch: (cause) => openBrowserFailure(sourcePath, uploaded.url, cause),
+                  })
+                : Effect.succeed(undefined)
+            ),
+            Effect.map(() => 0)
+          )
+        )
+      );
+    })
+  );
+
 const runDocumentCommand = (
   commandName: "publish" | "get",
   application: LocalApplication,
@@ -796,7 +978,10 @@ const runDocumentCommand = (
   );
 
 const runDaemonCommandFromArgs = (
-  commandName: Exclude<Command, "publish" | "get" | "skills" | "help">,
+  commandName: Exclude<
+    Command,
+    "publish" | "upload" | "login" | "logout" | "get" | "skills" | "help"
+  >,
   application: LocalApplication,
   args: readonly string[],
   stdout: StdoutWriter
@@ -863,6 +1048,18 @@ const commandWithProfile = (
     return runSkillsCommand(trailing, stdout);
   }
 
+  if (argument === "login") {
+    return runLoginCommand(trailing, stdout, profile);
+  }
+
+  if (argument === "logout") {
+    return runLogoutCommand(trailing, stdout, profile);
+  }
+
+  if (argument === "upload") {
+    return runCloudUploadCommand(trailing, stdout, profile);
+  }
+
   const application = applicationFor(profile);
 
   if (argument === "publish" || argument === "get") {
@@ -910,6 +1107,7 @@ const boundary = (program: Effect.Effect<number, CliError>) =>
         "OpenBrowserCommandError",
         "GetCommandError",
         "SkillsCommandError",
+        "CloudCommandError",
         "OutputCommandError",
       ],
       () => Effect.succeed(1)

@@ -17,6 +17,21 @@ export const GET = async ({ request }: { request: Request }) => {
 
   const requestUrl = new URL(request.url);
   const upstreamUrl = `${convexSiteUrl}/api/auth/sign-in/social`;
+  const requestedReturnTo = requestUrl.searchParams.get("returnTo");
+  let callbackURL = "/dashboard";
+
+  if (requestedReturnTo) {
+    const returnUrl = new URL(requestedReturnTo, requestUrl.origin);
+
+    if (returnUrl.origin !== requestUrl.origin) {
+      return Response.json(
+        { error: "The sign-in return URL must stay within this app." },
+        { status: 400 }
+      );
+    }
+
+    callbackURL = `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`;
+  }
   const headers = new Headers({
     accept: "application/json",
     "content-type": "application/json",
@@ -37,7 +52,7 @@ export const GET = async ({ request }: { request: Request }) => {
       headers,
       body: JSON.stringify({
         provider: "github",
-        callbackURL: "/dashboard",
+        callbackURL,
       }),
       redirect: "manual",
     });

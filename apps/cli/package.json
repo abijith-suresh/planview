@@ -33,6 +33,7 @@
     "typecheck:test": "tsc --project tsconfig.test.json"
   },
   "devDependencies": {
+    "@planview/core": "0.1.0",
     "@planview/local": "0.1.0",
     "@types/node": "24.10.1",
     "esbuild": "0.27.7"

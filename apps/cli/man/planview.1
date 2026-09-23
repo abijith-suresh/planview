@@ -1,6 +1,6 @@
 .TH PLANVIEW 1 "September 2026" "Planview" "User Commands"
 .SH NAME
-planview \- publish immutable HTML snapshots
+planview \- publish and upload immutable HTML snapshots
 .SH SYNOPSIS
 .B planview
 .RI [ global-options ]
@@ -12,7 +12,8 @@ planview \- publish immutable HTML snapshots
 .SH DESCRIPTION
 .B planview
 publishes an HTML file or page folder to a local daemon and returns a stable
-localhost URL. A page folder must contain
+localhost URL. It can also upload a standalone HTML file to the cloud workspace.
+A page folder must contain
 .B index.html
 and is published with its assets.
 .PP
@@ -29,12 +30,31 @@ The
 command creates a snapshot and prints its URL. Pass
 .B \-\-open
 to open the URL in the default browser after publishing.
+.PP
+Use
+.B login
+before
+.B upload
+to authorize this computer in a browser. Cloud preview links require the same
+account to be signed in in the browser.
 .SH COMMANDS
 .TP
 .B publish [options] file|folder
 Publish an immutable HTML snapshot and print its URL. Use
 .B \-\-open
 to open the URL in the default browser.
+.TP
+.B login [options]
+Sign in to the cloud workspace through GitHub in a browser. Use
+.B \-\-cloud-url origin
+to sign in to another app origin.
+.TP
+.B logout
+Remove the saved cloud sign-in from this computer.
+.TP
+.B upload [options] file.html
+Upload one standalone HTML file up to 8 MiB and print its workspace preview URL.
+The preview requires an authenticated browser session.
 .TP
 .B get id|url
 Write a stored snapshot's exact bytes to standard output. The reference must be
@@ -81,9 +101,21 @@ Use the named profile for this invocation. Names start with a lowercase letter
 or number and contain only lowercase letters, numbers, hyphens, and underscores.
 .TP
 .B \-\-open
-Open the published URL in the default browser. Supported by
+Open the returned URL in the default browser. Supported by
 .B publish
-only.
+and
+.B upload
+.
+.TP
+.B \-\-cloud-url origin
+Select the cloud app origin for
+.B login
+.
+.TP
+.B PLANVIEW_CLOUD_URL
+Environment variable selecting the default cloud app origin for
+.B login
+.
 .TP
 .B \-\-json
 Print one newline-terminated JSON object for metadata commands. Supported by
@@ -99,6 +131,8 @@ Print one newline-terminated JSON object for metadata commands. Supported by
 ,
 and
 .B clean
+,
+.B upload
 .
 .TP
 .B \-\-force
@@ -146,6 +180,9 @@ The command could not complete, or its arguments were invalid.
 .EX
 planview publish ./report.html
 planview publish --open ./site
+planview login
+planview upload ./report.html
+planview logout
 planview get http://localhost:4777/<id> > report.html
 planview status --json
 planview publish --json ./report.html
