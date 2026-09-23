@@ -4,21 +4,9 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
 import type { DocumentId } from "@planview/core";
+import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "@planview/core";
 import { Effect } from "effect";
-import {
-  DocumentFileFinalizeError,
-  createDocumentPublicationCoordinator,
-  DocumentFileDeleteError,
-  DocumentPublicationError,
-  DocumentPublicationNotFoundError,
-  DocumentPublicationReadError,
-  DocumentPublicationRetryLimitError,
-  StorageQuotaExceededError,
-  openDocumentFileStore,
-  openStorage,
-} from "../dist/index.js";
 import type {
   DocumentFileStore,
   DocumentFileStoreOptions,
@@ -26,6 +14,19 @@ import type {
   DocumentPublicationCoordinator,
   DocumentPublicationCoordinatorOptions,
   MetadataStore,
+} from "../dist/index.js";
+import {
+  createDocumentPublicationCoordinator,
+  createMetadataGatedDocumentReader,
+  DocumentFileDeleteError,
+  DocumentFileFinalizeError,
+  DocumentPublicationError,
+  DocumentPublicationNotFoundError,
+  DocumentPublicationReadError,
+  DocumentPublicationRetryLimitError,
+  openDocumentFileStore,
+  openStorage,
+  StorageQuotaExceededError,
 } from "../dist/index.js";
 
 const id = (character: string): DocumentId => character.repeat(21) as DocumentId;
@@ -188,6 +189,53 @@ test("metadata-gated reads reject a physically finalized file without a row", ()
     });
     const stream = await runEffect(reader.readPublishedDocument(firstId));
     assert.equal((await stream.toArray()).toString(), "not committed");
+  }));
+
+test("standalone metadata-gated readers do not open uncommitted files", () =>
+  withEnvironment(async ({ directory, documentFileStore, metadataStore }) => {
+    const source = join(directory, "standalone-reader.html");
+    await writeFile(source, "not committed");
+    const handle = await documentFileStore.stageSourceFile(source);
+    await documentFileStore.finalizeStagedFile(handle, firstId);
+
+    let fileOperations = 0;
+    const instrumentedStore: DocumentFileStore = {
+      ...documentFileStore,
+      readDocumentLease: async (documentId) => {
+        fileOperations += 1;
+        return documentFileStore.readDocumentLease(documentId);
+      },
+      inspectDocumentFormat: async (documentId) => {
+        fileOperations += 1;
+        return documentFileStore.inspectDocumentFormat(documentId);
+      },
+      readDocumentEntryLease: async (documentId, path) => {
+        fileOperations += 1;
+        return documentFileStore.readDocumentEntryLease(documentId, path);
+      },
+    };
+    const reader = createMetadataGatedDocumentReader({
+      documentFileStore: instrumentedStore,
+      metadataStore,
+    });
+
+    await assert.rejects(
+      runEffect(reader.readPublishedDocument(firstId)),
+      (error) => error instanceof DocumentPublicationNotFoundError
+    );
+    await assert.rejects(
+      runEffect(reader.readPublishedDocumentLease(firstId)),
+      (error) => error instanceof DocumentPublicationNotFoundError
+    );
+    await assert.rejects(
+      runEffect(reader.inspectPublishedDocument(firstId)),
+      (error) => error instanceof DocumentPublicationNotFoundError
+    );
+    await assert.rejects(
+      runEffect(reader.readPublishedDocumentEntryLease(firstId, "index.html")),
+      (error) => error instanceof DocumentPublicationNotFoundError
+    );
+    assert.equal(fileOperations, 0);
   }));
 
 test("metadata-gated reads fail closed when metadata lookup is ambiguous", () =>
