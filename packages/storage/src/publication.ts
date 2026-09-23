@@ -30,7 +30,7 @@ import {
   type DocumentFileTargetRecoveryPolicy,
   type StagedDocumentFileHandle,
 } from "./document-files.js";
-import type { DocumentMetadata, MetadataStore } from "./index.js";
+import type { DocumentMetadata, MetadataStore } from "./metadata-contracts.js";
 
 export type DocumentPublicationResourceState = "retained" | "unknown";
 
