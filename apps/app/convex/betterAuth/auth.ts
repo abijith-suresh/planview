@@ -9,9 +9,9 @@ import type { DataModel } from "../_generated/dataModel";
 import authConfig from "../auth.config";
 import schema from "./schema";
 
-const githubClientId = process.env.GITHUB_CLIENT_ID;
-const githubClientSecret = process.env.GITHUB_CLIENT_SECRET;
-const siteUrl = process.env.SITE_URL;
+const githubClientId = process.env["GITHUB_CLIENT_ID"];
+const githubClientSecret = process.env["GITHUB_CLIENT_SECRET"];
+const siteUrl = process.env["SITE_URL"];
 
 const trustedOrigins = [siteUrl, "http://localhost:3000"].filter((origin): origin is string =>
   Boolean(origin)
@@ -35,8 +35,8 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
 
   return {
     appName: "plansplease workspace",
-    baseURL: siteUrl,
-    secret: process.env.BETTER_AUTH_SECRET,
+    ...(siteUrl === undefined ? {} : { baseURL: siteUrl }),
+    secret: process.env["BETTER_AUTH_SECRET"],
     trustedOrigins,
     database: authComponent.adapter(ctx),
     socialProviders,

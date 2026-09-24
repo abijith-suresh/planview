@@ -18,7 +18,7 @@ export const GET = async ({ request }: { request: Request }) => {
   const requestUrl = new URL(request.url);
   const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
   const requestHost = request.headers.get("host");
-  const railwayPublicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  const railwayPublicDomain = process.env["RAILWAY_PUBLIC_DOMAIN"];
   const isInternalHost = (host: string) => {
     const hostname = host.replace(/^\[([^\]]+)\](?::\d+)?$/, "$1").replace(/:\d+$/, "");
     return (

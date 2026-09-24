@@ -26,8 +26,11 @@ function getUploadThingLocator(key: string) {
 
 class UploadThingStorageAdapter implements DocumentStorageAdapter {
   readonly provider = "uploadthing" as const;
+  private readonly api: UTApi;
 
-  constructor(private readonly api: UTApi) {}
+  constructor(api: UTApi) {
+    this.api = api;
+  }
 
   async getReadUrl(key: string) {
     const locator = getUploadThingLocator(key);
@@ -48,7 +51,7 @@ class UploadThingStorageAdapter implements DocumentStorageAdapter {
 }
 
 export function isDocumentStorageConfigured() {
-  return Boolean(process.env.UPLOADTHING_TOKEN);
+  return Boolean(process.env["UPLOADTHING_TOKEN"]);
 }
 
 export function getDocumentStorage(provider: string): DocumentStorageAdapter {
@@ -56,7 +59,7 @@ export function getDocumentStorage(provider: string): DocumentStorageAdapter {
     throw new Error(`Unsupported document storage provider: ${provider}`);
   }
 
-  const token = process.env.UPLOADTHING_TOKEN;
+  const token = process.env["UPLOADTHING_TOKEN"];
 
   if (!token) {
     throw new Error("UploadThing is not configured");

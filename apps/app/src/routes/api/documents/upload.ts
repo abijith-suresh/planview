@@ -11,7 +11,7 @@ import { getDocumentStorage } from "~/lib/document-storage";
 
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_SIZE_BYTES = MAX_FILE_SIZE_BYTES + 64 * 1024;
-const uploadThingToken = process.env.UPLOADTHING_TOKEN;
+const uploadThingToken = process.env["UPLOADTHING_TOKEN"];
 
 export const POST = async ({ request }: { request: Request }) => {
   const contentLength = Number(request.headers.get("content-length"));
