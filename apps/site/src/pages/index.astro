@@ -127,7 +127,7 @@ import { appSignInUrl } from "../lib/app-url";
     grid-template-columns: minmax(0, 1.05fr) minmax(24rem, 0.95fr);
     align-items: center;
     gap: clamp(3rem, 6vw, 6rem);
-    padding: clamp(4.5rem, 9vh, 7rem) 0 5.5rem;
+    padding: clamp(4.5rem, 8vh, 6.5rem) 0 4.5rem;
   }
 
   h1,
@@ -142,55 +142,49 @@ import { appSignInUrl } from "../lib/app-url";
   }
 
   h1 {
-    max-width: 12ch;
+    max-width: 14ch;
     margin-bottom: 1.5rem;
-    color: var(--text);
+    color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(3.2rem, 5.8vw, 5.8rem);
+    font-size: clamp(3rem, 5.4vw, 5.2rem);
     font-weight: 600;
-    letter-spacing: -0.06em;
-    line-height: 0.95;
+    letter-spacing: -0.05em;
+    line-height: 1.05;
   }
 
   h1 span {
     display: block;
-    color: var(--butter);
-    background: linear-gradient(135deg, #fae392 0%, #f8abb6 60%, #c8b9f7 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--mint);
   }
 
   .hero-intro {
     max-width: 34rem;
-    margin-bottom: 2.2rem;
+    margin-bottom: 2rem;
     color: var(--night-muted);
-    font-size: clamp(1rem, 1.35vw, 1.15rem);
+    font-size: clamp(1rem, 1.3vw, 1.12rem);
     line-height: 1.65;
   }
 
   .primary-link {
     display: inline-flex;
     align-items: center;
-    padding: 0.9rem 1.75rem;
+    padding: 0.85rem 1.6rem;
     border: 1px solid var(--mint);
-    border-radius: 9999px;
+    border-radius: 8px;
     background: var(--mint);
     color: var(--ink);
-    font-size: 0.96rem;
+    font-size: 0.95rem;
     font-weight: 600;
     letter-spacing: -0.01em;
     text-decoration: none;
-    box-shadow: 0 4px 20px var(--mint-glow);
-    transition: all 180ms ease;
+    transition: all 150ms ease;
   }
 
   .primary-link:hover,
   .primary-link:focus-visible {
-    border-color: var(--text);
-    background: var(--text);
-    color: var(--ink);
-    box-shadow: 0 6px 25px rgba(255, 255, 255, 0.25);
-    transform: translateY(-2px);
+    background: #a9ebd8;
+    border-color: #a9ebd8;
+    transform: translateY(-1px);
   }
 
   .cta-note {
@@ -209,16 +203,14 @@ import { appSignInUrl } from "../lib/app-url";
     height: 6px;
     border-radius: 50%;
     background: var(--mint);
-    box-shadow: 0 0 8px var(--mint);
   }
 
   .hero-demo {
     padding: 1.25rem;
     background: var(--night-card);
-    border: 1px solid rgba(200, 185, 247, 0.25);
-    border-radius: 1.25rem;
-    backdrop-filter: blur(20px);
-    box-shadow: 0 24px 48px -12px rgba(0, 0, 0, 0.5), 0 0 32px -8px var(--lavender-glow);
+    border: 1px solid var(--night-border);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     color: var(--text);
   }
 
@@ -226,7 +218,7 @@ import { appSignInUrl } from "../lib/app-url";
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 0.25rem 1rem;
+    padding: 0 0.25rem 0.85rem;
   }
 
   .demo-header-dots {
@@ -236,24 +228,21 @@ import { appSignInUrl } from "../lib/app-url";
   }
 
   .demo-header-dots span {
-    width: 0.6rem;
-    height: 0.6rem;
+    width: 0.65rem;
+    height: 0.65rem;
     border-radius: 50%;
   }
 
   .demo-header-dots span:nth-child(1) {
     background: var(--coral);
-    opacity: 0.75;
   }
 
   .demo-header-dots span:nth-child(2) {
     background: var(--butter);
-    opacity: 0.75;
   }
 
   .demo-header-dots span:nth-child(3) {
     background: var(--mint);
-    opacity: 0.75;
   }
 
   .demo-header-tags {
@@ -266,7 +255,6 @@ import { appSignInUrl } from "../lib/app-url";
     font-size: 0.68rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--night-muted);
   }
 
   .demo-header-tags span:first-child {
@@ -291,10 +279,10 @@ import { appSignInUrl } from "../lib/app-url";
   .demo-source {
     display: grid;
     gap: 0.5rem;
-    padding: 1rem 1.15rem;
-    background: rgba(12, 14, 20, 0.85);
+    padding: 0.9rem 1.1rem;
+    background: var(--night);
     border: 1px solid var(--night-border);
-    border-radius: 0.65rem;
+    border-radius: 8px;
     color: var(--text);
   }
 
@@ -307,7 +295,6 @@ import { appSignInUrl } from "../lib/app-url";
 
   .demo-source-row > span {
     color: var(--lavender);
-    opacity: 0.85;
   }
 
   .demo-source code {
@@ -329,11 +316,10 @@ import { appSignInUrl } from "../lib/app-url";
 
   .demo-page {
     margin: 1rem 0;
-    padding: clamp(1.4rem, 3vw, 1.85rem);
-    background: var(--night-card-elevated);
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 0.85rem;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    padding: clamp(1.4rem, 2.5vw, 1.75rem);
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    border-radius: 8px;
   }
 
   .demo-page-meta {
@@ -346,9 +332,9 @@ import { appSignInUrl } from "../lib/app-url";
     display: inline-flex;
     align-items: center;
     padding: 0.2rem 0.55rem;
-    border-radius: 9999px;
-    background: rgba(143, 227, 201, 0.1);
-    border: 1px solid rgba(143, 227, 201, 0.25);
+    border-radius: 4px;
+    background: var(--mint-soft);
+    border: 1px solid var(--mint-border);
     color: var(--mint);
   }
 
@@ -356,36 +342,36 @@ import { appSignInUrl } from "../lib/app-url";
     display: inline-flex;
     align-items: center;
     padding: 0.2rem 0.55rem;
-    border-radius: 9999px;
-    background: rgba(200, 185, 247, 0.1);
-    border: 1px solid rgba(200, 185, 247, 0.25);
+    border-radius: 4px;
+    background: var(--lavender-soft);
+    border: 1px solid var(--lavender-border);
     color: var(--lavender);
   }
 
   .demo-page-rule {
     height: 1px;
-    margin: 1.15rem 0 1.5rem;
-    background: linear-gradient(90deg, rgba(143, 227, 201, 0.35), rgba(200, 185, 247, 0.35), transparent);
+    margin: 1.15rem 0 1.35rem;
+    background: var(--night-border);
   }
 
   .demo-page-label {
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.4rem;
     color: var(--night-subtle);
     font-size: 0.7rem;
   }
 
   .demo-page h2 {
-    margin-bottom: 0.5rem;
-    color: var(--text);
+    margin-bottom: 0.4rem;
+    color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2rem, 3.5vw, 3rem);
+    font-size: clamp(1.8rem, 3.2vw, 2.75rem);
     font-weight: 600;
-    letter-spacing: -0.06em;
-    line-height: 1;
+    letter-spacing: -0.05em;
+    line-height: 1.05;
   }
 
   .demo-page-copy {
-    margin-bottom: 1.8rem;
+    margin-bottom: 1.6rem;
     color: var(--night-muted);
     font-size: 0.92rem;
     line-height: 1.5;
@@ -399,8 +385,8 @@ import { appSignInUrl } from "../lib/app-url";
 
   .demo-page-data div {
     display: grid;
-    gap: 0.35rem;
-    padding: 0.9rem 0.75rem 0 0;
+    gap: 0.3rem;
+    padding: 0.85rem 0.75rem 0 0;
   }
 
   .demo-page-data div + div {
@@ -416,8 +402,8 @@ import { appSignInUrl } from "../lib/app-url";
   }
 
   .demo-page-data strong {
-    color: var(--text);
-    font-size: 0.8rem;
+    color: var(--text-white);
+    font-size: 0.82rem;
     font-weight: 600;
   }
 
@@ -441,30 +427,28 @@ import { appSignInUrl } from "../lib/app-url";
 
   .demo-destinations > div {
     display: grid;
-    gap: 0.35rem;
-    padding: 0.9rem 1rem;
-    border-radius: 0.65rem;
-    transition: all 180ms ease;
+    gap: 0.3rem;
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+    transition: border-color 150ms ease;
   }
 
   .demo-destinations > div:first-child {
-    background: rgba(143, 227, 201, 0.08);
-    border: 1px solid rgba(143, 227, 201, 0.25);
+    background: var(--mint-soft);
+    border: 1px solid var(--mint-border);
   }
 
   .demo-destinations > div:first-child:hover {
-    background: rgba(143, 227, 201, 0.14);
-    box-shadow: 0 0 20px var(--mint-glow);
+    border-color: var(--mint);
   }
 
   .demo-destinations > div:last-child {
-    background: rgba(200, 185, 247, 0.08);
-    border: 1px solid rgba(200, 185, 247, 0.25);
+    background: var(--lavender-soft);
+    border: 1px solid var(--lavender-border);
   }
 
   .demo-destinations > div:last-child:hover {
-    background: rgba(200, 185, 247, 0.14);
-    box-shadow: 0 0 20px var(--lavender-glow);
+    border-color: var(--lavender);
   }
 
   .demo-destinations span {
@@ -490,12 +474,11 @@ import { appSignInUrl } from "../lib/app-url";
     align-items: center;
     justify-content: space-between;
     gap: 2rem;
-    padding: 1.75rem 2.25rem;
-    margin: 1.5rem 0 5.5rem;
+    padding: 1.5rem 2rem;
+    margin: 1.5rem 0 5rem;
     background: var(--night-card);
     border: 1px solid var(--night-border);
-    border-radius: 0.85rem;
-    backdrop-filter: blur(12px);
+    border-radius: 10px;
     color: var(--night-muted);
   }
 
@@ -503,16 +486,16 @@ import { appSignInUrl } from "../lib/app-url";
     max-width: 38rem;
     margin: 0;
     color: var(--text);
-    font-size: 1.02rem;
+    font-size: 1rem;
     line-height: 1.6;
   }
 
   .pitch-line span {
     flex: 0 0 auto;
-    padding: 0.45rem 0.95rem;
-    background: rgba(250, 227, 146, 0.08);
-    border: 1px solid rgba(250, 227, 146, 0.28);
-    border-radius: 9999px;
+    padding: 0.4rem 0.85rem;
+    background: var(--butter-soft);
+    border: 1px solid var(--butter-border);
+    border-radius: 6px;
     color: var(--butter);
     font-family: var(--mono);
     font-size: 0.72rem;
@@ -521,18 +504,18 @@ import { appSignInUrl } from "../lib/app-url";
   }
 
   .home-values {
-    padding: 0 0 6rem;
+    padding-bottom: 5.5rem;
   }
 
   .home-values h2 {
-    max-width: 12ch;
-    margin: 0 0 2.2rem;
-    color: var(--text);
+    max-width: 14ch;
+    margin-bottom: 2rem;
+    color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2.4rem, 4.5vw, 4.5rem);
+    font-size: clamp(2.2rem, 3.8vw, 3.5rem);
     font-weight: 600;
-    letter-spacing: -0.06em;
-    line-height: 1;
+    letter-spacing: -0.05em;
+    line-height: 1.05;
   }
 
   .home-value-list {
@@ -542,157 +525,89 @@ import { appSignInUrl } from "../lib/app-url";
   }
 
   .home-value-row {
-    display: grid;
-    grid-template-columns: 3.5rem minmax(0, 1fr);
-    gap: 1.5rem;
-    align-items: start;
-    padding: 2.25rem 2rem;
+    display: flex;
+    gap: 1.25rem;
+    align-items: flex-start;
+    padding: 1.75rem;
     background: var(--night-card);
     border: 1px solid var(--night-border);
-    border-radius: 0.85rem;
-    backdrop-filter: blur(12px);
-    transition: all 200ms ease;
+    border-radius: 10px;
+    transition: border-color 150ms ease;
   }
 
   .home-value-row:hover {
-    background: var(--night-card-elevated);
-    border-color: rgba(143, 227, 201, 0.35);
-    box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.4), 0 0 24px var(--mint-glow);
-    transform: translateY(-2px);
+    border-color: var(--night-border-hover);
   }
 
   .home-value-number {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.3rem;
-    height: 2.3rem;
-    border-radius: 9999px;
-    background: rgba(250, 227, 146, 0.08);
-    border: 1px solid rgba(250, 227, 146, 0.28);
-    color: var(--butter);
-    font-family: var(--mono);
-    font-size: 0.78rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-  }
-
-  .home-value-row:nth-child(2) .home-value-number {
-    background: rgba(143, 227, 201, 0.08);
-    border-color: rgba(143, 227, 201, 0.28);
+    width: 2.2rem;
+    height: 2.2rem;
+    flex-shrink: 0;
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    border-radius: 6px;
     color: var(--mint);
-  }
-
-  .home-value-row:nth-child(3) .home-value-number {
-    background: rgba(200, 185, 247, 0.08);
-    border-color: rgba(200, 185, 247, 0.28);
-    color: var(--lavender);
-  }
-
-  .home-value-row:nth-child(4) .home-value-number {
-    background: rgba(248, 171, 182, 0.08);
-    border-color: rgba(248, 171, 182, 0.28);
-    color: var(--coral);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-weight: 600;
   }
 
   .home-value-row h3 {
     margin: 0 0 0.5rem;
-    color: var(--text);
+    color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(1.5rem, 2.5vw, 2.2rem);
+    font-size: 1.25rem;
     font-weight: 600;
-    letter-spacing: -0.05em;
-    line-height: 1.1;
+    letter-spacing: -0.03em;
   }
 
   .home-value-row p {
-    max-width: 38rem;
     margin: 0;
     color: var(--night-muted);
-    font-size: 0.95rem;
-    line-height: 1.6;
+    font-size: 0.92rem;
+    line-height: 1.55;
   }
 
-  @media (max-width: 900px) {
+  @media (max-width: 58rem) {
     .hero {
       grid-template-columns: 1fr;
-      gap: 3.5rem;
-    }
-
-    .hero-copy,
-    .hero-demo {
-      max-width: 42rem;
+      gap: 3rem;
     }
 
     .home-value-list {
       grid-template-columns: 1fr;
     }
+
+    .pitch-line {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 1rem;
+      padding: 1.5rem;
+    }
   }
 
-  @media (max-width: 620px) {
-    .hero {
-      gap: 3rem;
-      padding: 4.5rem 0 3.5rem;
-    }
-
-    h1 {
-      max-width: 11ch;
-      font-size: clamp(3.2rem, 14vw, 4.8rem);
-    }
-
-    .hero-demo {
-      padding: 1rem;
-    }
-
+  @media (max-width: 36rem) {
     .demo-source-row {
       grid-template-columns: 1fr;
       gap: 0.25rem;
     }
 
-    .demo-source-row + .demo-source-row {
-      margin-top: 0.55rem;
-    }
-
-    .demo-page {
-      padding: 1.25rem;
-    }
-
-    .demo-page h2 {
-      font-size: 2.1rem;
+    .demo-destinations {
+      grid-template-columns: 1fr;
     }
 
     .demo-page-data {
       grid-template-columns: 1fr;
     }
 
-    .demo-page-data div,
     .demo-page-data div + div {
-      grid-template-columns: 5rem 1fr;
-      align-items: baseline;
-      padding: 0.7rem 0;
-      border-left: 0;
-      border-bottom: 1px solid var(--night-border);
-    }
-
-    .demo-page-data div:last-child {
-      border-bottom: 0;
-    }
-
-    .pitch-line {
-      display: grid;
-      gap: 1.25rem;
-      padding: 1.5rem;
-      margin-bottom: 3.5rem;
-    }
-
-    .home-values {
-      padding-bottom: 4rem;
-    }
-
-    .home-value-row {
-      grid-template-columns: 2.5rem minmax(0, 1fr);
-      gap: 1rem;
-      padding: 1.5rem;
+      padding-left: 0;
+      border-left: none;
+      border-top: 1px solid var(--night-border);
+      padding-top: 0.75rem;
     }
   }
 </style>
