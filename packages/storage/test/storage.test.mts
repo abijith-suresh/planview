@@ -151,7 +151,7 @@ const openWorker = (databasePath: string) => {
   return { worker, ready: waitForWorkerMessage(worker, "ready") };
 };
 
-test("opens a new database, applies v1, and persists the exact metadata schema", () => {
+test("opens a new database, applies v2, and persists the exact metadata schema", () => {
   return withStorage(({ databasePath }) => {
     assert.deepEqual(inspectSchema(databasePath), {
       version: CURRENT_SCHEMA_VERSION,
@@ -237,6 +237,77 @@ test("migrates an existing version-zero database transactionally", () =>
 
     const storage = Effect.runSync(openStorage(databasePath));
     try {
+      assert.deepEqual(inspectSchema(databasePath), {
+        version: CURRENT_SCHEMA_VERSION,
+        columns: ["id", "createdAt", "lastAccessedAt", "size"],
+      });
+    } finally {
+      storage.close();
+    }
+  }));
+
+test("migrates populated v1 metadata to v2 and creates a generation for each row", () =>
+  withTempDirectory("planview-storage-v1-migration-", (directory) => {
+    const databasePath = join(directory, "metadata.sqlite");
+    createDatabase(
+      databasePath,
+      `
+        CREATE TABLE documents (
+          id TEXT PRIMARY KEY NOT NULL
+            CHECK (typeof(id) = 'text' AND length(trim(id)) > 0),
+          createdAt INTEGER NOT NULL
+            CHECK (typeof(createdAt) = 'integer' AND createdAt >= 0),
+          lastAccessedAt INTEGER NOT NULL
+            CHECK (typeof(lastAccessedAt) = 'integer' AND lastAccessedAt >= createdAt),
+          size INTEGER NOT NULL
+            CHECK (typeof(size) = 'integer' AND size >= 0)
+        ) STRICT
+      `
+    );
+
+    const seed = new DatabaseSync(databasePath);
+    try {
+      const insert = seed.prepare(
+        "INSERT INTO documents (id, createdAt, lastAccessedAt, size) VALUES (:id, :createdAt, :lastAccessedAt, :size)"
+      );
+      insert.run({ ":id": "legacy-first", ":createdAt": 10, ":lastAccessedAt": 12, ":size": 31 });
+      insert.run({ ":id": "legacy-second", ":createdAt": 20, ":lastAccessedAt": 24, ":size": 47 });
+    } finally {
+      seed.close();
+    }
+
+    const storage = Effect.runSync(openStorage(databasePath));
+    try {
+      assert.deepEqual(storage.getDocumentMetadata("legacy-first"), {
+        id: "legacy-first",
+        createdAt: 10,
+        lastAccessedAt: 12,
+        size: 31,
+      });
+      assert.deepEqual(storage.getDocumentMetadata("legacy-second"), {
+        id: "legacy-second",
+        createdAt: 20,
+        lastAccessedAt: 24,
+        size: 47,
+      });
+
+      const page = storage.listDocumentMetadataPage(10);
+      assert.equal(page.hasMore, false);
+      assert.deepEqual(
+        page.rows.map(({ id, createdAt, lastAccessedAt, size }) => ({
+          id,
+          createdAt,
+          lastAccessedAt,
+          size,
+        })),
+        [
+          { id: "legacy-first", createdAt: 10, lastAccessedAt: 12, size: 31 },
+          { id: "legacy-second", createdAt: 20, lastAccessedAt: 24, size: 47 },
+        ]
+      );
+      assert.ok(page.rows.every(({ generation }) => generation.length > 0));
+      assert.notEqual(page.rows[0]?.generation, page.rows[1]?.generation);
+      assert.equal(generationCount(databasePath), 2);
       assert.deepEqual(inspectSchema(databasePath), {
         version: CURRENT_SCHEMA_VERSION,
         columns: ["id", "createdAt", "lastAccessedAt", "size"],
