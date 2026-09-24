@@ -222,3 +222,6 @@ jobs:
 
       - name: Pack from clean build outputs and run CLI lifecycle and skills smoke
         run: node scripts/cross-platform-smoke.mjs
+
+      - name: Test cloud CLI flow
+        run: node --test apps/cli/test/cloud.test.mts
