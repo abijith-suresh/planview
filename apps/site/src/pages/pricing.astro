@@ -64,55 +64,79 @@ import { appSignInUrl } from "../lib/app-url";
   .pricing-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1px;
-    background: rgba(247, 240, 229, 0.18);
+    gap: 1.5rem;
+    background: transparent;
   }
 
   .pricing-card {
+    display: flex;
+    flex-direction: column;
     min-height: 24rem;
-    padding: clamp(1.5rem, 4vw, 2.5rem);
-    background: var(--night-soft);
+    padding: clamp(1.8rem, 4vw, 2.8rem);
+    background: var(--night-card);
+    border: 1px solid var(--night-border);
+    border-radius: 1rem;
+    backdrop-filter: blur(12px);
+    transition: all 200ms ease;
   }
 
   .pricing-card-current {
-    background: var(--paper);
-    color: var(--ink);
+    background: var(--night-card-elevated);
+    border: 1px solid rgba(143, 227, 201, 0.4);
+    box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.5), 0 0 28px var(--mint-glow);
+    color: var(--text);
+  }
+
+  .pricing-card:not(.pricing-card-current):hover {
+    background: var(--night-card-elevated);
+    border-color: rgba(200, 185, 247, 0.35);
+    box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.4), 0 0 25px var(--lavender-glow);
+    transform: translateY(-2px);
   }
 
   .pricing-label {
-    margin: 0 0 2rem;
+    display: inline-flex;
+    align-self: flex-start;
+    margin: 0 0 1.8rem;
+    padding: 0.35rem 0.8rem;
+    border-radius: 9999px;
+    background: rgba(250, 227, 146, 0.08);
+    border: 1px solid rgba(250, 227, 146, 0.28);
     color: var(--butter);
     font-family: var(--mono);
-    font-size: 0.68rem;
-    letter-spacing: 0.04em;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
   }
 
   .pricing-card-current .pricing-label {
-    color: #777047;
+    background: rgba(143, 227, 201, 0.1);
+    border-color: rgba(143, 227, 201, 0.3);
+    color: var(--mint);
   }
 
   .pricing-card h2 {
     margin: 0 0 0.8rem;
+    color: var(--text);
     font-family: var(--display);
-    font-size: clamp(2.5rem, 5vw, 4.5rem);
+    font-size: clamp(2.4rem, 4.5vw, 4rem);
     font-weight: 600;
-    letter-spacing: -0.075em;
-    line-height: 0.95;
+    letter-spacing: -0.06em;
+    line-height: 1;
   }
 
   .pricing-price {
     margin: 0 0 1.25rem;
     color: var(--mint);
     font-family: var(--display);
-    font-size: clamp(2rem, 4vw, 3.2rem);
+    font-size: clamp(2.2rem, 4vw, 3.4rem);
     font-weight: 600;
-    letter-spacing: -0.07em;
+    letter-spacing: -0.05em;
     line-height: 1;
   }
 
-  .pricing-card-current .pricing-price {
-    color: #527b6d;
+  .pricing-card:not(.pricing-card-current) .pricing-price {
+    color: var(--lavender);
   }
 
   .pricing-price span {
@@ -120,36 +144,51 @@ import { appSignInUrl } from "../lib/app-url";
     margin-top: 0.45rem;
     color: var(--night-muted);
     font-family: var(--mono);
-    font-size: 0.65rem;
+    font-size: 0.68rem;
     font-weight: 400;
     letter-spacing: 0.04em;
     text-transform: uppercase;
   }
 
-  .pricing-card-current .pricing-price span,
-  .pricing-card-current > p:not(.pricing-label):not(.pricing-price) {
-    color: #686176;
+  .pricing-card-current .pricing-price span {
+    color: var(--night-muted);
   }
 
   .pricing-card > p:not(.pricing-label):not(.pricing-price) {
     max-width: 28rem;
-    min-height: 3.5rem;
+    min-height: 3.2rem;
     margin: 0;
     color: var(--night-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .pricing-card-current > p:not(.pricing-label):not(.pricing-price) {
+    color: var(--text);
+    opacity: 0.9;
   }
 
   .pricing-card ul {
     display: grid;
-    gap: 0.55rem;
+    gap: 0.75rem;
     margin: 2rem 0 0;
-    padding: 1rem 0 0 1.2rem;
-    border-top: 1px solid rgba(247, 240, 229, 0.18);
+    padding: 1.5rem 0 0 1.25rem;
+    border-top: 1px solid var(--night-border);
     color: var(--text);
+    font-size: 0.92rem;
   }
 
   .pricing-card-current ul {
-    border-color: rgba(40, 38, 56, 0.18);
-    color: var(--ink);
+    border-color: rgba(143, 227, 201, 0.2);
+    color: var(--text);
+  }
+
+  .pricing-card li::marker {
+    color: var(--lavender);
+  }
+
+  .pricing-card-current li::marker {
+    color: var(--mint);
   }
 
   @media (max-width: 620px) {

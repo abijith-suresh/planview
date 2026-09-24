@@ -61,27 +61,33 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   }
 
   .faq-list {
-    margin-top: 3rem;
-    border-top: 1px solid rgba(247, 240, 229, 0.18);
+    margin-top: 3.5rem;
+    border-top: 1px solid var(--night-border);
   }
 
   .faq-item {
-    border-bottom: 1px solid rgba(247, 240, 229, 0.18);
+    border-bottom: 1px solid var(--night-border);
+    transition: border-color 180ms ease;
+  }
+
+  .faq-item:hover {
+    border-color: rgba(255, 255, 255, 0.16);
   }
 
   .faq-item summary {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 1.3rem 0;
+    gap: 1.5rem;
+    padding: 1.5rem 0;
     color: var(--text);
     cursor: pointer;
     font-family: var(--display);
-    font-size: clamp(1.35rem, 2.5vw, 2rem);
+    font-size: clamp(1.35rem, 2.5vw, 1.85rem);
     font-weight: 600;
-    letter-spacing: -0.05em;
+    letter-spacing: -0.04em;
     list-style: none;
+    transition: color 180ms ease;
   }
 
   .faq-item summary::-webkit-details-marker {
@@ -90,15 +96,27 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
   .faq-item summary::after {
     content: "+";
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 50%;
+    background: rgba(143, 227, 201, 0.08);
+    border: 1px solid rgba(143, 227, 201, 0.25);
     flex: 0 0 auto;
     color: var(--mint);
     font-family: var(--mono);
-    font-size: 1.15rem;
+    font-size: 1.1rem;
     font-weight: 400;
+    transition: all 180ms ease;
   }
 
   .faq-item[open] summary::after {
-    content: "−";
+    content: "\2212";
+    background: rgba(200, 185, 247, 0.08);
+    border-color: rgba(200, 185, 247, 0.25);
+    color: var(--lavender);
   }
 
   .faq-item summary:hover,
@@ -106,9 +124,25 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     color: var(--mint);
   }
 
+  .faq-item summary:hover::after {
+    transform: scale(1.08);
+  }
+
   .faq-item p {
-    max-width: 42rem;
-    margin: -0.35rem 0 1.5rem;
+    max-width: 44rem;
+    margin: -0.25rem 0 1.6rem;
     color: var(--night-muted);
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+
+  .faq-item code {
+    padding: 0.2rem 0.45rem;
+    border-radius: 0.35rem;
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    color: var(--mint);
+    font-family: var(--mono);
+    font-size: 0.88em;
   }
 </style>
