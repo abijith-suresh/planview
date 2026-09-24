@@ -1,3 +1,8 @@
+import {
+  reportDocumentUploadCompensationFailure,
+  type DocumentUploadCompensationReporter,
+} from "./document-upload-compensation.ts";
+
 export type DocumentCollectionMetadata = {
   title: string;
   storageProvider: "uploadthing";
@@ -16,6 +21,7 @@ export type DocumentCollectionHandlerDependencies<Client> = {
   isStorageConfigured(): boolean;
   createMetadata(client: Client, input: DocumentCollectionMetadata): Promise<string>;
   deleteStorageObject(key: string): Promise<void>;
+  reportCompensationFailure?: DocumentUploadCompensationReporter;
   missingServerConfigurationResponse(): Response;
   errorResponse(error: unknown): Response;
 };
@@ -142,7 +148,15 @@ export function createDocumentCollectionHandlers<Client>(
         });
       } catch (error) {
         // Keep metadata failures from leaving a completed UploadThing object behind.
-        await dependencies.deleteStorageObject(storageKey).catch(() => undefined);
+        try {
+          await dependencies.deleteStorageObject(storageKey);
+        } catch (cleanupCause) {
+          await reportDocumentUploadCompensationFailure(dependencies.reportCompensationFailure, {
+            objectKey: storageKey,
+            metadataCause: error,
+            cleanupCause,
+          });
+        }
         throw error;
       }
 

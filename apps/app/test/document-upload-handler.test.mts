@@ -199,6 +199,41 @@ test("deletes the uploaded object if metadata creation fails", async () => {
   assert.deepEqual(calls.deletedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
 });
 
+test("reports a failed compensation and keeps the metadata error response", async () => {
+  const metadataCause = new Error("metadata creation failed");
+  const cleanupCause = new Error("storage deletion failed");
+  const reports: Array<{
+    objectKey: string;
+    metadataCause: unknown;
+    cleanupCause: unknown;
+  }> = [];
+  const { calls, handler } = createHandler({
+    createMetadata: async () => {
+      throw metadataCause;
+    },
+    deleteStorageObject: async (key) => {
+      calls.deletedKeys.push(key);
+      throw cleanupCause;
+    },
+    reportCompensationFailure: async (failure) => {
+      reports.push(failure);
+      throw new Error("reporting failed");
+    },
+  });
+
+  const response = await handler({ request: createUploadRequest() });
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), { error: "metadata creation failed" });
+  assert.deepEqual(calls.deletedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
+  assert.equal(reports.length, 1);
+  assert.deepEqual(reports[0], {
+    objectKey: "uploadthing-custom-id:owner_123:uuid-123",
+    metadataCause,
+    cleanupCause,
+  });
+});
+
 test("does not expose file storage when it is not configured", async () => {
   const { calls, handler } = createHandler({ isStorageConfigured: () => false });
   const response = await handler({ request: createUploadRequest() });
