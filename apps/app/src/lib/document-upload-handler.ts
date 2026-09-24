@@ -1,3 +1,8 @@
+import {
+  reportDocumentUploadCompensationFailure,
+  type DocumentUploadCompensationReporter,
+} from "./document-upload-compensation.ts";
+
 export type DocumentUploadMetadata = {
   title: string;
   storageProvider: "uploadthing";
@@ -13,6 +18,7 @@ export type DocumentUploadHandlerDependencies<Client> = {
   uploadFile(input: { file: File; customId: string }): Promise<void>;
   createMetadata(client: Client, input: DocumentUploadMetadata): Promise<string>;
   deleteStorageObject(key: string): Promise<void>;
+  reportCompensationFailure?: DocumentUploadCompensationReporter;
   createUploadId(): string;
   missingServerConfigurationResponse(): Response;
   errorResponse(error: unknown): Response;
@@ -101,7 +107,15 @@ export function createDocumentUploadHandler<Client>(
           sizeBytes: file.size,
         });
       } catch (error) {
-        await dependencies.deleteStorageObject(storageKey).catch(() => undefined);
+        try {
+          await dependencies.deleteStorageObject(storageKey);
+        } catch (cleanupCause) {
+          await reportDocumentUploadCompensationFailure(dependencies.reportCompensationFailure, {
+            objectKey: storageKey,
+            metadataCause: error,
+            cleanupCause,
+          });
+        }
         throw error;
       }
 

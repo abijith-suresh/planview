@@ -9,6 +9,17 @@ export interface DocumentStorageAdapter {
   delete(key: string): Promise<void>;
 }
 
+type UploadThingStorageApi = {
+  getFileUrls(
+    key: string,
+    options: { keyType: "fileKey" | "customId" }
+  ): Promise<{ data: readonly { url: string }[] }>;
+  deleteFiles(
+    key: string,
+    options: { keyType: "fileKey" | "customId" }
+  ): Promise<{ success: boolean; deletedCount: number }>;
+};
+
 const uploadThingCustomIdPrefix = "uploadthing-custom-id:";
 
 function getUploadThingLocator(key: string) {
@@ -26,9 +37,9 @@ function getUploadThingLocator(key: string) {
 
 class UploadThingStorageAdapter implements DocumentStorageAdapter {
   readonly provider = "uploadthing" as const;
-  private readonly api: UTApi;
+  private readonly api: UploadThingStorageApi;
 
-  constructor(api: UTApi) {
+  constructor(api: UploadThingStorageApi) {
     this.api = api;
   }
 
@@ -46,8 +57,16 @@ class UploadThingStorageAdapter implements DocumentStorageAdapter {
 
   async delete(key: string) {
     const locator = getUploadThingLocator(key);
-    await this.api.deleteFiles(locator.key, { keyType: locator.keyType });
+    const result = await this.api.deleteFiles(locator.key, { keyType: locator.keyType });
+
+    if (!result.success) {
+      throw new Error("UploadThing could not delete the stored document.");
+    }
   }
+}
+
+export function createUploadThingStorageAdapter(api: UploadThingStorageApi) {
+  return new UploadThingStorageAdapter(api);
 }
 
 export function isDocumentStorageConfigured() {
@@ -65,5 +84,5 @@ export function getDocumentStorage(provider: string): DocumentStorageAdapter {
     throw new Error("UploadThing is not configured");
   }
 
-  return new UploadThingStorageAdapter(new UTApi({ token }));
+  return createUploadThingStorageAdapter(new UTApi({ token }));
 }
