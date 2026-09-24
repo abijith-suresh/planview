@@ -15,15 +15,19 @@ the CLI binary remains `planview`, and the private workspace is named
 
 ## Effect v4 and module boundaries
 
-- Keep shared local-document invariants in `@planview/core` as plain TypeScript;
-  keep app-specific domain policy in its owning workspace until a shared
-  boundary is justified. Pass nondeterministic inputs in instead of reading the
-  filesystem, environment, or network in core.
-- Keep Node.js and cloud APIs at adapter boundaries. In workspaces that already
-  use Effect, translate thrown or rejected failures into explicit error types
-  where they enter orchestration, and compose fallible async work as typed
-  Effects.
-- In Effect-based operations, use scopes and resource combinators when an
+- Keep shared local-document invariants and types in `@planview/core`; keep
+  app-specific authorization, routing, and cloud policy in their owning
+  workspace until a shared boundary is justified. Core currently has narrow
+  Node-backed defaults: `node:crypto` for document ID randomness and
+  `node:os`/`node:path`, `process.platform`, `process.env`, and `homedir()` for
+  app-data path resolution. Keep these defaults limited and injectable, and
+  pass explicit inputs when callers need deterministic behavior. Core resolves
+  paths but does not perform filesystem, network, or cloud I/O; keep that work
+  in the owning adapters.
+- In workspaces that use Effect, translate thrown or rejected failures into
+  explicit error types where they enter orchestration, and compose fallible
+  async work as typed Effects.
+- In Effect-using operations, use scopes and resource combinators when an
   operation owns resources that must be released on success, failure, or
   interruption. Keep pure data transformations as ordinary functions.
 - Use `Context.Service` and `Layer` when a capability is shared across modules
