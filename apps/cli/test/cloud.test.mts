@@ -46,6 +46,20 @@ const close = async (server: ReturnType<typeof createServer>) =>
     server.close((error) => (error ? reject(error) : resolve()));
   });
 
+const waitForTestEvent = async (event: Promise<void>, description: string) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      event,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Did not observe ${description}.`)), 5_000);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+};
+
 const withIsolatedAppData = async (run: (root: string) => Promise<void>) => {
   const root = mkdtempSync(join(tmpdir(), "planview-cloud-test-"));
   const envKeys = ["HOME", "USERPROFILE", "LOCALAPPDATA", "XDG_DATA_HOME"] as const;
@@ -101,8 +115,7 @@ const fakeReader = (options: {
   return reader as unknown as Pick<FileHandle, "read" | "stat">;
 };
 
-const saveTestCredentials = async (profile: string) => {
-  const cloudUrl = "https://cloud.example.test";
+const saveTestCredentials = async (profile: string, cloudUrl = "https://cloud.example.test") => {
   await loginToCloud({
     profile,
     cloudUrl,
@@ -274,6 +287,77 @@ test("cloud login callback and upload preserve the local protocol", async () => 
       await close(server);
     }
   });
+});
+
+const assertCloudUploadTimesOut = async (
+  responseMode: "no-headers" | "partial-json" | "partial-error-json"
+) => {
+  await withIsolatedAppData(async (root) => {
+    let markRequestReceived: () => void = () => undefined;
+    let markPartialResponseSent: () => void = () => undefined;
+    const requestReceived = new Promise<void>((resolve) => {
+      markRequestReceived = resolve;
+    });
+    const partialResponseSent = new Promise<void>((resolve) => {
+      markPartialResponseSent = resolve;
+    });
+    const server = createServer((request, response) => {
+      if (request.method !== "POST" || request.url !== "/api/documents/upload") {
+        sendJson(response, 404, { error: "Not found" });
+        return;
+      }
+
+      markRequestReceived();
+      void collectRequest(request).catch(() => undefined);
+      if (responseMode !== "no-headers") {
+        const isErrorResponse = responseMode === "partial-error-json";
+        response.writeHead(isErrorResponse ? 422 : 201, {
+          "Content-Type": "application/json",
+        });
+        response.write(
+          isErrorResponse ? '{"error":"partial' : '{"id":"partial',
+          markPartialResponseSent
+        );
+      }
+    });
+
+    try {
+      const cloudUrl = await listen(server);
+      const profile = `cloud-timeout-${responseMode}`;
+      await saveTestCredentials(profile, cloudUrl);
+      const sourcePath = join(root, "timeout.html");
+      writeFileSync(sourcePath, "<!doctype html><title>Timeout</title>");
+
+      const upload = uploadCloudDocument(sourcePath, profile, { timeoutMs: 500 }).then(
+        () => ({ kind: "success" as const }),
+        (cause: unknown) => ({ kind: "failure" as const, cause })
+      );
+      await waitForTestEvent(requestReceived, "upload request to reach the local server");
+      if (responseMode !== "no-headers") {
+        await waitForTestEvent(partialResponseSent, "partial JSON response to be sent");
+      }
+      const result = await upload;
+      assert.equal(result.kind, "failure", "the stalled cloud upload should reject");
+      if (result.kind === "failure") {
+        assert.match(String(result.cause), /cloud upload timed out/i);
+      }
+    } finally {
+      server.closeAllConnections();
+      if (server.listening) await close(server);
+    }
+  });
+};
+
+test("cloud upload times out when the server never sends response headers", async () => {
+  await assertCloudUploadTimesOut("no-headers");
+});
+
+test("cloud upload timeout covers a successful response with an unfinished JSON body", async () => {
+  await assertCloudUploadTimesOut("partial-json");
+});
+
+test("cloud upload timeout covers an unfinished JSON error body", async () => {
+  await assertCloudUploadTimesOut("partial-error-json");
 });
 
 test("bounded cloud reads catch growth at EOF and cap bytes read", async () => {
