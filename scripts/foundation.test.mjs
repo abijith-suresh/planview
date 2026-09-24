@@ -329,7 +329,7 @@ test("repository foundation has the expected configuration", () => {
       "@planview/core": "0.1.0",
       "@planview/daemon": "0.1.0",
       "@planview/storage": "0.1.0",
-      effect: "4.0.0-rc.115",
+      effect: "4.0.0-rc.117",
     },
     "local dependencies"
   );
@@ -449,7 +449,7 @@ test("repository foundation has the expected configuration", () => {
   expectProperty(
     storagePackageJson.dependencies,
     "effect",
-    "4.0.0-rc.115",
+    "4.0.0-rc.117",
     "storage Effect dependency"
   );
 
