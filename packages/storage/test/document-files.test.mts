@@ -935,6 +935,10 @@ test("bounds a live target-lock wait as a collision without claiming the peer lo
     const targetLockEntered = new Promise<void>((resolve) => {
       targetLockEnteredResolve = resolve;
     });
+    let releaseTargetLock!: () => void;
+    const targetLockGate = new Promise<void>((resolve) => {
+      releaseTargetLock = resolve;
+    });
     let holdTargetLock = true;
     const firstStore = Effect.runSync(
       openDocumentFileStore({
@@ -946,11 +950,12 @@ test("bounds a live target-lock wait as a collision without claiming the peer lo
           }
           holdTargetLock = false;
           targetLockEnteredResolve();
-          await new Promise<void>((resolve) => setTimeout(resolve, 64));
+          await targetLockGate;
         },
       })
     );
     const secondStore = Effect.runSync(openDocumentFileStore({ documentsDir, stagingDir }));
+    let firstFinalization: Promise<unknown> | undefined;
     try {
       const firstSource = join(directory, "target-lock-winner.html");
       const secondSource = join(directory, "target-lock-contender.html");
@@ -959,18 +964,22 @@ test("bounds a live target-lock wait as a collision without claiming the peer lo
       const firstHandle = await firstStore.stageSourceFile(firstSource);
       const secondHandle = await secondStore.stageSourceFile(secondSource);
 
-      const firstFinalization = firstStore.finalizeStagedFile(firstHandle, validId);
+      firstFinalization = firstStore.finalizeStagedFile(firstHandle, validId);
       await targetLockEntered;
       await assert.rejects(
         secondStore.finalizeStagedFile(secondHandle, validId),
         (error) => error instanceof DocumentFileTargetBusyError
       );
-      await firstFinalization;
-      assert.deepEqual(await readdir(stagingDir), []);
     } finally {
-      await firstStore.close();
-      await secondStore.close();
+      releaseTargetLock();
+      try {
+        await firstFinalization;
+      } finally {
+        await firstStore.close();
+        await secondStore.close();
+      }
     }
+    assert.deepEqual(await readdir(stagingDir), []);
   }));
 
 test("finalization uses a validated id, consumes the handle, and never replaces a file", () =>
