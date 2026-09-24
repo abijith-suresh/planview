@@ -1,25 +1,16 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { constants } from "node:fs";
-import {
-  chmod,
-  type FileHandle,
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  rename,
-  unlink,
-} from "node:fs/promises";
+import { chmod, type FileHandle, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { basename, join } from "node:path";
 import { resolveAppDataPaths } from "@planview/local";
+import { MAX_HTML_SIZE_BYTES, readBoundedCloudFile } from "./cloud-file.js";
 
 const DEFAULT_CLOUD_URL = "https://app-staging-a39a.up.railway.app";
 const CLI_CREDENTIAL_PREFIX = "planview_cli_";
 const CREDENTIALS_NAME = "cloud-credentials.json";
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
-const MAX_HTML_SIZE_BYTES = 8 * 1024 * 1024;
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 const NO_FOLLOW = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
 
@@ -397,9 +388,42 @@ export const uploadCloudDocument = async (sourcePath: string, profile?: string) 
     throw new Error("The cloud uploader accepts HTML files up to 8 MiB.");
   }
 
-  const file = new File([new Uint8Array(await readFile(sourcePath))], basename(sourcePath), {
+  // O_NONBLOCK prevents a replacement FIFO from stalling between lstat and
+  // open. Descriptor and path checks then reject a replacement file.
+  const source = await open(
+    sourcePath,
+    constants.O_RDONLY | NO_FOLLOW | (constants.O_NONBLOCK ?? 0)
+  );
+  let bytes: Uint8Array;
+  let openedStats: Awaited<ReturnType<FileHandle["stat"]>>;
+  try {
+    openedStats = await source.stat();
+    if (!openedStats.isFile()) {
+      throw new Error("Choose a regular .html file to upload.");
+    }
+    if (openedStats.dev !== fileStats.dev || openedStats.ino !== fileStats.ino) {
+      throw new Error("The HTML file changed while it was being opened for upload.");
+    }
+    if (openedStats.size > MAX_HTML_SIZE_BYTES) {
+      throw new Error("The cloud uploader accepts HTML files up to 8 MiB.");
+    }
+
+    bytes = await readBoundedCloudFile(source);
+
+    const currentPathStats = await lstat(sourcePath);
+    if (currentPathStats.isSymbolicLink() || !currentPathStats.isFile()) {
+      throw new Error("Choose a regular .html file to upload.");
+    }
+    if (currentPathStats.dev !== openedStats.dev || currentPathStats.ino !== openedStats.ino) {
+      throw new Error("The HTML file changed while it was being read.");
+    }
+  } finally {
+    await source.close();
+  }
+
+  const file = new File([bytes], basename(sourcePath), {
     type: "text/html",
-    lastModified: fileStats.mtimeMs,
+    lastModified: openedStats.mtimeMs,
   });
   const title =
     basename(sourcePath)
