@@ -437,6 +437,7 @@ test("canceled cleanup returns a resumable cursor without skipping the active ro
 test("pages document files in exact bytewise order and resume without gaps", () => {
   const ids = [id("A"), id("_"), id("-"), id("a"), id("0")];
   const insertedId = id("1");
+  let directoryEnumerations = 0;
   return withEnvironment(
     async ({ documentFileStore, documentsDir }) => {
       await Promise.all(
@@ -453,13 +454,21 @@ test("pages document files in exact bytewise order and resume without gaps", () 
       let after = page.nextId;
       do {
         page = await documentFileStore.listDocumentFilesPage(2, after, watermark);
+        assert.strictEqual(page.watermark, watermark);
         observed.push(...page.files.map((file) => file.id));
         after = page.nextId;
       } while (page.hasMore);
       assert.deepEqual(observed, expected);
+      assert.equal(directoryEnumerations, 1);
+
+      await documentFileStore.listDocumentFilesPage(2);
+      assert.equal(directoryEnumerations, 2);
     },
     {
       documentFileScanStartedAt: () => 100,
+      onDocumentFileDirectoryEnumeration: () => {
+        directoryEnumerations += 1;
+      },
       documentFileScanObservation: (observation) => ({
         ...observation,
         identity: {
@@ -467,6 +476,145 @@ test("pages document files in exact bytewise order and resume without gaps", () 
           birthtimeMs: observation.id === insertedId ? 200 : 1,
         },
       }),
+    }
+  );
+});
+
+test("uses one physical directory listing per watermark and sees later insertions on a fresh scan", () => {
+  const firstId = id("a");
+  const lastId = id("z");
+  const insertedId = id("m");
+  let directoryEnumerations = 0;
+  return withEnvironment(
+    async ({ documentFileStore, documentsDir }) => {
+      await Promise.all([
+        writeFile(join(documentsDir, `${firstId}.html`), "first"),
+        writeFile(join(documentsDir, `${lastId}.html`), "last"),
+      ]);
+
+      const first = await documentFileStore.listDocumentFilesPage(1);
+      assert.deepEqual(
+        first.files.map((file) => file.id),
+        [firstId]
+      );
+      assert.equal(first.nextId, firstId);
+      assert.equal(first.watermark?.throughId, lastId);
+      assert.equal(first.hasMore, true);
+      await writeFile(join(documentsDir, `${insertedId}.html`), "inserted after snapshot");
+
+      const remaining = await documentFileStore.listDocumentFilesPage(
+        1,
+        first.nextId,
+        first.watermark
+      );
+      assert.strictEqual(remaining.watermark, first.watermark);
+      assert.deepEqual(
+        remaining.files.map((file) => file.id),
+        [lastId]
+      );
+      assert.equal(remaining.nextId, lastId);
+      assert.equal(remaining.hasMore, false);
+      assert.equal(directoryEnumerations, 1);
+
+      const fresh = await documentFileStore.listDocumentFilesPage(10);
+      assert.deepEqual(
+        fresh.files.map((file) => file.id),
+        [firstId, insertedId, lastId].sort((left, right) =>
+          Buffer.compare(Buffer.from(left), Buffer.from(right))
+        )
+      );
+      assert.equal(directoryEnumerations, 2);
+    },
+    {
+      documentFileScanStartedAt: () => Number.MAX_SAFE_INTEGER,
+      onDocumentFileDirectoryEnumeration: () => {
+        directoryEnumerations += 1;
+      },
+    }
+  );
+});
+
+test("uses fresh enumeration for a cloned watermark", () => {
+  const firstId = id("a");
+  const secondId = id("b");
+  let directoryEnumerations = 0;
+  return withEnvironment(
+    async ({ documentFileStore, documentsDir }) => {
+      await Promise.all([
+        writeFile(join(documentsDir, `${firstId}.html`), "first"),
+        writeFile(join(documentsDir, `${secondId}.html`), "second"),
+      ]);
+      const first = await documentFileStore.listDocumentFilesPage(1);
+      const clonedWatermark = { ...first.watermark! };
+      const second = await documentFileStore.listDocumentFilesPage(
+        1,
+        first.nextId,
+        clonedWatermark
+      );
+      assert.strictEqual(second.watermark, clonedWatermark);
+      assert.deepEqual(
+        second.files.map((file) => file.id),
+        [secondId]
+      );
+      assert.equal(directoryEnumerations, 2);
+    },
+    {
+      documentFileScanStartedAt: () => Number.MAX_SAFE_INTEGER,
+      onDocumentFileDirectoryEnumeration: () => {
+        directoryEnumerations += 1;
+      },
+    }
+  );
+});
+
+test("discards a cached snapshot when a watermark is mutated", () => {
+  const firstId = id("a");
+  const secondId = id("b");
+  const thirdId = id("c");
+  let directoryEnumerations = 0;
+  return withEnvironment(
+    async ({ documentFileStore, documentsDir }) => {
+      await Promise.all(
+        [firstId, secondId, thirdId].map((documentId) =>
+          writeFile(join(documentsDir, `${documentId}.html`), documentId)
+        )
+      );
+      const first = await documentFileStore.listDocumentFilesPage(1);
+      assert.deepEqual(
+        first.files.map((file) => file.id),
+        [firstId]
+      );
+      const mutableWatermark = first.watermark as { throughId: string; startedAt: number };
+      mutableWatermark.startedAt -= 1;
+
+      const second = await documentFileStore.listDocumentFilesPage(
+        1,
+        first.nextId,
+        mutableWatermark
+      );
+      assert.deepEqual(
+        second.files.map((file) => file.id),
+        [secondId]
+      );
+      assert.strictEqual(second.watermark, mutableWatermark);
+
+      mutableWatermark.startedAt += 1;
+      const third = await documentFileStore.listDocumentFilesPage(
+        1,
+        second.nextId,
+        mutableWatermark
+      );
+      assert.deepEqual(
+        third.files.map((file) => file.id),
+        [thirdId]
+      );
+      assert.equal(directoryEnumerations, 3);
+    },
+    {
+      documentFileScanStartedAt: () => Number.MAX_SAFE_INTEGER,
+      onDocumentFileDirectoryEnumeration: () => {
+        directoryEnumerations += 1;
+      },
     }
   );
 });
