@@ -54,7 +54,7 @@ import { appSignInUrl } from "../lib/app-url";
       <article class="command-card">
         <div class="command-header">
           <span class="command-name">publish</span>
-          <span class="command-badge">Primary</span>
+          <span class="command-tag">Primary</span>
         </div>
         <p>
           Writes a local snapshot of your HTML file or directory and prints its URL. Append
@@ -68,7 +68,7 @@ import { appSignInUrl } from "../lib/app-url";
       <article class="command-card">
         <div class="command-header">
           <span class="command-name">get</span>
-          <span class="command-badge">Inspect</span>
+          <span class="command-tag">Inspect</span>
         </div>
         <p>
           Retrieve a local snapshot by its document identifier or exact loopback URL to inspect its
@@ -82,7 +82,7 @@ import { appSignInUrl } from "../lib/app-url";
       <article class="command-card">
         <div class="command-header">
           <span class="command-name">start / stop</span>
-          <span class="command-badge">Lifecycle</span>
+          <span class="command-tag">Lifecycle</span>
         </div>
         <p>
           Explicitly start or terminate the lightweight local daemon. Useful when orchestrating
@@ -96,7 +96,7 @@ import { appSignInUrl } from "../lib/app-url";
       <article class="command-card">
         <div class="command-header">
           <span class="command-name">status</span>
-          <span class="command-badge">Telemetry</span>
+          <span class="command-tag">Daemon</span>
         </div>
         <p>
           Check whether the background loopback daemon is active, its port binding, and memory
@@ -123,7 +123,7 @@ import { appSignInUrl } from "../lib/app-url";
     gap: 2.5rem;
     padding: 2.5rem;
     border: 1px solid var(--night-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--night-card);
   }
 
@@ -131,7 +131,7 @@ import { appSignInUrl } from "../lib/app-url";
     margin: 0 0 0.75rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.6rem;
+    font-size: 1.5rem;
     font-weight: 700;
     letter-spacing: -0.02em;
   }
@@ -139,13 +139,13 @@ import { appSignInUrl } from "../lib/app-url";
   .install-info p {
     margin: 0;
     color: var(--night-muted);
-    font-size: 1rem;
+    font-size: 0.95rem;
     line-height: 1.6;
   }
 
   .install-info code {
     color: var(--mint);
-    background: var(--night);
+    background: var(--night-soft);
     padding: 0.2rem 0.4rem;
     border-radius: 4px;
     font-family: var(--mono);
@@ -156,7 +156,7 @@ import { appSignInUrl } from "../lib/app-url";
     flex-direction: column;
     gap: 1rem;
     padding: 1.25rem 1.5rem;
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--night);
     border: 1px solid var(--night-border);
   }
@@ -188,14 +188,13 @@ import { appSignInUrl } from "../lib/app-url";
   .command-card {
     padding: 2rem;
     border: 1px solid var(--night-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--night-card);
     transition: all 160ms ease;
   }
 
   .command-card:hover {
-    border-color: var(--iris-border);
-    transform: translateY(-2px);
+    border-color: var(--night-border-hover);
   }
 
   .command-header {
@@ -207,52 +206,63 @@ import { appSignInUrl } from "../lib/app-url";
 
   .command-name {
     color: var(--text-white);
-    font-family: var(--display);
-    font-size: 1.3rem;
+    font-family: var(--mono);
+    font-size: 1.15rem;
     font-weight: 700;
   }
 
-  .command-badge {
-    padding: 0.2rem 0.6rem;
-    border-radius: 6px;
+  .command-tag {
+    padding: 0.2rem 0.55rem;
+    border-radius: 4px;
     background: var(--night-soft);
     border: 1px solid var(--night-border);
     color: var(--night-muted);
-    font-size: 0.75rem;
+    font-size: 0.74rem;
     font-weight: 600;
   }
 
   .command-card p {
     margin: 0 0 1.25rem;
     color: var(--night-muted);
-    font-size: 0.95rem;
+    font-size: 0.92rem;
     line-height: 1.6;
   }
 
   .command-card code {
-    color: var(--mint);
-    background: var(--night);
     padding: 0.15rem 0.35rem;
     border-radius: 4px;
+    background: var(--night);
+    border: 1px solid var(--night-border);
+    color: var(--mint);
     font-family: var(--mono);
-    font-size: 0.85em;
+    font-size: 0.82rem;
   }
 
   .command-example {
     padding: 0.75rem 1rem;
-    border-radius: 8px;
+    border-radius: 6px;
     background: var(--night);
     border: 1px solid var(--night-border);
+    overflow-x: auto;
   }
 
   .command-example code {
-    background: transparent;
     padding: 0;
-    color: var(--mint);
+    background: none;
+    border: none;
+    color: var(--text);
+    font-family: var(--mono);
     font-size: 0.82rem;
+    white-space: nowrap;
   }
 
-  @media (max-width: 860px) {
+  .page-note a {
+    color: var(--mint);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  @media (max-width: 800px) {
     .install-banner {
       grid-template-columns: 1fr;
     }

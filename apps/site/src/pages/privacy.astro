@@ -10,7 +10,6 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 >
   <section class="privacy-hero" aria-labelledby="privacy-title">
     <div class="privacy-hero-content">
-      <span class="privacy-badge">Security & Transparency</span>
       <h1 id="privacy-title">Your pages are yours.</h1>
       <p class="privacy-lead">
         We believe developers and makers should maintain complete ownership and control over the
@@ -64,68 +63,54 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
 <style>
   .privacy-hero {
-    padding: clamp(4rem, 7vh, 6rem) 0 3rem;
+    padding: clamp(3.5rem, 6vh, 5rem) 0 2.5rem;
     border-bottom: 1px solid var(--night-border);
   }
 
   .privacy-hero-content {
-    max-width: 48rem;
-  }
-
-  .privacy-badge {
-    display: inline-block;
-    padding: 0.25rem 0.75rem;
-    margin-bottom: 1.25rem;
-    border-radius: 9999px;
-    background: var(--mint-soft);
-    border: 1px solid var(--mint-border);
-    color: var(--mint);
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
+    max-width: 44rem;
   }
 
   .privacy-hero h1 {
-    margin: 0 0 1.25rem;
+    margin: 0 0 1rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2.4rem, 4.4vw, 3.6rem);
+    font-size: clamp(2.2rem, 3.8vw, 3.2rem);
     font-weight: 800;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.035em;
     line-height: 1.1;
   }
 
   .privacy-lead {
     margin: 0;
     color: var(--night-muted);
-    font-size: 1.2rem;
+    font-size: clamp(1.05rem, 1.3vw, 1.15rem);
     line-height: 1.65;
   }
 
   .privacy-content {
-    padding: 4.5rem 0;
+    padding: 3.5rem 0 5rem;
   }
 
   .privacy-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2rem;
+    gap: 1.75rem;
   }
 
   .privacy-card {
     padding: 2.25rem;
     border: 1px solid var(--night-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--night-card);
   }
 
   .privacy-card h3 {
-    margin: 0 0 0.85rem;
+    margin: 0 0 0.75rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.35rem;
+    font-size: 1.25rem;
     font-weight: 700;
-    letter-spacing: -0.02em;
   }
 
   .privacy-card p {
@@ -136,15 +121,16 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   }
 
   .privacy-card code {
-    color: var(--mint);
-    background: var(--night);
     padding: 0.15rem 0.35rem;
     border-radius: 4px;
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    color: var(--mint);
     font-family: var(--mono);
-    font-size: 0.88em;
+    font-size: 0.85rem;
   }
 
-  @media (max-width: 860px) {
+  @media (max-width: 800px) {
     .privacy-grid {
       grid-template-columns: 1fr;
     }

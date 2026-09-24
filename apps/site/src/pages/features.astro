@@ -27,15 +27,12 @@ import { appSignInUrl } from "../lib/app-url";
 
     <div class="features-grid">
       <article class="feature-card">
-        <div class="feature-card-header">
-          <div class="feature-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-              <line x1="8" y1="21" x2="16" y2="21"></line>
-              <line x1="12" y1="17" x2="12" y2="21"></line>
-            </svg>
-          </div>
-          <span class="feature-badge">Local Runtime</span>
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
         </div>
         <h3>Preview locally</h3>
         <p>
@@ -50,13 +47,10 @@ import { appSignInUrl } from "../lib/app-url";
       </article>
 
       <article class="feature-card">
-        <div class="feature-card-header">
-          <div class="feature-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
-            </svg>
-          </div>
-          <span class="feature-badge">Cloud Vault</span>
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+          </svg>
         </div>
         <h3>Keep one in the cloud</h3>
         <p>
@@ -71,14 +65,11 @@ import { appSignInUrl } from "../lib/app-url";
       </article>
 
       <article class="feature-card">
-        <div class="feature-card-header">
-          <div class="feature-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            </svg>
-          </div>
-          <span class="feature-badge">Security First</span>
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
         </div>
         <h3>Keep it private</h3>
         <p>
@@ -93,14 +84,11 @@ import { appSignInUrl } from "../lib/app-url";
       </article>
 
       <article class="feature-card">
-        <div class="feature-card-header">
-          <div class="feature-icon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-            </svg>
-          </div>
-          <span class="feature-badge">Zero Config</span>
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
         </div>
         <h3>Start with one file</h3>
         <p>
@@ -121,14 +109,14 @@ import { appSignInUrl } from "../lib/app-url";
     </p>
   </section>
 
-  <!-- Deep Narrative Section -->
+  <!-- Grounding Section -->
   <section class="content-section feature-reason" aria-labelledby="reason-title">
     <div class="feature-reason-box">
       <h2 id="reason-title">The chat is not a home for the page.</h2>
       <p>
-        Coding agents are remarkably skilled at generating useful interactive artifacts on demand.
-        Whether it is a financial sensitivity matrix, a customer retention cohort analyzer, or a
-        prototype interface, these artifacts represent real thinking and working software.
+        AI agents like Claude Code are remarkably skilled at generating rich HTML artifacts:
+        architectural specs with diagrams, PR reviews, throwaway data triage tools, and interactive
+        prototypes. These artifacts represent working software.
       </p>
       <p>
         plansplease decouples the software artifact from the conversation thread. You get a clean,
@@ -149,21 +137,13 @@ import { appSignInUrl } from "../lib/app-url";
   .feature-card {
     padding: 2.25rem;
     border: 1px solid var(--night-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--night-card);
     transition: all 160ms ease;
   }
 
   .feature-card:hover {
-    border-color: var(--iris-border);
-    transform: translateY(-2px);
-  }
-
-  .feature-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.25rem;
+    border-color: var(--night-border-hover);
   }
 
   .feature-icon {
@@ -172,27 +152,18 @@ import { appSignInUrl } from "../lib/app-url";
     justify-content: center;
     width: 44px;
     height: 44px;
-    border-radius: 10px;
-    background: var(--night-card-elevated);
-    border: 1px solid var(--night-border-hover);
-    color: var(--mint);
-  }
-
-  .feature-badge {
-    padding: 0.25rem 0.65rem;
-    border-radius: 6px;
-    border: 1px solid var(--night-border);
+    margin-bottom: 1.25rem;
+    border-radius: 8px;
     background: var(--night-soft);
-    color: var(--night-muted);
-    font-size: 0.75rem;
-    font-weight: 600;
+    border: 1px solid var(--night-border);
+    color: var(--mint);
   }
 
   .feature-card h3 {
     margin: 0 0 0.85rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.35rem;
+    font-size: 1.3rem;
     font-weight: 700;
     letter-spacing: -0.02em;
   }
@@ -211,20 +182,29 @@ import { appSignInUrl } from "../lib/app-url";
   }
 
   .feature-tags span {
-    padding: 0.2rem 0.6rem;
+    padding: 0.25rem 0.6rem;
     border-radius: 6px;
-    background: var(--night);
+    background: var(--night-soft);
     border: 1px solid var(--night-border);
-    color: var(--night-subtle);
-    font-size: 0.76rem;
+    color: var(--night-muted);
+    font-size: 0.78rem;
     font-weight: 500;
   }
 
+  .page-note a {
+    color: var(--mint);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .feature-reason {
+    padding-top: 1rem;
+  }
+
   .feature-reason-box {
-    max-width: 46rem;
-    padding: 2.5rem;
-    border-radius: 14px;
+    padding: 2.75rem;
     border: 1px solid var(--night-border);
+    border-radius: 12px;
     background: var(--night-card);
   }
 
@@ -232,15 +212,16 @@ import { appSignInUrl } from "../lib/app-url";
     margin: 0 0 1.25rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(1.8rem, 2.8vw, 2.2rem);
+    font-size: 1.6rem;
     font-weight: 700;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.025em;
   }
 
   .feature-reason-box p {
-    margin: 0 0 1rem;
+    max-width: 44rem;
+    margin: 0 0 1.25rem;
     color: var(--night-muted);
-    font-size: 1.05rem;
+    font-size: 1.02rem;
     line-height: 1.65;
   }
 
@@ -248,7 +229,7 @@ import { appSignInUrl } from "../lib/app-url";
     margin-bottom: 0;
   }
 
-  @media (max-width: 860px) {
+  @media (max-width: 800px) {
     .features-grid {
       grid-template-columns: 1fr;
     }

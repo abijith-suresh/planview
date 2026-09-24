@@ -20,12 +20,11 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   </section>
 
   <section class="content-section" aria-labelledby="docs-list-title">
-    <h2 id="docs-list-title">Start here.</h2>
+    <h2 id=\"docs-list-title\">Start here.</h2>
 
     <div class="docs-grid">
       <article class="doc-card">
-        <div class="doc-card-badge">Step 1</div>
-        <h3>Install the CLI</h3>
+        <h3>1. Install the CLI</h3>
         <p>
           Install the command globally via npm. It gives any standalone HTML file or directory an
           instant local loopback URL.
@@ -36,8 +35,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
       </article>
 
       <article class="doc-card">
-        <div class="doc-card-badge">Step 2</div>
-        <h3>Publish a local page</h3>
+        <h3>2. Publish a local page</h3>
         <p>
           Publish a file or page folder. The background daemon creates a lightweight local snapshot
           and automatically opens your browser.
@@ -48,8 +46,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
       </article>
 
       <article class="doc-card">
-        <div class="doc-card-badge">Step 3</div>
-        <h3>Save a cloud copy</h3>
+        <h3>3. Save a cloud copy</h3>
         <p>
           Sign in to the plansplease workspace and upload your HTML file. Your tools and dashboards
           stay permanently accessible from any browser.
@@ -101,23 +98,11 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   .doc-card {
     padding: 2rem;
     border: 1px solid var(--night-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--night-card);
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-  }
-
-  .doc-card-badge {
-    align-self: flex-start;
-    padding: 0.25rem 0.65rem;
-    margin-bottom: 1.25rem;
-    border-radius: 6px;
-    background: var(--iris-soft);
-    border: 1px solid var(--iris-border);
-    color: var(--iris);
-    font-size: 0.78rem;
-    font-weight: 700;
   }
 
   .doc-card h3 {
@@ -156,7 +141,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     border-radius: 8px;
     background: var(--night);
     border: 1px solid var(--night-border);
-    color: var(--night-subtle);
+    color: var(--night-muted);
     font-size: 0.78rem;
     font-weight: 500;
   }
@@ -191,15 +176,14 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   }
 
   .guide-item:hover {
-    border-color: var(--mint-border);
-    transform: translateY(-2px);
+    border-color: var(--night-border-hover);
   }
 
   .guide-item h4 {
     margin: 0 0 0.5rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     font-weight: 700;
   }
 
@@ -207,16 +191,27 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     margin: 0 0 1rem;
     color: var(--night-muted);
     font-size: 0.88rem;
-    line-height: 1.55;
+    line-height: 1.5;
+  }
+
+  .guide-item code {
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    background: var(--night);
+    border: 1px solid var(--night-border);
+    color: var(--mint);
+    font-family: var(--mono);
+    font-size: 0.8rem;
   }
 
   .guide-link-text {
+    display: inline-block;
     color: var(--mint);
-    font-size: 0.82rem;
+    font-size: 0.84rem;
     font-weight: 600;
   }
 
-  @media (max-width: 960px) {
+  @media (max-width: 900px) {
     .docs-grid,
     .guides-grid {
       grid-template-columns: 1fr;

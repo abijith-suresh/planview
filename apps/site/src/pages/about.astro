@@ -10,62 +10,68 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 >
   <section class="about-hero" aria-labelledby="about-title">
     <div class="about-hero-content">
-      <span class="about-badge">Our Mission</span>
       <h1 id="about-title">A place for the useful things agents make.</h1>
       <p class="about-lead">
-        plansplease exists because AI agents are writing brilliant, full-featured web applications,
-        but chat interfaces were never designed to preserve software.
+        plansplease solves a simple problem: AI agents like Claude Code create HTML because Markdown
+        is too limited, but viewing and sharing those HTML files has too much friction.
       </p>
     </div>
   </section>
 
   <section class="about-content">
     <div class="about-narrative">
-      <h2>The Gap Between Prompt and Permanence</h2>
+      <h2>The Shift from Markdown to HTML</h2>
       <p>
-        Every day, engineers and makers ask LLMs to build interactive tools: financial sensitivity
-        calculators, prototype UI components, research briefs with interactive charts, and internal
-        utilities. The model outputs a complete HTML file in seconds.
+        For years, Markdown was the default format for LLM outputs. But as coding agents like
+        Claude Code take on deeper architectural planning, Markdown breaks down. A 500-line Markdown
+        spec is painful to navigate, lacks visual hierarchy, and cannot represent interactive
+        explorations.
       </p>
       <p>
-        And then what happens? You scroll down, the chat compacts, or you close the tab. The tool is
-        lost. If you do save it, it sits in your <code>Downloads</code> folder, broken when clicked
-        because of browser security sandboxes, or requiring an hour of boilerplate repo setup just
-        to view.
+        HTML solves this. An agent can generate interactive architectural specs with SVG diagrams,
+        PR reviews with inline annotations, UI prototypes with live sliders, and throwaway data editors
+        with JSON export buttons.
+      </p>
+      <p>
+        The friction is how to view them. Opening an HTML file directly from disk triggers browser
+        CORS security blocks and breaks relative assets. Spinning up an ad-hoc HTTP server or
+        deploying a repository takes longer than prompting the tool itself.
+      </p>
+      <p>
+        plansplease eliminates that friction:
       </p>
     </div>
 
     <div class="values-grid">
       <article class="value-card">
-        <h3>It starts on your machine</h3>
+        <h3>Instant local previews</h3>
         <p>
-          The CLI gives any standalone HTML file or page folder an instant local URL via a lightweight
-          loopback daemon. Iterate with your agent in real-time without polluting your project setup.
+          The CLI daemon runs on your machine with zero configuration. It serves files over loopback,
+          binds a private port, and automatically opens your default browser.
         </p>
       </article>
 
       <article class="value-card">
-        <h3>The cloud keeps the useful copy</h3>
+        <h3>Permanent cloud vault</h3>
         <p>
-          Our managed workspace provides a permanent, authenticated home for your agent artifacts.
-          Access your interactive dashboards and tools from any machine, anytime.
+          Sync standalone artifacts to your private cloud workspace. Revisit your agent's interactive
+          specs and tools long after the chat session has ended.
         </p>
       </article>
 
       <article class="value-card">
-        <h3>Lightweight by design</h3>
+        <h3>Pure web standards</h3>
         <p>
-          A single-purpose page does not need a full Next.js application, Docker container, or CI/CD
-          pipeline to be useful. Start with the standalone artifact in front of you.
+          No proprietary bundler lock-in. Full support for standard HTML5, SVG diagrams, Canvas,
+          inline Tailwind, and multi-file asset folders.
         </p>
       </article>
 
       <article class="value-card">
-        <h3>Built in the open</h3>
+        <h3>Open source foundation</h3>
         <p>
-          The core runtime and CLI are 100% open source on
-          <a href="https://github.com/abijith-suresh/planview">GitHub</a>. We build with the
-          developer community to establish the standard runtime for agent web artifacts.
+          The core daemon, CLI, and storage engine are 100% open source on
+          <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
         </p>
       </article>
     </div>
@@ -74,58 +80,45 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
 <style>
   .about-hero {
-    padding: clamp(4rem, 7vh, 6rem) 0 3rem;
+    padding: clamp(3.5rem, 6vh, 5rem) 0 2.5rem;
     border-bottom: 1px solid var(--night-border);
   }
 
   .about-hero-content {
-    max-width: 48rem;
-  }
-
-  .about-badge {
-    display: inline-block;
-    padding: 0.25rem 0.75rem;
-    margin-bottom: 1.25rem;
-    border-radius: 9999px;
-    background: var(--iris-soft);
-    border: 1px solid var(--iris-border);
-    color: var(--iris);
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
+    max-width: 46rem;
   }
 
   .about-hero h1 {
-    margin: 0 0 1.25rem;
+    margin: 0 0 1rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2.4rem, 4.4vw, 3.6rem);
+    font-size: clamp(2.2rem, 3.8vw, 3.2rem);
     font-weight: 800;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.035em;
     line-height: 1.1;
   }
 
   .about-lead {
     margin: 0;
     color: var(--night-muted);
-    font-size: 1.2rem;
+    font-size: clamp(1.05rem, 1.3vw, 1.15rem);
     line-height: 1.65;
   }
 
   .about-content {
-    padding: 4.5rem 0;
+    padding: 3.5rem 0 5rem;
   }
 
   .about-narrative {
-    max-width: 46rem;
-    margin-bottom: 4rem;
+    max-width: 44rem;
+    margin-bottom: 3.5rem;
   }
 
   .about-narrative h2 {
     margin: 0 0 1.25rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.85rem;
+    font-size: 1.6rem;
     font-weight: 700;
     letter-spacing: -0.025em;
   }
@@ -133,36 +126,38 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   .about-narrative p {
     margin: 0 0 1.25rem;
     color: var(--night-muted);
-    font-size: 1.05rem;
+    font-size: 1.02rem;
     line-height: 1.65;
   }
 
   .about-narrative code {
-    color: var(--mint);
-    background: var(--night-card);
     padding: 0.2rem 0.4rem;
     border-radius: 4px;
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    color: var(--mint);
     font-family: var(--mono);
+    font-size: 0.88rem;
   }
 
   .values-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2rem;
+    gap: 1.75rem;
   }
 
   .value-card {
-    padding: 2.25rem;
+    padding: 2rem;
     border: 1px solid var(--night-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--night-card);
   }
 
   .value-card h3 {
-    margin: 0 0 0.85rem;
+    margin: 0 0 0.75rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.35rem;
+    font-size: 1.2rem;
     font-weight: 700;
   }
 
@@ -179,7 +174,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     text-underline-offset: 3px;
   }
 
-  @media (max-width: 860px) {
+  @media (max-width: 800px) {
     .values-grid {
       grid-template-columns: 1fr;
     }

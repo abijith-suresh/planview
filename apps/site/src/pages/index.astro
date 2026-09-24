@@ -9,247 +9,165 @@ import { appSignInUrl } from "../lib/app-url";
   title="plansplease | Keep the pages your agent makes"
   description="Run agent-made HTML locally, or keep a private cloud copy you can open again."
 >
-  <!-- Hero Section -->
+  <!-- Hero Section: The 30-Second Pitch -->
   <section class="hero" aria-labelledby="hero-title">
     <div class="hero-copy">
-      <div class="hero-badge">
-        <span class="hero-badge-dot"></span>
-        <span>The Workspace for Agent Web Artifacts</span>
-      </div>
-
       <h1 id="hero-title">
         Your agent made a page.
         <span>Keep it somewhere useful.</span>
       </h1>
 
       <p class="hero-intro">
-        plansplease turns standalone HTML into a living page you can open instantly. Preview it on
-        your machine with the zero-config CLI, or keep a private cloud copy in your cloud workspace
-        so your agent's best work never disappears when the chat thread closes.
+        AI agents like Claude Code produce HTML because Markdown is too restrictive for rich specs,
+        interactive tools, and PR reviews. plansplease solves the friction of seeing them: preview
+        locally in milliseconds, or keep a private copy in your cloud workspace.
       </p>
 
       <div class="hero-actions">
         <a class="primary-link" href={appSignInUrl}>Continue with GitHub</a>
-        <a class="secondary-link" href="/features/">Explore Features</a>
+        <a class="secondary-link" href="/docs/">Read Docs</a>
+      </div>
+
+      <div class="command-box">
+        <span class="command-prefix">$</span>
+        <code>npm install --global @abijith-suresh/planview</code>
       </div>
 
       <p class="cta-note">Private cloud workspace. Local CLI included.</p>
     </div>
 
-    <!-- Living Artifact Canvas: Modern Interactive Product Interface (Anti-Terminal) -->
-    <div class="hero-showcase" role="img" aria-label="An interactive artifact preview in the plansplease workspace">
-      <div class="artifact-frame">
-        <!-- Frame Navigation Header -->
-        <div class="artifact-header">
-          <div class="artifact-meta">
-            <span class="artifact-icon" aria-hidden="true">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-              </svg>
-            </span>
-            <span class="artifact-filename">executive-metrics.html</span>
+    <!-- Product Workflow Showcase: Claude Code -> plansplease -> Browser -->
+    <div class="hero-showcase" role="img" aria-label="Claude Code generating an HTML file and plansplease opening it">
+      <div class="terminal-card">
+        <div class="window-bar">
+          <div class="window-dots">
+            <span></span><span></span><span></span>
           </div>
-
-          <div class="artifact-status-pill">
-            <span class="status-live-indicator"></span>
-            <span>Live Preview</span>
-          </div>
-
-          <div class="artifact-actions">
-            <span class="action-pill">Interactive</span>
-            <span class="action-pill accent">Local: 4777</span>
-          </div>
+          <span class="window-title">Terminal — claude-code</span>
         </div>
+        <div class="window-body terminal-text">
+          <div class="terminal-line"><span class="t-dim">claude&gt;</span> Synthesized architecture into an interactive specification.</div>
+          <div class="terminal-line"><span class="t-dim">claude&gt;</span> Written to <span class="t-file">./auth-migration-spec.html</span></div>
+          <div class="terminal-spacer"></div>
+          <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">planview publish --open ./auth-migration-spec.html</span></div>
+          <div class="terminal-line t-success">✓ Local daemon active on 127.0.0.1:4777</div>
+          <div class="terminal-line t-success">✓ Browser opened: http://localhost:4777/auth-migration-spec</div>
+        </div>
+      </div>
 
-        <!-- Simulated Living Web Application Artifact -->
-        <div class="artifact-body">
-          <div class="artifact-app-bar">
+      <div class="preview-card">
+        <div class="window-bar">
+          <div class="window-url">
+            <span class="url-dot"></span>
+            <code>localhost:4777 / auth-migration-spec</code>
+          </div>
+          <span class="preview-badge">Live Preview</span>
+        </div>
+        <div class="window-body preview-doc">
+          <div class="doc-header">
             <div>
-              <p class="app-category-label">Interactive Sensitivity Model</p>
-              <h2 class="app-title">Q3 Expansion & Retention Dynamics</h2>
+              <p class="doc-tag">Generated by Claude Code</p>
+              <h2 class="doc-title">Auth Migration Plan & Verification</h2>
             </div>
-            <div class="app-scenario-tags">
-              <span class="scenario-tag active">Base Case</span>
-              <span class="scenario-tag">Accelerated</span>
-              <span class="scenario-tag">Stress Test</span>
+            <span class="doc-pill">HTML5 + SVG</span>
+          </div>
+
+          <div class="doc-diagram">
+            <div class="diagram-step">
+              <span class="step-box">Client Request</span>
+              <span class="step-arrow">→</span>
+            </div>
+            <div class="diagram-step">
+              <span class="step-box highlight">Session Gate</span>
+              <span class="step-arrow">→</span>
+            </div>
+            <div class="diagram-step">
+              <span class="step-box">Encrypted Storage</span>
             </div>
           </div>
 
-          <!-- Key Metrics Grid -->
-          <div class="artifact-metrics">
-            <div class="metric-card">
-              <span class="metric-label">Net Retention Rate</span>
-              <div class="metric-row">
-                <span class="metric-value">128.4%</span>
-                <span class="metric-trend positive">+14.2%</span>
-              </div>
-              <span class="metric-caption">Top-decile cohort trajectory</span>
-            </div>
-
-            <div class="metric-card">
-              <span class="metric-label">Capital Efficiency</span>
-              <div class="metric-row">
-                <span class="metric-value">1.48x</span>
-                <span class="metric-trend positive">Optimal</span>
-              </div>
-              <span class="metric-caption">Magic number benchmarking</span>
-            </div>
-
-            <div class="metric-card">
-              <span class="metric-label">Cash Runway</span>
-              <div class="metric-row">
-                <span class="metric-value">32 mo</span>
-                <span class="metric-trend neutral">Stable</span>
-              </div>
-              <span class="metric-caption">Post-round plan buffer</span>
-            </div>
-          </div>
-
-          <!-- Interactive Visualization Preview -->
-          <div class="artifact-chart-preview">
-            <div class="chart-header">
-              <span>Quarterly Trajectory Analysis</span>
-              <span class="chart-legend">Model generated by AI Agent • 100% Client-side JS</span>
-            </div>
-            <div class="chart-bars" aria-hidden="true">
-              <div class="bar-col"><div class="bar-fill" style="height: 48%;"></div><span>Q1</span></div>
-              <div class="bar-col"><div class="bar-fill" style="height: 64%;"></div><span>Q2</span></div>
-              <div class="bar-col"><div class="bar-fill" style="height: 78%;"></div><span>Q3</span></div>
-              <div class="bar-col"><div class="bar-fill highlighted" style="height: 94%;"></div><span>Q4 (Forecast)</span></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Frame Footer / Inspector -->
-        <div class="artifact-footer">
-          <div class="footer-meta-item">
-            <span class="meta-dot"></span>
-            <span>Local Daemon Active</span>
-          </div>
-          <div class="footer-meta-item">
-            <span>Encrypted Cloud Vault Ready</span>
-          </div>
-          <div class="footer-meta-item">
-            <span class="link-label">Zero build steps • Pure HTML5</span>
+          <div class="doc-checklist">
+            <div class="check-item"><span class="check-mark">✓</span> Single-file HTML runs without bundlers</div>
+            <div class="check-item"><span class="check-mark">✓</span> Zero CORS friction via loopback daemon</div>
+            <div class="check-item"><span class="check-mark">✓</span> Syncs to private cloud workspace with one command</div>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Problem & Narrative Section: The Chat Graveyard -->
-  <section class="narrative-section" aria-labelledby="narrative-title">
-    <div class="narrative-header">
-      <span class="section-tag">The Problem</span>
-      <h2 id="narrative-title">The chat transcript is a graveyard for great software.</h2>
-      <p>
-        AI agents generate breathtaking interactive tools, dashboards, simulators, and prototypes in
-        seconds. But chat interfaces were built for conversation, not software lifecycle.
-      </p>
-    </div>
-
-    <div class="contrast-grid">
-      <div class="contrast-card problem">
-        <span class="contrast-badge">Without plansplease</span>
-        <h3>The Lost Artifact Trap</h3>
-        <ul class="contrast-list">
-          <li>Code gets buried in deep chat scrollbacks and deleted by context compaction.</li>
-          <li>Downloaded HTML files rot in your <code>Downloads/</code> folder without context.</li>
-          <li>Local file opens suffer from CORS restrictions and broken relative assets.</li>
-          <li>Spinning up a full repository and deployment pipeline takes longer than prompting the tool.</li>
-        </ul>
-      </div>
-
-      <div class="contrast-card solution">
-        <span class="contrast-badge accent">With plansplease</span>
-        <h3>The Living Artifact Canvas</h3>
-        <ul class="contrast-list">
-          <li>One command or MCP call immediately spins up a zero-latency loopback preview.</li>
-          <li>One-click cloud sync archives your interactive tools into an organized personal vault.</li>
-          <li>Full support for multi-asset folders, scripts, charts, Canvas, and Tailwind CDN.</li>
-          <li>No git branches, no bundler setups, and no server configuration required.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-  <!-- Core Capabilities Section -->
-  <section class="capabilities-section" aria-labelledby="capabilities-title">
-    <div class="section-heading-centered">
-      <span class="section-tag">Core Superpowers</span>
-      <h2 id="capabilities-title">Everything you need to keep your agent's work.</h2>
-      <p class="section-subtitle">
-        A seamless bridge between ephemeral AI agent generation and permanent, accessible software.
-      </p>
-    </div>
-
-    <div class="capabilities-grid">
-      <article class="capability-card">
-        <div class="capability-icon" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-            <line x1="8" y1="21" x2="16" y2="21"></line>
-            <line x1="12" y1="17" x2="12" y2="21"></line>
-          </svg>
-        </div>
+  <!-- The 3 Core Truths -->
+  <section class="pillars-section" aria-labelledby="pillars-title">
+    <div class="pillars-grid">
+      <article class="pillar-card">
         <h3>Preview locally</h3>
         <p>
-          Run an HTML file through the CLI and get a localhost URL right away. Our lightweight
-          daemon manages port binding, serves raw assets with zero latency, and opens directly in
-          your default browser.
+          Run <code>planview publish file.html</code> and get an instant localhost URL. Our background
+          daemon serves assets with zero latency, solves local file CORS issues, and automatically
+          opens your browser.
         </p>
-        <span class="capability-subtext">Instant loopback • 0ms cold start</span>
       </article>
 
-      <article class="capability-card">
-        <div class="capability-icon" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
-          </svg>
-        </div>
+      <article class="pillar-card">
         <h3>Keep a cloud copy</h3>
         <p>
-          Upload one standalone file to a private workspace and open it from anywhere. Your
-          dashboards, calculators, and reports remain permanently accessible in your encrypted
-          dashboard long after the agent chat ends.
+          Upload standalone files to your private cloud workspace. Revisit your agent's interactive
+          specs, prototypes, and calculators long after the chat scrollback has moved on.
         </p>
-        <span class="capability-subtext">Encrypted vault • GitHub authentication</span>
       </article>
 
-      <article class="capability-card">
-        <div class="capability-icon" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
-            <polyline points="2 17 12 22 22 17"></polyline>
-            <polyline points="2 12 12 17 22 12"></polyline>
-          </svg>
-        </div>
-        <h3>Agent & MCP Native</h3>
+      <article class="pillar-card">
+        <h3>One HTML file to start</h3>
         <p>
-          Integrate plansplease directly into Cursor, Claude Desktop, or autonomous agent loops.
-          Agents can publish live prototypes and tools autonomously while they plan and execute.
+          No build steps, no bundlers, and no repo creation. Built for the sweet spot between a
+          temporary agent prompt and a permanent repository. Pure standard HTML5.
         </p>
-        <span class="capability-subtext">Model Context Protocol • Headless CLI</span>
       </article>
+    </div>
+  </section>
 
-      <article class="capability-card">
-        <div class="capability-icon" aria-hidden="true">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="2" y1="12" x2="22" y2="12"></line>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-          </svg>
-        </div>
-        <h3>Pure Web Standards</h3>
+  <!-- Why HTML for Agents? (Grounding in Claude Code philosophy) -->
+  <section class="philosophy-section" aria-labelledby="philosophy-title">
+    <div class="philosophy-header">
+      <h2 id="philosophy-title">Markdown caps out at 100 lines. HTML carries the whole context.</h2>
+      <p>
+        AI engineering teams are switching from Markdown to HTML. When an agent needs to convey
+        information humans actually read, HTML is unreasonably effective.
+      </p>
+    </div>
+
+    <div class="usecase-grid">
+      <div class="usecase-item">
+        <h4>Interactive Specs & Plans</h4>
         <p>
-          No proprietary bundler lock-in. Full native support for standard HTML5, SVG, Canvas,
-          WebGL, inline Tailwind, React/Vue CDN bundles, and multi-file asset folders.
+          System architectures with visual SVG diagrams, collapsible details, and trade-off tables
+          that colleagues will actually review.
         </p>
-        <span class="capability-subtext">Zero lock-in • 100% Standard Web</span>
-      </article>
+      </div>
+
+      <div class="usecase-item">
+        <h4>Annotated Code Reviews</h4>
+        <p>
+          Rendered pull request reviews with inline margin annotations, severity tags, and data-flow
+          diagrams rather than walls of text.
+        </p>
+      </div>
+
+      <div class="usecase-item">
+        <h4>Throwaway Data Editors</h4>
+        <p>
+          Single-file tools to triage tickets, edit feature configs, or tune prompts—built with export
+          buttons to feed results straight back to the agent.
+        </p>
+      </div>
+
+      <div class="usecase-item">
+        <h4>UI Prototypes & Sliders</h4>
+        <p>
+          Interactive mockups with sliders and controls to tune animation curves, layouts, and states
+          before writing production code.
+        </p>
+      </div>
     </div>
   </section>
 
@@ -264,96 +182,17 @@ import { appSignInUrl } from "../lib/app-url";
     </div>
   </section>
 
-  <!-- Workflow Steps: How It Works -->
-  <section class="workflow-section" aria-labelledby="workflow-title">
-    <div class="section-heading-centered">
-      <span class="section-tag">How It Works</span>
-      <h2 id="workflow-title">From prompt to living software in three steps.</h2>
-    </div>
-
-    <div class="workflow-steps">
-      <div class="workflow-step">
-        <div class="step-badge">1</div>
-        <h3>Prompt & Generate</h3>
-        <p>
-          Ask your favorite AI model (Claude, Cursor, ChatGPT, Gemini) to craft an interactive
-          tool, simulation, or data report.
-        </p>
-      </div>
-
-      <div class="workflow-step">
-        <div class="step-badge">2</div>
-        <h3>Publish in Milliseconds</h3>
-        <p>
-          Pass the generated HTML to the CLI or let the agent call the plansplease MCP tool
-          directly. A localhost preview opens immediately.
-        </p>
-      </div>
-
-      <div class="workflow-step">
-        <div class="step-badge">3</div>
-        <h3>Vault in Cloud Workspace</h3>
-        <p>
-          Sync the artifact to your private cloud workspace. Revisit, inspect, or share it anytime
-          without maintaining a single server.
-        </p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Real-World Use Cases Grid -->
-  <section class="use-cases-section" aria-labelledby="usecases-title">
-    <div class="section-heading-centered">
-      <span class="section-tag">Versatility</span>
-      <h2 id="usecases-title">What creators keep with plansplease.</h2>
-    </div>
-
-    <div class="use-cases-grid">
-      <div class="use-case-card">
-        <h3>Interactive Financial & ROI Simulators</h3>
-        <p>
-          Complex dynamic calculators, amortization schedules, and sensitivity models generated in a
-          single conversation.
-        </p>
-      </div>
-
-      <div class="use-case-card">
-        <h3>Rapid Product & UI Prototypes</h3>
-        <p>
-          Interactive mockups to test user flow and ergonomics before investing in engineering
-          tickets and production code.
-        </p>
-      </div>
-
-      <div class="use-case-card">
-        <h3>Deep Research Syntheses</h3>
-        <p>
-          Rich visual reports featuring collapsible sections, interactive sorting tables, source
-          citations, and live charts.
-        </p>
-      </div>
-
-      <div class="use-case-card">
-        <h3>Single-Purpose Utilities</h3>
-        <p>
-          Data converters, regex debuggers, JSON transformers, and schema inspectors built on the fly
-          for one specific task.
-        </p>
-      </div>
-    </div>
-  </section>
-
   <!-- Final High-Conversion CTA Banner -->
   <section class="cta-banner" aria-labelledby="cta-banner-title">
     <div class="cta-banner-content">
       <h2 id="cta-banner-title">Stop losing your agent's best work.</h2>
       <p>
-        Give every interactive tool, dashboard, and prototype a permanent home. Start with your
-        next prompt today.
+        Give every interactive spec, prototype, and tool a permanent home. Start with your next
+        prompt today.
       </p>
       <div class="cta-banner-actions">
         <a class="primary-link" href={appSignInUrl}>Continue with GitHub</a>
-        <a class="secondary-link" href="/docs/">Read Documentation</a>
+        <a class="secondary-link" href="/features/">Explore Features</a>
       </div>
       <p class="cta-banner-sub">Free during alpha • Zero setup required • Works offline</p>
     </div>
@@ -361,44 +200,22 @@ import { appSignInUrl } from "../lib/app-url";
 </SiteLayout>
 
 <style>
-  /* Hero Layout */
+  /* Hero Layout: Focused 30-second pitch */
   .hero {
     display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(25rem, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(28rem, 1.15fr);
     align-items: center;
-    gap: clamp(3rem, 5vw, 5rem);
-    padding: clamp(4rem, 8vh, 6.5rem) 0 4.5rem;
-  }
-
-  .hero-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.65rem;
-    padding: 0.35rem 0.95rem;
-    margin-bottom: 1.5rem;
-    border: 1px solid var(--night-border-hover);
-    border-radius: 9999px;
-    background: var(--night-card);
-    color: var(--mint);
-    font-size: 0.82rem;
-    font-weight: 600;
-  }
-
-  .hero-badge-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--mint);
-    box-shadow: 0 0 8px var(--mint);
+    gap: clamp(2.5rem, 5vw, 4.5rem);
+    padding: clamp(3.5rem, 7vh, 5.5rem) 0 4rem;
   }
 
   h1 {
-    margin: 0 0 1.5rem;
+    margin: 0 0 1.25rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2.8rem, 4.8vw, 4.4rem);
+    font-size: clamp(2.6rem, 4.5vw, 4rem);
     font-weight: 800;
-    letter-spacing: -0.045em;
+    letter-spacing: -0.04em;
     line-height: 1.08;
     text-wrap: balance;
   }
@@ -409,10 +226,10 @@ import { appSignInUrl } from "../lib/app-url";
   }
 
   .hero-intro {
-    max-width: 35rem;
+    max-width: 33rem;
     margin: 0 0 2rem;
     color: var(--night-muted);
-    font-size: clamp(1.05rem, 1.3vw, 1.16rem);
+    font-size: clamp(1.02rem, 1.25vw, 1.12rem);
     line-height: 1.65;
   }
 
@@ -421,7 +238,7 @@ import { appSignInUrl } from "../lib/app-url";
     flex-wrap: wrap;
     align-items: center;
     gap: 1rem;
-    margin-bottom: 1.25rem;
+    margin-bottom: 1.5rem;
   }
 
   .primary-link {
@@ -429,143 +246,192 @@ import { appSignInUrl } from "../lib/app-url";
     align-items: center;
     padding: 0.85rem 1.65rem;
     border: 1px solid var(--mint);
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--mint);
     color: var(--ink);
-    font-size: 0.98rem;
+    font-size: 0.95rem;
     font-weight: 700;
     letter-spacing: -0.01em;
     text-decoration: none;
-    box-shadow: 0 4px 16px rgba(143, 227, 201, 0.25);
-    transition: all 160ms ease;
+    transition: all 150ms ease;
   }
 
   .primary-link:hover,
   .primary-link:focus-visible {
     background: var(--mint-hover);
     border-color: var(--mint-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(143, 227, 201, 0.35);
   }
 
   .secondary-link {
     display: inline-flex;
     align-items: center;
-    padding: 0.85rem 1.45rem;
+    padding: 0.85rem 1.4rem;
     border: 1px solid var(--night-border-hover);
-    border-radius: 10px;
+    border-radius: 8px;
     background: var(--night-card);
-    color: var(--text);
-    font-size: 0.98rem;
+    color: var(--text-white);
+    font-size: 0.95rem;
     font-weight: 600;
     text-decoration: none;
-    transition: all 160ms ease;
+    transition: all 150ms ease;
   }
 
   .secondary-link:hover,
   .secondary-link:focus-visible {
+    border-color: var(--mint-border);
+    color: var(--mint);
     background: var(--night-card-elevated);
-    border-color: var(--iris-border);
-    color: var(--text-white);
+  }
+
+  .command-box {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.65rem 1rem;
+    margin-bottom: 1.25rem;
+    border: 1px solid var(--night-border);
+    border-radius: 8px;
+    background: var(--night-card);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+  }
+
+  .command-prefix {
+    color: var(--mint);
+    font-weight: 600;
+    user-select: none;
+  }
+
+  .command-box code {
+    color: var(--text);
   }
 
   .cta-note {
     margin: 0;
     color: var(--night-subtle);
-    font-size: 0.86rem;
+    font-size: 0.84rem;
     font-weight: 500;
   }
 
-  /* Living Artifact Showcase Component (Modern Web Interface) */
+  /* Product Workflow Showcase */
   .hero-showcase {
-    position: relative;
-    width: 100%;
-  }
-
-  .artifact-frame {
     display: flex;
     flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .terminal-card,
+  .preview-card {
     border: 1px solid var(--night-border);
-    border-radius: 16px;
+    border-radius: 12px;
     background: var(--night-card);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
     overflow: hidden;
   }
 
-  .artifact-header {
+  .preview-card {
+    border-color: var(--night-border-hover);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.45);
+  }
+
+  .window-bar {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    padding: 0.9rem 1.25rem;
+    padding: 0.65rem 1rem;
     border-bottom: 1px solid var(--night-border);
     background: var(--night-soft);
   }
 
-  .artifact-meta {
+  .window-dots {
     display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    color: var(--text);
-    font-weight: 600;
-    font-size: 0.9rem;
+    gap: 6px;
   }
 
-  .artifact-icon {
-    display: flex;
-    align-items: center;
-    color: var(--iris);
+  .window-dots span {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--night-border-hover);
   }
 
-  .artifact-status-pill {
-    display: inline-flex;
+  .window-title {
+    color: var(--night-muted);
+    font-size: 0.78rem;
+    font-family: var(--mono);
+  }
+
+  .window-url {
+    display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.25rem 0.65rem;
-    border-radius: 9999px;
-    background: var(--mint-soft);
-    border: 1px solid var(--mint-border);
-    color: var(--mint);
-    font-size: 0.78rem;
-    font-weight: 600;
   }
 
-  .status-live-indicator {
+  .url-dot {
     width: 6px;
     height: 6px;
     border-radius: 50%;
     background: var(--mint);
   }
 
-  .artifact-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
+  .window-url code {
+    color: var(--text);
+    font-size: 0.8rem;
+    font-family: var(--mono);
   }
 
-  .action-pill {
-    padding: 0.25rem 0.6rem;
-    border-radius: 6px;
-    border: 1px solid var(--night-border);
-    background: var(--night-card);
-    color: var(--night-muted);
-    font-size: 0.76rem;
-    font-weight: 500;
+  .preview-badge {
+    padding: 0.2rem 0.55rem;
+    border-radius: 4px;
+    background: var(--mint-soft);
+    border: 1px solid var(--mint-border);
+    color: var(--mint);
+    font-size: 0.74rem;
+    font-weight: 600;
   }
 
-  .action-pill.accent {
-    color: var(--butter);
-    border-color: var(--butter-border);
-    background: var(--butter-soft);
+  .terminal-body {
+    padding: 1rem 1.25rem;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    background: #08090b;
   }
 
-  /* Artifact Body (Live Simulation of Generated Tool) */
-  .artifact-body {
+  .terminal-line {
+    color: var(--text);
+  }
+
+  .terminal-spacer {
+    height: 0.5rem;
+  }
+
+  .t-dim {
+    color: var(--night-subtle);
+  }
+
+  .t-file {
+    color: var(--mint);
+  }
+
+  .t-prompt {
+    color: var(--mint);
+  }
+
+  .t-cmd {
+    color: var(--text-white);
+    font-weight: 600;
+  }
+
+  .t-success {
+    color: var(--mint);
+  }
+
+  .preview-doc {
     padding: 1.5rem;
     background: var(--night);
   }
 
-  .artifact-app-bar {
+  .doc-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
@@ -575,387 +441,179 @@ import { appSignInUrl } from "../lib/app-url";
     border-bottom: 1px solid var(--night-border);
   }
 
-  .app-category-label {
+  .doc-tag {
     margin: 0 0 0.25rem;
-    color: var(--iris);
+    color: var(--mint);
     font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    font-weight: 600;
   }
 
-  .app-title {
+  .doc-title {
     margin: 0;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.25rem;
+    font-size: 1.2rem;
     font-weight: 700;
     letter-spacing: -0.02em;
   }
 
-  .app-scenario-tags {
-    display: flex;
-    gap: 0.4rem;
-  }
-
-  .scenario-tag {
-    padding: 0.25rem 0.6rem;
-    border-radius: 6px;
+  .doc-pill {
+    padding: 0.2rem 0.55rem;
     border: 1px solid var(--night-border);
-    background: var(--night-card);
-    color: var(--night-muted);
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
-
-  .scenario-tag.active {
-    background: var(--night-border-hover);
-    color: var(--text-white);
-    border-color: var(--text-white);
-  }
-
-  /* Key Metrics Cards inside artifact */
-  .artifact-metrics {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.85rem;
-    margin-bottom: 1.25rem;
-  }
-
-  .metric-card {
-    padding: 0.85rem 1rem;
-    border: 1px solid var(--night-border);
-    border-radius: 10px;
-    background: var(--night-card);
-  }
-
-  .metric-label {
-    display: block;
-    color: var(--night-muted);
-    font-size: 0.75rem;
-    font-weight: 500;
-    margin-bottom: 0.35rem;
-  }
-
-  .metric-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-bottom: 0.25rem;
-  }
-
-  .metric-value {
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: 1.25rem;
-    font-weight: 700;
-  }
-
-  .metric-trend {
-    font-size: 0.75rem;
-    font-weight: 600;
-  }
-
-  .metric-trend.positive {
-    color: var(--mint);
-  }
-
-  .metric-trend.neutral {
-    color: var(--iris);
-  }
-
-  .metric-caption {
-    display: block;
-    color: var(--night-subtle);
-    font-size: 0.7rem;
-  }
-
-  /* Data Visualization Simulation */
-  .artifact-chart-preview {
-    padding: 1rem 1.25rem;
-    border: 1px solid var(--night-border);
-    border-radius: 10px;
-    background: var(--night-card);
-  }
-
-  .chart-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-    font-size: 0.8rem;
-    color: var(--text);
-    font-weight: 600;
-  }
-
-  .chart-legend {
-    color: var(--night-subtle);
-    font-size: 0.72rem;
-    font-weight: normal;
-  }
-
-  .chart-bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 1.5rem;
-    height: 70px;
-    padding-top: 0.5rem;
-  }
-
-  .bar-col {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.4rem;
-    height: 100%;
-    justify-content: flex-end;
-  }
-
-  .bar-fill {
-    width: 100%;
-    border-radius: 4px 4px 0 0;
-    background: var(--night-border-hover);
-    transition: all 200ms ease;
-  }
-
-  .bar-fill.highlighted {
-    background: var(--mint);
-  }
-
-  .bar-col span {
-    color: var(--night-muted);
-    font-size: 0.72rem;
-  }
-
-  /* Artifact Frame Footer */
-  .artifact-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1.25rem;
-    border-top: 1px solid var(--night-border);
+    border-radius: 4px;
     background: var(--night-soft);
     color: var(--night-muted);
-    font-size: 0.78rem;
+    font-size: 0.74rem;
   }
 
-  .footer-meta-item {
+  .doc-diagram {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-  }
-
-  .meta-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--mint);
-  }
-
-  .link-label {
-    color: var(--iris);
-    font-weight: 500;
-  }
-
-  /* Narrative / Problem Section */
-  .narrative-section {
-    padding: 5rem 0;
-    border-bottom: 1px solid var(--night-border);
-  }
-
-  .narrative-header {
-    max-width: 44rem;
-    margin-bottom: 3.5rem;
-  }
-
-  .section-tag {
-    display: inline-block;
-    padding: 0.25rem 0.75rem;
-    margin-bottom: 1rem;
-    border-radius: 9999px;
-    background: var(--iris-soft);
-    border: 1px solid var(--iris-border);
-    color: var(--iris);
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .narrative-header h2 {
-    margin: 0 0 1rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: clamp(2rem, 3.4vw, 2.8rem);
-    font-weight: 800;
-    letter-spacing: -0.035em;
-    line-height: 1.15;
-  }
-
-  .narrative-header p {
-    margin: 0;
-    color: var(--night-muted);
-    font-size: 1.15rem;
-    line-height: 1.6;
-  }
-
-  .contrast-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 2rem;
-  }
-
-  .contrast-card {
-    padding: clamp(2rem, 4vw, 2.5rem);
-    border-radius: 14px;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    padding: 1rem;
     border: 1px solid var(--night-border);
+    border-radius: 8px;
     background: var(--night-card);
   }
 
-  .contrast-card.solution {
-    border-color: var(--mint-border);
-    background: var(--night-card-elevated);
+  .diagram-step {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
   }
 
-  .contrast-badge {
-    display: inline-block;
-    padding: 0.25rem 0.65rem;
-    margin-bottom: 1.25rem;
-    border-radius: 6px;
+  .step-box {
+    padding: 0.4rem 0.75rem;
     border: 1px solid var(--night-border-hover);
-    background: var(--night);
-    color: var(--night-muted);
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
+    border-radius: 6px;
+    background: var(--night-soft);
+    color: var(--text);
+    font-size: 0.78rem;
+    font-weight: 500;
   }
 
-  .contrast-badge.accent {
+  .step-box.highlight {
     border-color: var(--mint-border);
     background: var(--mint-soft);
     color: var(--mint);
+    font-weight: 600;
   }
 
-  .contrast-card h3 {
-    margin: 0 0 1.25rem;
+  .step-arrow {
+    color: var(--night-subtle);
+    font-size: 0.85rem;
+  }
+
+  .doc-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .check-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--night-muted);
+    font-size: 0.82rem;
+  }
+
+  .check-mark {
+    color: var(--mint);
+    font-weight: 700;
+  }
+
+  /* 3 Core Pillars */
+  .pillars-section {
+    padding: 3.5rem 0;
+    border-top: 1px solid var(--night-border);
+    border-bottom: 1px solid var(--night-border);
+  }
+
+  .pillars-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.75rem;
+  }
+
+  .pillar-card {
+    padding: 1.85rem;
+    border: 1px solid var(--night-border);
+    border-radius: 12px;
+    background: var(--night-card);
+  }
+
+  .pillar-card h3 {
+    margin: 0 0 0.75rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.4rem;
+    font-size: 1.25rem;
     font-weight: 700;
     letter-spacing: -0.02em;
   }
 
-  .contrast-list {
+  .pillar-card p {
     margin: 0;
-    padding: 0;
-    list-style: none;
-    display: grid;
-    gap: 0.9rem;
-  }
-
-  .contrast-list li {
-    position: relative;
-    padding-left: 1.4rem;
     color: var(--night-muted);
-    font-size: 0.95rem;
-    line-height: 1.55;
+    font-size: 0.94rem;
+    line-height: 1.6;
   }
 
-  .contrast-list li::before {
-    content: "•";
-    position: absolute;
-    left: 0;
-    color: var(--night-subtle);
-    font-weight: bold;
-  }
-
-  .contrast-card.solution .contrast-list li::before {
-    color: var(--mint);
-  }
-
-  /* Capabilities Section */
-  .capabilities-section {
-    padding: 5rem 0;
+  /* Philosophy Section */
+  .philosophy-section {
+    padding: 4.5rem 0;
     border-bottom: 1px solid var(--night-border);
   }
 
-  .section-heading-centered {
-    max-width: 40rem;
-    margin: 0 auto 3.5rem;
-    text-align: center;
+  .philosophy-header {
+    max-width: 44rem;
+    margin-bottom: 3rem;
   }
 
-  .section-heading-centered h2 {
+  .philosophy-header h2 {
     margin: 0 0 1rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2rem, 3.2vw, 2.6rem);
+    font-size: clamp(1.8rem, 3.2vw, 2.5rem);
     font-weight: 800;
-    letter-spacing: -0.035em;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
   }
 
-  .section-subtitle {
+  .philosophy-header p {
     margin: 0;
     color: var(--night-muted);
     font-size: 1.1rem;
     line-height: 1.6;
   }
 
-  .capabilities-grid {
+  .usecase-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.75rem;
+    gap: 1.5rem;
   }
 
-  .capability-card {
-    padding: 2.25rem;
+  .usecase-item {
+    padding: 1.75rem;
     border: 1px solid var(--night-border);
-    border-radius: 14px;
-    background: var(--night-card);
-    transition: all 160ms ease;
-  }
-
-  .capability-card:hover {
-    border-color: var(--iris-border);
-    transform: translateY(-2px);
-  }
-
-  .capability-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    margin-bottom: 1.25rem;
     border-radius: 10px;
-    background: var(--night-card-elevated);
-    border: 1px solid var(--night-border-hover);
-    color: var(--mint);
+    background: var(--night-card);
   }
 
-  .capability-card h3 {
-    margin: 0 0 0.85rem;
+  .usecase-item h4 {
+    margin: 0 0 0.5rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.35rem;
+    font-size: 1.1rem;
     font-weight: 700;
-    letter-spacing: -0.02em;
   }
 
-  .capability-card p {
-    margin: 0 0 1.25rem;
+  .usecase-item p {
+    margin: 0;
     color: var(--night-muted);
-    font-size: 0.95rem;
+    font-size: 0.92rem;
     line-height: 1.6;
-  }
-
-  .capability-subtext {
-    display: block;
-    color: var(--night-subtle);
-    font-size: 0.82rem;
-    font-weight: 600;
   }
 
   /* Pitch Bar */
@@ -969,9 +627,9 @@ import { appSignInUrl } from "../lib/app-url";
     align-items: center;
     justify-content: space-between;
     gap: 2rem;
-    padding: 2rem 2.5rem;
+    padding: 1.85rem 2.25rem;
     border: 1px solid var(--night-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--night-soft);
   }
 
@@ -979,137 +637,51 @@ import { appSignInUrl } from "../lib/app-url";
     max-width: 44rem;
     margin: 0;
     color: var(--text);
-    font-size: 1.15rem;
+    font-size: 1.1rem;
     font-weight: 500;
     line-height: 1.5;
   }
 
   .pitch-badge {
     flex-shrink: 0;
-    padding: 0.5rem 1.1rem;
+    padding: 0.45rem 0.95rem;
     border: 1px solid var(--mint-border);
-    border-radius: 8px;
+    border-radius: 6px;
     background: var(--mint-soft);
     color: var(--mint);
-    font-size: 0.88rem;
+    font-size: 0.85rem;
     font-weight: 700;
   }
 
-  /* Workflow Steps */
-  .workflow-section {
-    padding: 5rem 0;
-    border-bottom: 1px solid var(--night-border);
-  }
-
-  .workflow-steps {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 2rem;
-  }
-
-  .workflow-step {
-    padding: 2rem;
-    border: 1px solid var(--night-border);
-    border-radius: 14px;
-    background: var(--night-card);
-  }
-
-  .step-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    margin-bottom: 1.25rem;
-    border-radius: 8px;
-    background: var(--iris-soft);
-    border: 1px solid var(--iris-border);
-    color: var(--iris);
-    font-size: 1rem;
-    font-weight: 700;
-  }
-
-  .workflow-step h3 {
-    margin: 0 0 0.75rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: 1.25rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-  }
-
-  .workflow-step p {
-    margin: 0;
-    color: var(--night-muted);
-    font-size: 0.95rem;
-    line-height: 1.6;
-  }
-
-  /* Use Cases Grid */
-  .use-cases-section {
-    padding: 5rem 0;
-    border-bottom: 1px solid var(--night-border);
-  }
-
-  .use-cases-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.5rem;
-  }
-
-  .use-case-card {
-    padding: 1.85rem 2rem;
-    border: 1px solid var(--night-border);
-    border-radius: 12px;
-    background: var(--night-card);
-  }
-
-  .use-case-card h3 {
-    margin: 0 0 0.65rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: 1.15rem;
-    font-weight: 700;
-    letter-spacing: -0.015em;
-  }
-
-  .use-case-card p {
-    margin: 0;
-    color: var(--night-muted);
-    font-size: 0.92rem;
-    line-height: 1.6;
-  }
-
-  /* Final High-Conversion CTA Banner */
+  /* CTA Banner */
   .cta-banner {
-    padding: 5rem 0;
+    padding: 4.5rem 0;
   }
 
   .cta-banner-content {
-    padding: clamp(3rem, 6vw, 4.5rem) 2rem;
-    border: 1px solid var(--mint-border);
-    border-radius: 16px;
+    padding: clamp(3rem, 5vw, 4rem) 2rem;
+    border: 1px solid var(--night-border);
+    border-radius: 14px;
     background: var(--night-card);
     text-align: center;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
 
   .cta-banner h2 {
-    max-width: 22ch;
-    margin: 0 auto 1.25rem;
+    max-width: 24ch;
+    margin: 0 auto 1rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2.2rem, 3.8vw, 3.2rem);
+    font-size: clamp(2rem, 3.4vw, 2.8rem);
     font-weight: 800;
-    letter-spacing: -0.04em;
-    line-height: 1.1;
+    letter-spacing: -0.035em;
+    line-height: 1.15;
   }
 
   .cta-banner p {
-    max-width: 36rem;
-    margin: 0 auto 2.25rem;
+    max-width: 34rem;
+    margin: 0 auto 2rem;
     color: var(--night-muted);
-    font-size: 1.12rem;
+    font-size: 1.05rem;
     line-height: 1.6;
   }
 
@@ -1128,8 +700,8 @@ import { appSignInUrl } from "../lib/app-url";
     font-weight: 500;
   }
 
-  /* Responsive Adjustments */
-  @media (max-width: 1024px) {
+  /* Responsive */
+  @media (max-width: 960px) {
     .hero {
       grid-template-columns: 1fr;
       padding: 3rem 0;
@@ -1139,31 +711,14 @@ import { appSignInUrl } from "../lib/app-url";
       max-width: 100%;
     }
 
-    .contrast-grid,
-    .capabilities-grid,
-    .workflow-steps,
-    .use-cases-grid {
+    .pillars-grid,
+    .usecase-grid {
       grid-template-columns: 1fr;
     }
 
     .pitch-container {
       flex-direction: column;
       align-items: flex-start;
-    }
-  }
-
-  @media (max-width: 600px) {
-    .artifact-metrics {
-      grid-template-columns: 1fr;
-    }
-
-    .artifact-header {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .artifact-actions {
-      align-self: flex-start;
     }
   }
 </style>

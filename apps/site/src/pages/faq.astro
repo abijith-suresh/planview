@@ -10,7 +10,6 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 >
   <section class="faq-hero" aria-labelledby="faq-title">
     <div class="faq-hero-content">
-      <span class="faq-badge">Help Center</span>
       <h1 id="faq-title">Questions we expect to hear.</h1>
       <p class="faq-lead">
         Clear, direct answers about how plansplease handles local loopback serving, private cloud
@@ -60,112 +59,109 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
       <details class="faq-item">
         <summary>
-          <span>Are my cloud pages public or private?</span>
+          <span>Why not just open the HTML file with my browser?</span>
           <span class="faq-toggle-icon" aria-hidden="true">+</span>
         </summary>
         <div class="faq-answer">
           <p>
-            Your pages are strictly private. Every cloud upload is tied exclusively to your
-            authenticated GitHub account. Nobody else can view or access your uploaded artifacts
-            unless you explicitly choose to share your screen.
+            Modern browsers enforce strict security restrictions on <code>file://</code> URLs. They
+            block CORS requests, break relative asset fetching, prevent web workers from loading, and
+            restrict Canvas manipulation.
+          </p>
+          <p>
+            plansplease runs a minimal loopback daemon on <code>127.0.0.1</code> that serves your
+            files over genuine HTTP, eliminating all sandboxing errors with zero configuration.
           </p>
         </div>
       </details>
 
       <details class="faq-item">
         <summary>
-          <span>Does the local CLI require internet access?</span>
+          <span>How does plansplease connect with Claude Code or Cursor?</span>
           <span class="faq-toggle-icon" aria-hidden="true">+</span>
         </summary>
         <div class="faq-answer">
           <p>
-            No. The CLI runs entirely on your local machine using an isolated loopback daemon.
-            It does not send your code, files, or previews to the cloud unless you explicitly use
-            the cloud workspace.
+            You can use the plansplease CLI directly inside your agent's terminal shell, or configure
+            plansplease as an MCP (Model Context Protocol) tool. This allows your agent to publish
+            and inspect live interactive artifacts autonomously during its planning and coding loop.
           </p>
         </div>
       </details>
 
       <details class="faq-item">
         <summary>
-          <span>Can I integrate plansplease directly with AI agents?</span>
+          <span>Is my data private and secure?</span>
           <span class="faq-toggle-icon" aria-hidden="true">+</span>
         </summary>
         <div class="faq-answer">
           <p>
-            Yes. The CLI supports headless automation, and plansplease provides Model Context
-            Protocol (MCP) server hooks so agents like Claude Desktop and Cursor can publish and
-            inspect artifacts programmatically during their execution loop.
+            Yes. The local CLI serves strictly over your machine's private loopback interface—none of
+            your local code or data is transmitted externally. In the cloud workspace, all uploads
+            are secured behind GitHub OAuth authentication and tied to your personal account.
           </p>
         </div>
       </details>
 
       <details class="faq-item">
         <summary>
-          <span>Can I self-host plansplease?</span>
+          <span>Is plansplease open source?</span>
           <span class="faq-toggle-icon" aria-hidden="true">+</span>
         </summary>
         <div class="faq-answer">
           <p>
-            The source code is 100% open source under the MIT license on
-            <a href="https://github.com/abijith-suresh/planview">GitHub</a>. While our cloud managed
-            service is currently in alpha, self-hosting configurations and container definitions
-            are on our active roadmap.
+            Yes! The entire core runtime, CLI, local daemon, and storage engine are 100% open source
+            under an permissive license on
+            <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
           </p>
         </div>
       </details>
     </div>
+
+    <p class="page-note">
+      Have a question that is not covered here? Open an issue on
+      <a href="https://github.com/abijith-suresh/planview">GitHub</a> or visit the
+      <a href="../docs/">documentation page</a>.
+    </p>
   </section>
 </SiteLayout>
 
 <style>
   .faq-hero {
-    padding: clamp(4rem, 7vh, 6rem) 0 3rem;
+    padding: clamp(3.5rem, 6vh, 5rem) 0 2.5rem;
     border-bottom: 1px solid var(--night-border);
   }
 
   .faq-hero-content {
-    max-width: 48rem;
-  }
-
-  .faq-badge {
-    display: inline-block;
-    padding: 0.25rem 0.75rem;
-    margin-bottom: 1.25rem;
-    border-radius: 9999px;
-    background: var(--iris-soft);
-    border: 1px solid var(--iris-border);
-    color: var(--iris);
-    font-size: 0.78rem;
-    font-weight: 700;
-    text-transform: uppercase;
+    max-width: 44rem;
   }
 
   .faq-hero h1 {
-    margin: 0 0 1.25rem;
+    margin: 0 0 1rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2.4rem, 4.4vw, 3.6rem);
+    font-size: clamp(2.2rem, 3.8vw, 3.2rem);
     font-weight: 800;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.035em;
     line-height: 1.1;
   }
 
   .faq-lead {
     margin: 0;
     color: var(--night-muted);
-    font-size: 1.2rem;
+    font-size: clamp(1.05rem, 1.3vw, 1.15rem);
     line-height: 1.65;
   }
 
   .faq-content {
-    padding: 4.5rem 0;
-    max-width: 54rem;
+    padding: 3.5rem 0 5rem;
   }
 
   .faq-list {
-    display: grid;
-    gap: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    max-width: 48rem;
   }
 
   .faq-item {
@@ -176,23 +172,24 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     transition: border-color 160ms ease;
   }
 
-  .faq-item:hover {
-    border-color: var(--iris-border);
+  .faq-item:hover,
+  .faq-item[open] {
+    border-color: var(--night-border-hover);
   }
 
   .faq-item summary {
+    list-style: none;
     display: flex;
-    align-items: center;
     justify-content: space-between;
+    align-items: center;
     gap: 1.5rem;
     padding: 1.5rem 1.75rem;
     color: var(--text-white);
-    cursor: pointer;
     font-family: var(--display);
-    font-size: 1.25rem;
+    font-size: 1.15rem;
     font-weight: 700;
-    letter-spacing: -0.02em;
-    list-style: none;
+    cursor: pointer;
+    user-select: none;
   }
 
   .faq-item summary::-webkit-details-marker {
@@ -200,36 +197,27 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   }
 
   .faq-toggle-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    background: var(--night-soft);
-    border: 1px solid var(--night-border);
-    color: var(--night-muted);
-    font-size: 1.2rem;
-    font-weight: 400;
-    transition: transform 180ms ease, color 180ms ease;
+    font-family: var(--mono);
+    font-size: 1.25rem;
+    color: var(--mint);
+    transition: transform 180ms ease;
   }
 
   .faq-item[open] .faq-toggle-icon {
     transform: rotate(45deg);
-    color: var(--mint);
   }
 
   .faq-answer {
     padding: 0 1.75rem 1.75rem;
+    color: var(--night-muted);
+    font-size: 0.98rem;
+    line-height: 1.65;
     border-top: 1px solid var(--night-border);
     padding-top: 1.25rem;
   }
 
   .faq-answer p {
     margin: 0 0 1rem;
-    color: var(--night-muted);
-    font-size: 1rem;
-    line-height: 1.65;
   }
 
   .faq-answer p:last-child {
@@ -237,15 +225,17 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   }
 
   .faq-answer code {
-    color: var(--mint);
-    background: var(--night);
     padding: 0.15rem 0.35rem;
     border-radius: 4px;
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    color: var(--mint);
     font-family: var(--mono);
-    font-size: 0.88em;
+    font-size: 0.85rem;
   }
 
-  .faq-answer a {
+  .faq-answer a,
+  .page-note a {
     color: var(--mint);
     text-decoration: underline;
     text-underline-offset: 3px;
