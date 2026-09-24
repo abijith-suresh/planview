@@ -13,6 +13,33 @@ Keep the published package name as `@abijith-suresh/planview` (`apps/cli/package
 the CLI binary remains `planview`, and the private workspace is named
 `planview-workspace`.
 
+## Effect v4 and module boundaries
+
+- Keep shared local-document invariants and types in `@planview/core`; keep
+  app-specific authorization, routing, and cloud policy in their owning
+  workspace until a shared boundary is justified. Core currently has narrow
+  Node-backed defaults: `node:crypto` for document ID randomness and
+  `node:os`/`node:path`, `process.platform`, `process.env`, and `homedir()` for
+  app-data path resolution. Keep these defaults limited and injectable, and
+  pass explicit inputs when callers need deterministic behavior. Core resolves
+  paths but does not perform filesystem, network, or cloud I/O; keep that work
+  in the owning adapters.
+- In workspaces that use Effect, translate thrown or rejected failures into
+  explicit error types where they enter orchestration, and compose fallible
+  async work as typed Effects.
+- In Effect-using operations, use scopes and resource combinators when an
+  operation owns resources that must be released on success, failure, or
+  interruption. Keep pure data transformations as ordinary functions.
+- Use `Context.Service` and `Layer` when a capability is shared across modules
+  or its implementation has a meaningful dependency graph or lifecycle. Do not
+  add a service for every helper: explicit constructor or function parameters
+  are appropriate when they make a small dependency set easier to follow.
+
+See Effect's [service](https://effect.website/docs/v4/requirements-management/services),
+[layer](https://effect.website/docs/v4/requirements-management/layers), and
+[resource management](https://effect.website/docs/v4/resource-management/introduction)
+guides for the v4 APIs and their intended roles.
+
 ## Release policy
 
 The repository does not publish the package to npm yet. npm publishing remains
