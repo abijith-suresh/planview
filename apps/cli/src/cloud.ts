@@ -12,6 +12,7 @@ const CREDENTIALS_NAME = "cloud-credentials.json";
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
+const CLOUD_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const NO_FOLLOW = process.platform === "win32" ? 0 : constants.O_NOFOLLOW;
 
 type Credentials = Readonly<{
@@ -358,11 +359,21 @@ export const loginToCloud = async (options: {
   }
 };
 
-const readResponseMessage = async (response: Response) => {
+const readResponseBody = async (response: Response, signal: AbortSignal): Promise<unknown> => {
   try {
-    const body: unknown = await response.json();
+    return await response.json();
+  } catch (cause) {
+    if (signal.aborted) throw signal.reason;
+    throw cause;
+  }
+};
+
+const readResponseMessage = async (response: Response, signal: AbortSignal) => {
+  try {
+    const body = await readResponseBody(response, signal);
     if (isCloudObject(body) && typeof body.error === "string") return body.error;
   } catch {
+    if (signal.aborted) throw signal.reason;
     // Use the status code below when the response does not contain JSON.
   }
   return `Cloud request failed (${response.status}).`;
@@ -374,7 +385,11 @@ const requireCloudCredentials = async (profile?: string) => {
   return credentials;
 };
 
-export const uploadCloudDocument = async (sourcePath: string, profile?: string) => {
+export const uploadCloudDocument = async (
+  sourcePath: string,
+  profile?: string,
+  options: { timeoutMs?: number } = {}
+) => {
   const credentials = await requireCloudCredentials(profile);
   const fileStats = await lstat(sourcePath);
 
@@ -434,27 +449,48 @@ export const uploadCloudDocument = async (sourcePath: string, profile?: string) 
   formData.set("file", file);
   formData.set("title", title);
 
-  const response = await fetch(`${credentials.cloudUrl}/api/documents/upload`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${credentials.token}`,
-    },
-    body: formData,
-  });
-
-  if (response.status === 401) {
-    throw new Error("Your cloud login expired. Run `planview login` and retry the upload.");
-  }
-  if (!response.ok) throw new Error(await readResponseMessage(response));
-
-  const body: unknown = await response.json();
-  if (!isCloudObject(body) || typeof body.id !== "string") {
-    throw new Error("The cloud did not return a document link.");
+  const timeoutMs = options.timeoutMs ?? CLOUD_UPLOAD_TIMEOUT_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new RangeError("The cloud upload timeout must be a positive finite number.");
   }
 
-  return {
-    id: body.id,
-    url: `${credentials.cloudUrl}/api/documents/${encodeURIComponent(body.id)}`,
-  } satisfies CloudDocument;
+  const controller = new AbortController();
+  const timeoutReason = new DOMException("The cloud upload deadline elapsed.", "TimeoutError");
+  const timer = setTimeout(() => controller.abort(timeoutReason), timeoutMs);
+
+  try {
+    const response = await fetch(`${credentials.cloudUrl}/api/documents/upload`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${credentials.token}`,
+      },
+      body: formData,
+      signal: controller.signal,
+    });
+
+    if (response.status === 401) {
+      throw new Error("Your cloud login expired. Run `planview login` and retry the upload.");
+    }
+    if (!response.ok) {
+      throw new Error(await readResponseMessage(response, controller.signal));
+    }
+
+    const body = await readResponseBody(response, controller.signal);
+    if (!isCloudObject(body) || typeof body.id !== "string") {
+      throw new Error("The cloud did not return a document link.");
+    }
+
+    return {
+      id: body.id,
+      url: `${credentials.cloudUrl}/api/documents/${encodeURIComponent(body.id)}`,
+    } satisfies CloudDocument;
+  } catch (cause) {
+    if (controller.signal.aborted && cause === timeoutReason) {
+      throw new Error("The cloud upload timed out. Check your connection and retry.", { cause });
+    }
+    throw cause;
+  } finally {
+    clearTimeout(timer);
+  }
 };
