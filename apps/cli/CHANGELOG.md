@@ -1,5 +1,35 @@
 # @abijith-suresh/planview
 
+## 0.1.6
+
+### Patch Changes
+
+- 89b514d: Consolidate TypeScript project settings used to build the CLI.
+- f7bb15b: Separate document file contracts from the filesystem implementation.
+- ec82c7f: Reuse sorted physical document IDs across pages in one file scan.
+- 89ba306: Separate CLI argument parsing from command execution.
+- 8a05b04: Resume bounded cleanup in physical file reconciliation when metadata reconciliation finishes exactly at the item budget.
+- a3fe7f4: Separate daemon configuration and path resolution from lifecycle operations.
+- b618780: Move daemon request concurrency gates into focused, directly tested modules.
+- 421b078: Move daemon HTTP route handling into an internal module.
+- dcead40: Use a patched esbuild version for CLI bundling.
+- 0e40442: Isolate the daemon HTTP transport lifecycle behind an internal boundary.
+- 80df858: Separate publication contracts from the coordinator implementation.
+- e542ae8: Move CLI command errors and output formatting helpers behind an internal module.
+- 390e54a: Move local CLI command handlers into an internal module.
+- 9974b3d: Add browser based cloud login and standalone HTML uploads to the CLI.
+- d5ddcf9: Move metadata store contracts behind a focused storage boundary.
+- c2bd0a7: Bound cloud uploads to five minutes, including the response body.
+- 1977cea: Extract staged document file finalization lock recovery into a private storage module.
+- 79e6797: Update the Effect v4 runtime to rc.117 across the workspace packages.
+- 0ad309b: Remove unused storage coordinator aliases from the internal package API.
+- 0eb8903: Bound cloud upload reads and cover the local sign-in and upload protocol.
+- 149c5c2: Separate SQLite schema validation and migrations from metadata operations.
+- 91e4499: Tie daemon storage resources to an Effect scope.
+- ef5dbc5: Refactor the published document reader while preserving the CLI behavior.
+- 67f9bc6: Keep the SQLite metadata implementation behind the existing storage package entry point.
+- 549822c: Share macOS system path alias handling between the CLI and storage layers.
+
 ## 0.1.5
 
 ### Patch Changes
