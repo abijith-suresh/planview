@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, type Stats } from "node:fs";
+import {
+  chmodSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+  type Stats,
+} from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -91,6 +100,37 @@ const fakeReader = (options: {
   };
   return reader as unknown as Pick<FileHandle, "read" | "stat">;
 };
+
+const saveTestCredentials = async (profile: string) => {
+  const cloudUrl = "https://cloud.example.test";
+  await loginToCloud({
+    profile,
+    cloudUrl,
+    writeStatus: () => undefined,
+    openBrowser: async (signInUrl) => {
+      const signIn = new URL(signInUrl);
+      const returnToValue = signIn.searchParams.get("returnTo");
+      assert.ok(returnToValue);
+      const returnTo = new URL(returnToValue, cloudUrl);
+      const state = returnTo.searchParams.get("state");
+      const callbackUrl = returnTo.searchParams.get("redirect_uri");
+      assert.ok(state);
+      assert.ok(callbackUrl);
+
+      const callback = new URL(callbackUrl);
+      const response = await fetch(callback, {
+        method: "POST",
+        headers: { Origin: callback.origin, "Content-Type": "application/json" },
+        body: JSON.stringify({ state, token: "security-test-token" }),
+      });
+      assert.equal(response.status, 200);
+      await response.text();
+    },
+  });
+};
+
+const cloudCredentialsPath = (profile: string) =>
+  join(resolveAppDataPaths({ profile }).appDataDir, "cloud-credentials.json");
 
 test("cloud login callback and upload preserve the local protocol", async () => {
   await withIsolatedAppData(async (root) => {
@@ -280,4 +320,61 @@ test("bounded cloud reads catch growth at EOF and cap bytes read", async () => {
   assert.equal(contents.byteLength, MAX_HTML_SIZE_BYTES);
   assert.equal(contents[0], 0x62);
   assert.equal(contents.at(-1), 0x62);
+});
+
+test("cloud credentials are saved with private file and profile directory modes on POSIX", {
+  skip: process.platform === "win32",
+}, async () => {
+  await withIsolatedAppData(async () => {
+    const profile = "cloud-permissions";
+    await saveTestCredentials(profile);
+
+    const credentialsPath = cloudCredentialsPath(profile);
+    const directoryStats = lstatSync(resolveAppDataPaths({ profile }).appDataDir);
+    const credentialsStats = lstatSync(credentialsPath);
+
+    assert.equal(directoryStats.mode & 0o777, 0o700);
+    assert.equal(credentialsStats.mode & 0o777, 0o600);
+    assert.equal(directoryStats.uid, process.getuid?.());
+    assert.equal(credentialsStats.uid, process.getuid?.());
+  });
+});
+
+test("cloud upload refuses credentials with permissions shared beyond the current user on POSIX", {
+  skip: process.platform === "win32",
+}, async () => {
+  await withIsolatedAppData(async () => {
+    const profile = "cloud-permissive-credentials";
+    await saveTestCredentials(profile);
+    chmodSync(cloudCredentialsPath(profile), 0o644);
+
+    await assert.rejects(uploadCloudDocument("unused.html", profile), {
+      message: /not private to the current user/,
+    });
+  });
+});
+
+test("cloud upload refuses credentials stored through a symbolic link on POSIX", {
+  skip: process.platform === "win32",
+}, async () => {
+  await withIsolatedAppData(async (root) => {
+    const profile = "cloud-symlink-credentials";
+    await saveTestCredentials(profile);
+
+    const credentialsPath = cloudCredentialsPath(profile);
+    const externalCredentialsPath = join(root, "external-cloud-credentials.json");
+    writeFileSync(
+      externalCredentialsPath,
+      JSON.stringify({
+        version: 1,
+        cloudUrl: "https://cloud.example.test",
+        token: "planview_cli_security-test-token",
+      })
+    );
+    rmSync(credentialsPath);
+    symlinkSync(externalCredentialsPath, credentialsPath);
+
+    assert.equal(lstatSync(credentialsPath).isSymbolicLink(), true);
+    await assert.rejects(uploadCloudDocument("unused.html", profile), { code: "ELOOP" });
+  });
 });
