@@ -168,6 +168,23 @@ test("stores one HTML file and binds its storage key to the authenticated owner"
   assert.deepEqual(calls.deletedKeys, []);
 });
 
+test("does not create metadata when storing the uploaded file fails", async () => {
+  let uploadAttempts = 0;
+  const { calls, handler } = createHandler({
+    uploadFile: async () => {
+      uploadAttempts += 1;
+      throw new Error("storage upload failed");
+    },
+  });
+  const response = await handler({ request: createUploadRequest() });
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), { error: "storage upload failed" });
+  assert.equal(uploadAttempts, 1);
+  assert.equal(calls.metadata.length, 0);
+  assert.deepEqual(calls.deletedKeys, []);
+});
+
 test("deletes the uploaded object if metadata creation fails", async () => {
   const { calls, handler } = createHandler({
     createMetadata: async () => {
