@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { renameSync } from "node:fs";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { DocumentId } from "@planview/core";
@@ -9,7 +8,6 @@ import { V1_STORAGE_METADATA_BYTES_PER_DOCUMENT, V1_STORAGE_QUOTA_BYTES } from "
 import { Effect } from "effect";
 import type {
   DocumentFileStore,
-  DocumentFileStoreOptions,
   DocumentMetadata,
   DocumentPublicationCoordinator,
   DocumentPublicationCoordinatorOptions,
@@ -24,10 +22,13 @@ import {
   DocumentPublicationNotFoundError,
   DocumentPublicationReadError,
   DocumentPublicationRetryLimitError,
-  openDocumentFileStore,
-  openStorage,
   StorageQuotaExceededError,
 } from "../dist/index.js";
+import {
+  withStorageTestEnvironment,
+  type StorageTestEnvironment,
+  type StorageTestStoreOptions,
+} from "./support/storage-environment.mts";
 
 const id = (character: string): DocumentId => character.repeat(21) as DocumentId;
 const runEffect = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
@@ -43,45 +44,14 @@ const idAt = (values: readonly DocumentId[], index: number): DocumentId => {
   return value;
 };
 
-type PublicationEnvironment = Readonly<{
-  readonly directory: string;
-  readonly documentFileStore: DocumentFileStore;
-  readonly metadataStore: MetadataStore;
-  readonly documentsDir: string;
-  readonly stagingDir: string;
-}>;
-type PublicationStoreOptions = Omit<DocumentFileStoreOptions, "documentsDir" | "stagingDir">;
 type CoordinatorOverrides = Partial<
   Omit<DocumentPublicationCoordinatorOptions, "documentFileStore" | "metadataStore">
 >;
 
-const withEnvironment = async <T,>(
-  callback: (environment: PublicationEnvironment) => T | PromiseLike<T>,
-  storeOptions: PublicationStoreOptions = {}
-): Promise<T> => {
-  const directory = await mkdtemp(join(tmpdir(), "planview-publication-"));
-  const documentFileStore = Effect.runSync(
-    openDocumentFileStore({
-      documentsDir: join(directory, "documents"),
-      stagingDir: join(directory, "staging"),
-      ...storeOptions,
-    })
-  );
-  const metadataStore = Effect.runSync(openStorage(join(directory, "metadata.sqlite")));
-  try {
-    return await callback({
-      directory,
-      documentFileStore,
-      metadataStore,
-      documentsDir: join(directory, "documents"),
-      stagingDir: join(directory, "staging"),
-    });
-  } finally {
-    await documentFileStore.close();
-    metadataStore.close();
-    await rm(directory, { recursive: true, force: true });
-  }
-};
+const withEnvironment = <T,>(
+  callback: (environment: StorageTestEnvironment) => T | PromiseLike<T>,
+  storeOptions: StorageTestStoreOptions = {}
+): Promise<T> => withStorageTestEnvironment("planview-publication-", callback, storeOptions);
 
 const coordinator = (
   documentFileStore: DocumentFileStore,

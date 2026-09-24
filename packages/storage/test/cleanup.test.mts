@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
-import { hostname, tmpdir } from "node:os";
+import { mkdir, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { Effect } from "effect";
@@ -10,29 +10,20 @@ import {
   createDocumentPublicationCoordinator,
   createMetadataGatedDocumentReader,
   openDocumentFileStore,
-  openStorage,
   V1_CLEANUP_ITEM_BUDGET,
   V1_ORPHAN_RECONCILIATION_GRACE_MILLISECONDS,
 } from "../dist/index.js";
-import type {
-  DocumentCleanupResult,
-  DocumentFileStore,
-  DocumentFileStoreOptions,
-  MetadataStore,
-} from "../dist/index.js";
+import type { DocumentCleanupResult, MetadataStore } from "../dist/index.js";
+import {
+  withStorageTestEnvironment,
+  type StorageTestEnvironment,
+  type StorageTestStoreOptions,
+} from "./support/storage-environment.mts";
 
 const DAY = 24 * 60 * 60 * 1000;
 const id = (character: string): DocumentId => character.repeat(21) as DocumentId;
 const runEffect = <A, E>(effect: Effect.Effect<A, E>): Promise<A> => Effect.runPromise(effect);
 
-type CleanupEnvironment = Readonly<{
-  readonly directory: string;
-  readonly documentsDir: string;
-  readonly stagingDir: string;
-  readonly documentFileStore: DocumentFileStore;
-  readonly metadataStore: MetadataStore;
-}>;
-type CleanupStoreOptions = Omit<DocumentFileStoreOptions, "documentsDir" | "stagingDir">;
 type CleanupTotalField =
   | "removedDocuments"
   | "removedDocumentFiles"
@@ -46,36 +37,13 @@ const cleanupTotalFields: readonly CleanupTotalField[] = [
   "reclaimedBytes",
 ];
 
-const withEnvironment = async <T,>(
-  callback: (environment: CleanupEnvironment) => T | PromiseLike<T>,
-  options: CleanupStoreOptions = {}
-): Promise<T> => {
-  const directory = await mkdtemp(join(tmpdir(), "planview-cleanup-"));
-  const documentFileStore = Effect.runSync(
-    openDocumentFileStore({
-      documentsDir: join(directory, "documents"),
-      stagingDir: join(directory, "staging"),
-      ...options,
-    })
-  );
-  const metadataStore = Effect.runSync(openStorage(join(directory, "metadata.sqlite")));
-  try {
-    return await callback({
-      directory,
-      documentsDir: join(directory, "documents"),
-      stagingDir: join(directory, "staging"),
-      documentFileStore,
-      metadataStore,
-    });
-  } finally {
-    await documentFileStore.close();
-    metadataStore.close();
-    await rm(directory, { recursive: true, force: true });
-  }
-};
+const withEnvironment = <T,>(
+  callback: (environment: StorageTestEnvironment) => T | PromiseLike<T>,
+  options: StorageTestStoreOptions = {}
+): Promise<T> => withStorageTestEnvironment("planview-cleanup-", callback, options);
 
 const publishPhysical = async (
-  environment: Pick<CleanupEnvironment, "directory" | "documentFileStore" | "metadataStore">,
+  environment: Pick<StorageTestEnvironment, "directory" | "documentFileStore" | "metadataStore">,
   documentId: string,
   contents: string
 ): Promise<void> => {

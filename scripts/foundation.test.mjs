@@ -131,7 +131,7 @@ test("repository foundation has the expected configuration", () => {
   expectEqual(testTsConfig.extends, "./tsconfig.base.json", "test TypeScript extends");
   expectEqual(
     testTsConfig.compilerOptions,
-    { noEmit: true, types: ["node"] },
+    { noEmit: true, allowImportingTsExtensions: true, types: ["node"] },
     "shared TypeScript test options"
   );
 
