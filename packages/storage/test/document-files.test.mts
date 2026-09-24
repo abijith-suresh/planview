@@ -935,6 +935,10 @@ test("bounds a live target-lock wait as a collision without claiming the peer lo
     const targetLockEntered = new Promise<void>((resolve) => {
       targetLockEnteredResolve = resolve;
     });
+    let releaseTargetLock!: () => void;
+    const targetLockGate = new Promise<void>((resolve) => {
+      releaseTargetLock = resolve;
+    });
     let holdTargetLock = true;
     const firstStore = Effect.runSync(
       openDocumentFileStore({
@@ -946,11 +950,15 @@ test("bounds a live target-lock wait as a collision without claiming the peer lo
           }
           holdTargetLock = false;
           targetLockEnteredResolve();
-          await new Promise<void>((resolve) => setTimeout(resolve, 64));
+          await targetLockGate;
         },
       })
     );
     const secondStore = Effect.runSync(openDocumentFileStore({ documentsDir, stagingDir }));
+    let firstFinalization: Promise<unknown> | undefined;
+    let primaryFailure: unknown;
+    let hasPrimaryFailure = false;
+    let cleanupFailures: unknown[] = [];
     try {
       const firstSource = join(directory, "target-lock-winner.html");
       const secondSource = join(directory, "target-lock-contender.html");
@@ -959,17 +967,63 @@ test("bounds a live target-lock wait as a collision without claiming the peer lo
       const firstHandle = await firstStore.stageSourceFile(firstSource);
       const secondHandle = await secondStore.stageSourceFile(secondSource);
 
-      const firstFinalization = firstStore.finalizeStagedFile(firstHandle, validId);
-      await targetLockEntered;
+      firstFinalization = firstStore.finalizeStagedFile(firstHandle, validId);
+      const firstFinalizationSettlement = firstFinalization.then(
+        () => ({ kind: "settled" as const }),
+        (error: unknown) => ({ kind: "rejected" as const, error })
+      );
+      const entryOrSettlement = await Promise.race([
+        targetLockEntered.then(() => ({ kind: "entered" as const })),
+        firstFinalizationSettlement,
+      ]);
+      if (entryOrSettlement.kind === "rejected") {
+        throw entryOrSettlement.error;
+      }
+      assert.equal(
+        entryOrSettlement.kind,
+        "entered",
+        "first finalization completed before entering target inspection"
+      );
       await assert.rejects(
         secondStore.finalizeStagedFile(secondHandle, validId),
         (error) => error instanceof DocumentFileTargetBusyError
       );
+      releaseTargetLock();
       await firstFinalization;
       assert.deepEqual(await readdir(stagingDir), []);
+    } catch (error) {
+      hasPrimaryFailure = true;
+      primaryFailure = error;
     } finally {
-      await firstStore.close();
-      await secondStore.close();
+      releaseTargetLock();
+      const cleanupOperations: Promise<unknown>[] = [];
+      if (firstFinalization !== undefined) {
+        cleanupOperations.push(firstFinalization);
+      }
+      cleanupOperations.push(
+        Promise.resolve().then(() => firstStore.close()),
+        Promise.resolve().then(() => secondStore.close())
+      );
+      const cleanupResults = await Promise.allSettled(cleanupOperations);
+      cleanupFailures = cleanupResults.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : []
+      );
+    }
+    if (hasPrimaryFailure) {
+      if (cleanupFailures.length === 0) {
+        throw primaryFailure;
+      }
+      throw new AggregateError(
+        [primaryFailure, ...cleanupFailures],
+        "Target-lock test failed and cleanup also failed.",
+        { cause: primaryFailure }
+      );
+    }
+    if (cleanupFailures.length === 1) {
+      throw cleanupFailures[0];
+    }
+    if (cleanupFailures.length > 1) {
+      throw new AggregateError(cleanupFailures, "Target-lock test cleanup failed.");
     }
   }));
 
