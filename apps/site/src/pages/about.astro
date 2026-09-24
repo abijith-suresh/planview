@@ -8,43 +8,180 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   description="plansplease gives the useful pages made by coding agents a place to land."
   activePath="about"
 >
-  <section class="prose-page" aria-labelledby="about-title">
-    <h1 id="about-title">A place for the useful things agents make.</h1>
-    <p>
-      plansplease is a small open-source project for turning agent-made HTML into something you can
-      open again.
-    </p>
+  <section class="about-hero" aria-labelledby="about-title">
+    <div class="about-hero-content">
+      <span class="about-badge">Our Mission</span>
+      <h1 id="about-title">A place for the useful things agents make.</h1>
+      <p class="about-lead">
+        plansplease exists because AI agents are writing brilliant, full-featured web applications,
+        but chat interfaces were never designed to preserve software.
+      </p>
+    </div>
+  </section>
 
-    <ul class="prose-list">
-      <li>
-        <h2>It starts on your machine</h2>
+  <section class="about-content">
+    <div class="about-narrative">
+      <h2>The Gap Between Prompt and Permanence</h2>
+      <p>
+        Every day, engineers and makers ask LLMs to build interactive tools: financial sensitivity
+        calculators, prototype UI components, research briefs with interactive charts, and internal
+        utilities. The model outputs a complete HTML file in seconds.
+      </p>
+      <p>
+        And then what happens? You scroll down, the chat compacts, or you close the tab. The tool is
+        lost. If you do save it, it sits in your <code>Downloads</code> folder, broken when clicked
+        because of browser security sandboxes, or requiring an hour of boilerplate repo setup just
+        to view.
+      </p>
+    </div>
+
+    <div class="values-grid">
+      <article class="value-card">
+        <h3>It starts on your machine</h3>
         <p>
-          The CLI gives a standalone HTML file or page folder a local URL. Use it while the agent is
-          still working and keep your project setup untouched.
+          The CLI gives any standalone HTML file or page folder an instant local URL via a lightweight
+          loopback daemon. Iterate with your agent in real-time without polluting your project setup.
         </p>
-      </li>
-      <li>
-        <h2>The cloud keeps the useful copy</h2>
+      </article>
+
+      <article class="value-card">
+        <h3>The cloud keeps the useful copy</h3>
         <p>
-          The managed workspace accepts one standalone HTML file at a time. It is private to your
-          account in the current alpha.
+          Our managed workspace provides a permanent, authenticated home for your agent artifacts.
+          Access your interactive dashboards and tools from any machine, anytime.
         </p>
-      </li>
-      <li>
-        <h2>Small is a product decision</h2>
+      </article>
+
+      <article class="value-card">
+        <h3>Lightweight by design</h3>
         <p>
-          A page does not need a full application, a deployment pipeline, or a new project before it
-          can be useful. Start with the artifact in front of you.
+          A single-purpose page does not need a full Next.js application, Docker container, or CI/CD
+          pipeline to be useful. Start with the standalone artifact in front of you.
         </p>
-      </li>
-      <li>
-        <h2>Built in the open</h2>
+      </article>
+
+      <article class="value-card">
+        <h3>Built in the open</h3>
         <p>
-          The source is available on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
-          Self-hosting and richer uploads are part of the work ahead, not promises of the current
-          alpha.
+          The core runtime and CLI are 100% open source on
+          <a href="https://github.com/abijith-suresh/planview">GitHub</a>. We build with the
+          developer community to establish the standard runtime for agent web artifacts.
         </p>
-      </li>
-    </ul>
+      </article>
+    </div>
   </section>
 </SiteLayout>
+
+<style>
+  .about-hero {
+    padding: clamp(4rem, 7vh, 6rem) 0 3rem;
+    border-bottom: 1px solid var(--night-border);
+  }
+
+  .about-hero-content {
+    max-width: 48rem;
+  }
+
+  .about-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    margin-bottom: 1.25rem;
+    border-radius: 9999px;
+    background: var(--iris-soft);
+    border: 1px solid var(--iris-border);
+    color: var(--iris);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .about-hero h1 {
+    margin: 0 0 1.25rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(2.4rem, 4.4vw, 3.6rem);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1.1;
+  }
+
+  .about-lead {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 1.2rem;
+    line-height: 1.65;
+  }
+
+  .about-content {
+    padding: 4.5rem 0;
+  }
+
+  .about-narrative {
+    max-width: 46rem;
+    margin-bottom: 4rem;
+  }
+
+  .about-narrative h2 {
+    margin: 0 0 1.25rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.85rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+  }
+
+  .about-narrative p {
+    margin: 0 0 1.25rem;
+    color: var(--night-muted);
+    font-size: 1.05rem;
+    line-height: 1.65;
+  }
+
+  .about-narrative code {
+    color: var(--mint);
+    background: var(--night-card);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-family: var(--mono);
+  }
+
+  .values-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem;
+  }
+
+  .value-card {
+    padding: 2.25rem;
+    border: 1px solid var(--night-border);
+    border-radius: 14px;
+    background: var(--night-card);
+  }
+
+  .value-card h3 {
+    margin: 0 0 0.85rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.35rem;
+    font-weight: 700;
+  }
+
+  .value-card p {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .value-card a {
+    color: var(--mint);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  @media (max-width: 860px) {
+    .values-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

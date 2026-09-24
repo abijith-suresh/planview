@@ -6,6 +6,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 <SiteLayout
   title="Pricing | plansplease"
   description="Simple for now. Clear about later."
+  activePath="pricing"
 >
   <header class="page-heading">
     <div>
@@ -17,34 +18,47 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   <section class="content-section" aria-label="Plans">
     <div class="pricing-grid">
       <article class="pricing-card pricing-card-current">
-        <p class="pricing-label">Current / Alpha</p>
-        <h2>Free</h2>
-        <p class="pricing-price">$0 <span>during alpha</span></p>
-        <p>Everything available today is free while we build out the service.</p>
-        <ul>
-          <li>Unlimited local previews with CLI</li>
+        <div class="pricing-header">
+          <span class="pricing-label">Current / Alpha</span>
+          <h2>Free</h2>
+        </div>
+        <div class="pricing-price-box">
+          <span class="price-number">$0</span>
+          <span class="price-tenure">during alpha</span>
+        </div>
+        <p class="pricing-intro">Everything available today is free while we build out the service with the developer community.</p>
+        <ul class="pricing-features">
+          <li>Unlimited local previews with loopback daemon</li>
           <li>Cloud copy of single-file HTML pages</li>
-          <li>Private workspace with GitHub sign-in</li>
-          <li>Alpha usage limits apply</li>
+          <li>Private encrypted workspace with GitHub sign-in</li>
+          <li>Full support for modern CSS, Tailwind CDN, and Canvas</li>
+          <li>Standard community support via GitHub</li>
         </ul>
       </article>
 
       <article class="pricing-card">
-        <p class="pricing-label">Later / Future</p>
-        <h2>Fair</h2>
-        <p class="pricing-price">Simple <span>when limits arrive</span></p>
-        <p>We plan to keep a free tier for individual use, with straightforward pricing for teams.</p>
-        <ul>
-          <li>Free tier for personal projects</li>
-          <li>Team workspaces and sharing</li>
-          <li>Custom domains</li>
-          <li>Higher storage and bandwidth limits</li>
+        <div class="pricing-header">
+          <span class="pricing-label future">Future Roadmap</span>
+          <h2>Fair & Transparent</h2>
+        </div>
+        <div class="pricing-price-box">
+          <span class="price-number">Simple</span>
+          <span class="price-tenure">when limits arrive</span>
+        </div>
+        <p class="pricing-intro">We are committed to maintaining a generous free tier for individual developers and clear pricing for teams.</p>
+        <ul class="pricing-features">
+          <li>Always-free personal tier for individual developers</li>
+          <li>Team shared workspaces and collaborative access</li>
+          <li>Custom domains with automatic SSL</li>
+          <li>Higher persistent storage and asset bandwidth</li>
+          <li>Dedicated support and SLA</li>
         </ul>
       </article>
     </div>
 
     <p class="page-note">
-      Questions about pricing? <a href="/faq/">Check the FAQ</a> or open an issue on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
+      Questions about plans or enterprise use cases? <a href="/faq/">Check the FAQ</a> or join the
+      discussion on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
     </p>
   </section>
 </SiteLayout>
@@ -53,115 +67,124 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   .pricing-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1.5rem;
-    background: transparent;
+    gap: 2rem;
   }
 
   .pricing-card {
     display: flex;
     flex-direction: column;
-    min-height: 24rem;
-    padding: clamp(1.8rem, 4vw, 2.5rem);
-    background: var(--night-card);
+    padding: clamp(2.25rem, 4vw, 3rem);
     border: 1px solid var(--night-border);
-    border-radius: 10px;
-    transition: border-color 150ms ease;
+    border-radius: 16px;
+    background: var(--night-card);
+    transition: all 160ms ease;
   }
 
   .pricing-card-current {
-    background: var(--night-card);
-    border: 1px solid var(--mint-border);
-    color: var(--text);
+    border-color: var(--mint-border);
+    background: var(--night-card-elevated);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
   }
 
   .pricing-card:not(.pricing-card-current):hover {
     border-color: var(--night-border-hover);
+    transform: translateY(-2px);
+  }
+
+  .pricing-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
   }
 
   .pricing-label {
     display: inline-flex;
     align-self: flex-start;
-    margin: 0 0 1.5rem;
     padding: 0.3rem 0.75rem;
     border-radius: 6px;
-    background: var(--butter-soft);
-    border: 1px solid var(--butter-border);
-    color: var(--butter);
-    font-family: var(--mono);
-    font-size: 0.72rem;
-    letter-spacing: 0.05em;
+    background: var(--mint-soft);
+    border: 1px solid var(--mint-border);
+    color: var(--mint);
+    font-size: 0.75rem;
+    font-weight: 700;
     text-transform: uppercase;
   }
 
-  .pricing-card-current .pricing-label {
-    background: var(--mint-soft);
-    border-color: var(--mint-border);
-    color: var(--mint);
+  .pricing-label.future {
+    background: var(--iris-soft);
+    border-color: var(--iris-border);
+    color: var(--iris);
   }
 
   .pricing-card h2 {
-    margin: 0 0 0.6rem;
+    margin: 0;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2.2rem, 4vw, 3.5rem);
-    font-weight: 600;
-    letter-spacing: -0.05em;
-    line-height: 1;
+    font-size: 1.85rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
   }
 
-  .pricing-price {
-    margin: 0 0 1.25rem;
-    color: var(--mint);
+  .pricing-price-box {
+    display: flex;
+    align-items: baseline;
+    gap: 0.65rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .price-number {
+    color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2rem, 3.5vw, 3rem);
-    font-weight: 600;
-    letter-spacing: -0.05em;
+    font-size: 3rem;
+    font-weight: 800;
     line-height: 1;
+    letter-spacing: -0.04em;
   }
 
-  .pricing-card:not(.pricing-card-current) .pricing-price {
-    color: var(--lavender);
-  }
-
-  .pricing-price span {
-    display: block;
-    margin-top: 0.4rem;
-    color: var(--night-muted);
-    font-family: var(--mono);
-    font-size: 0.68rem;
-    font-weight: 400;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .pricing-card > p:not(.pricing-label):not(.pricing-price) {
-    max-width: 28rem;
-    min-height: 3rem;
-    margin: 0;
+  .price-tenure {
     color: var(--night-muted);
     font-size: 0.95rem;
+    font-weight: 500;
+  }
+
+  .pricing-intro {
+    margin: 0 0 2rem;
+    color: var(--night-muted);
+    font-size: 1rem;
     line-height: 1.6;
   }
 
-  .pricing-card ul {
+  .pricing-features {
+    margin: 0;
+    padding: 0;
+    list-style: none;
     display: grid;
-    gap: 0.75rem;
-    margin: 1.75rem 0 0;
-    padding: 1.5rem 0 0 1.25rem;
-    border-top: 1px solid var(--night-border);
+    gap: 1rem;
+    flex-grow: 1;
+  }
+
+  .pricing-features li {
+    position: relative;
+    padding-left: 1.75rem;
     color: var(--text);
-    font-size: 0.92rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
   }
 
-  .pricing-card li::marker {
+  .pricing-features li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
     color: var(--mint);
+    font-weight: 800;
   }
 
-  .pricing-card:not(.pricing-card-current) li::marker {
-    color: var(--lavender);
+  .pricing-card:not(.pricing-card-current) .pricing-features li::before {
+    color: var(--iris);
   }
 
-  @media (max-width: 48rem) {
+  @media (max-width: 860px) {
     .pricing-grid {
       grid-template-columns: 1fr;
     }

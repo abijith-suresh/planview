@@ -8,44 +8,145 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   description="How plansplease handles local snapshots and cloud HTML uploads in the alpha."
   activePath="privacy"
 >
-  <section class="prose-page" aria-labelledby="privacy-title">
-    <h1 id="privacy-title">Your pages are yours.</h1>
-    <p>
-      plansplease is still in alpha. This page describes what happens to an HTML page in the local
-      and cloud workflows that exist today.
+  <section class="privacy-hero" aria-labelledby="privacy-title">
+    <div class="privacy-hero-content">
+      <span class="privacy-badge">Security & Transparency</span>
+      <h1 id="privacy-title">Your pages are yours.</h1>
+      <p class="privacy-lead">
+        We believe developers and makers should maintain complete ownership and control over the
+        code, documents, and tools their AI agents create.
+      </p>
+    </div>
+  </section>
+
+  <section class="privacy-content">
+    <div class="privacy-grid">
+      <article class="privacy-card">
+        <h3>Cloud pages belong to your account</h3>
+        <p>
+          Files uploaded to the cloud workspace are tied strictly to your authenticated GitHub
+          account. Your dashboard only lists your account's documents, and nobody else can browse
+          your library.
+        </p>
+      </article>
+
+      <article class="privacy-card">
+        <h3>Cloud previews require your session</h3>
+        <p>
+          In the current alpha, preview requests verify your active session token before returning
+          the stored HTML. Private artifacts are protected by default.
+        </p>
+      </article>
+
+      <article class="privacy-card">
+        <h3>Local pages stay on your machine</h3>
+        <p>
+          The CLI binds its daemon strictly to the loopback interface (<code>127.0.0.1</code>).
+          Local snapshots are served entirely on your hardware and never touch external servers.
+        </p>
+      </article>
+
+      <article class="privacy-card">
+        <h3>Uploads start with standalone HTML</h3>
+        <p>
+          The cloud upload flow currently accepts standalone HTML files. Multi-asset folders and
+          complex project bundles will be supported as we scale object storage capabilities.
+        </p>
+      </article>
+    </div>
+
+    <p class="page-note">
+      This privacy summary will be expanded into comprehensive enterprise terms as plansplease
+      moves towards general availability.
     </p>
-
-    <ul class="prose-list">
-      <li>
-        <h2>Cloud pages belong to your account</h2>
-        <p>
-          Files uploaded to the cloud workspace are associated with the signed-in account. The
-          dashboard only lists that account's documents.
-        </p>
-      </li>
-      <li>
-        <h2>Cloud previews require your session</h2>
-        <p>
-          In the current alpha, preview requests check the authenticated session before returning
-          the stored HTML. There is no public sharing link yet.
-        </p>
-      </li>
-      <li>
-        <h2>Local pages stay on your machine</h2>
-        <p>
-          The CLI binds its local daemon to the loopback interface. A local snapshot is served by
-          the machine where you ran the command.
-        </p>
-      </li>
-      <li>
-        <h2>Uploads start with standalone HTML</h2>
-        <p>
-          The cloud upload flow currently accepts one standalone HTML file at a time. Bundled
-          assets and page folders will come later with object storage support.
-        </p>
-      </li>
-    </ul>
-
-    <p class="page-note">This summary will be replaced with full product terms before a public launch.</p>
   </section>
 </SiteLayout>
+
+<style>
+  .privacy-hero {
+    padding: clamp(4rem, 7vh, 6rem) 0 3rem;
+    border-bottom: 1px solid var(--night-border);
+  }
+
+  .privacy-hero-content {
+    max-width: 48rem;
+  }
+
+  .privacy-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    margin-bottom: 1.25rem;
+    border-radius: 9999px;
+    background: var(--mint-soft);
+    border: 1px solid var(--mint-border);
+    color: var(--mint);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .privacy-hero h1 {
+    margin: 0 0 1.25rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(2.4rem, 4.4vw, 3.6rem);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1.1;
+  }
+
+  .privacy-lead {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 1.2rem;
+    line-height: 1.65;
+  }
+
+  .privacy-content {
+    padding: 4.5rem 0;
+  }
+
+  .privacy-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem;
+  }
+
+  .privacy-card {
+    padding: 2.25rem;
+    border: 1px solid var(--night-border);
+    border-radius: 14px;
+    background: var(--night-card);
+  }
+
+  .privacy-card h3 {
+    margin: 0 0 0.85rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.35rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
+  .privacy-card p {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .privacy-card code {
+    color: var(--mint);
+    background: var(--night);
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.88em;
+  }
+
+  @media (max-width: 860px) {
+    .privacy-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

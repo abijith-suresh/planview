@@ -8,70 +8,176 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   description="Answers about the plansplease CLI, cloud workspace, privacy, and alpha plans."
   activePath="faq"
 >
-  <section class="prose-page faq-page" aria-labelledby="faq-title">
-    <h1 id="faq-title">Questions we expect to hear.</h1>
-    <p>
-      plansplease is early. These answers describe what works today, not a larger product we have
-      not built yet.
-    </p>
+  <section class="faq-hero" aria-labelledby="faq-title">
+    <div class="faq-hero-content">
+      <span class="faq-badge">Help Center</span>
+      <h1 id="faq-title">Questions we expect to hear.</h1>
+      <p class="faq-lead">
+        Clear, direct answers about how plansplease handles local loopback serving, private cloud
+        vaults, and agent integrations.
+      </p>
+    </div>
+  </section>
 
+  <section class="faq-content">
     <div class="faq-list">
       <details class="faq-item" open>
-        <summary>What is plansplease?</summary>
-        <p>
-          It gives agent-made HTML a place to land. The CLI creates local previews. The cloud
-          workspace keeps a private copy you can open later.
-        </p>
+        <summary>
+          <span>What is plansplease?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            plansplease gives agent-generated web artifacts a permanent, interactive home. Coding
+            agents (Claude, Cursor, ChatGPT, Gemini) often output complete single-page tools,
+            simulators, or dashboards.
+          </p>
+          <p>
+            The plansplease CLI creates an instant, zero-latency local preview on your machine,
+            while our cloud workspace securely archives your pages so they never get lost in a
+            closed chat thread.
+          </p>
+        </div>
       </details>
+
       <details class="faq-item">
-        <summary>What can I upload?</summary>
-        <p>
-          The cloud alpha accepts one standalone HTML file at a time. The local CLI can also serve
-          a page folder with an <code>index.html</code> entry point.
-        </p>
+        <summary>
+          <span>What file types and assets can I preview?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            The local CLI serves both standalone HTML files and multi-file directory bundles with an
+            <code>index.html</code> entry point. You can include linked stylesheets, images, client-side
+            JavaScript, Canvas scripts, and CDN-hosted libraries (like Tailwind, Chart.js, or React).
+          </p>
+          <p>
+            The cloud workspace currently accepts standalone HTML files with full support for inline
+            scripts and CDN dependencies.
+          </p>
+        </div>
       </details>
+
       <details class="faq-item">
-        <summary>Are cloud pages public?</summary>
-        <p>
-          No. Cloud pages are tied to the signed-in account in the current alpha. Public sharing is
-          not available yet.
-        </p>
+        <summary>
+          <span>Are my cloud pages public or private?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            Your pages are strictly private. Every cloud upload is tied exclusively to your
+            authenticated GitHub account. Nobody else can view or access your uploaded artifacts
+            unless you explicitly choose to share your screen.
+          </p>
+        </div>
       </details>
+
       <details class="faq-item">
-        <summary>Will there be a paid plan?</summary>
-        <p>
-          Maybe. The pricing page shows the current placeholder. We are considering storage,
-          retention, and bundled uploads as paid features, but no payment plan exists yet.
-        </p>
+        <summary>
+          <span>Does the local CLI require internet access?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            No. The CLI runs entirely on your local machine using an isolated loopback daemon.
+            It does not send your code, files, or previews to the cloud unless you explicitly use
+            the cloud workspace.
+          </p>
+        </div>
       </details>
+
       <details class="faq-item">
-        <summary>Can I self-host it?</summary>
-        <p>
-          The source is public and self-hosting is part of the plan. The self-hosting path is not
-          documented as a supported deployment yet.
-        </p>
+        <summary>
+          <span>Can I integrate plansplease directly with AI agents?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            Yes. The CLI supports headless automation, and plansplease provides Model Context
+            Protocol (MCP) server hooks so agents like Claude Desktop and Cursor can publish and
+            inspect artifacts programmatically during their execution loop.
+          </p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>
+          <span>Can I self-host plansplease?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            The source code is 100% open source under the MIT license on
+            <a href="https://github.com/abijith-suresh/planview">GitHub</a>. While our cloud managed
+            service is currently in alpha, self-hosting configurations and container definitions
+            are on our active roadmap.
+          </p>
+        </div>
       </details>
     </div>
   </section>
 </SiteLayout>
 
 <style>
-  .faq-page {
-    max-width: 56rem;
+  .faq-hero {
+    padding: clamp(4rem, 7vh, 6rem) 0 3rem;
+    border-bottom: 1px solid var(--night-border);
+  }
+
+  .faq-hero-content {
+    max-width: 48rem;
+  }
+
+  .faq-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    margin-bottom: 1.25rem;
+    border-radius: 9999px;
+    background: var(--iris-soft);
+    border: 1px solid var(--iris-border);
+    color: var(--iris);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .faq-hero h1 {
+    margin: 0 0 1.25rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(2.4rem, 4.4vw, 3.6rem);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1.1;
+  }
+
+  .faq-lead {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 1.2rem;
+    line-height: 1.65;
+  }
+
+  .faq-content {
+    padding: 4.5rem 0;
+    max-width: 54rem;
   }
 
   .faq-list {
-    margin-top: 3.5rem;
-    border-top: 1px solid var(--night-border);
+    display: grid;
+    gap: 1rem;
   }
 
   .faq-item {
-    border-bottom: 1px solid var(--night-border);
-    transition: border-color 180ms ease;
+    border: 1px solid var(--night-border);
+    border-radius: 12px;
+    background: var(--night-card);
+    overflow: hidden;
+    transition: border-color 160ms ease;
   }
 
   .faq-item:hover {
-    border-color: rgba(255, 255, 255, 0.16);
+    border-color: var(--iris-border);
   }
 
   .faq-item summary {
@@ -79,70 +185,69 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     align-items: center;
     justify-content: space-between;
     gap: 1.5rem;
-    padding: 1.5rem 0;
-    color: var(--text);
+    padding: 1.5rem 1.75rem;
+    color: var(--text-white);
     cursor: pointer;
     font-family: var(--display);
-    font-size: clamp(1.35rem, 2.5vw, 1.85rem);
-    font-weight: 600;
-    letter-spacing: -0.04em;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
     list-style: none;
-    transition: color 180ms ease;
   }
 
   .faq-item summary::-webkit-details-marker {
     display: none;
   }
 
-  .faq-item summary::after {
-    content: "+";
+  .faq-toggle-icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 1.8rem;
-    height: 1.8rem;
-    border-radius: 50%;
-    background: rgba(143, 227, 201, 0.08);
-    border: 1px solid rgba(143, 227, 201, 0.25);
-    flex: 0 0 auto;
-    color: var(--mint);
-    font-family: var(--mono);
-    font-size: 1.1rem;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    color: var(--night-muted);
+    font-size: 1.2rem;
     font-weight: 400;
-    transition: all 180ms ease;
+    transition: transform 180ms ease, color 180ms ease;
   }
 
-  .faq-item[open] summary::after {
-    content: "\2212";
-    background: rgba(200, 185, 247, 0.08);
-    border-color: rgba(200, 185, 247, 0.25);
-    color: var(--lavender);
-  }
-
-  .faq-item summary:hover,
-  .faq-item summary:focus-visible {
+  .faq-item[open] .faq-toggle-icon {
+    transform: rotate(45deg);
     color: var(--mint);
   }
 
-  .faq-item summary:hover::after {
-    transform: scale(1.08);
+  .faq-answer {
+    padding: 0 1.75rem 1.75rem;
+    border-top: 1px solid var(--night-border);
+    padding-top: 1.25rem;
   }
 
-  .faq-item p {
-    max-width: 44rem;
-    margin: -0.25rem 0 1.6rem;
+  .faq-answer p {
+    margin: 0 0 1rem;
     color: var(--night-muted);
     font-size: 1rem;
     line-height: 1.65;
   }
 
-  .faq-item code {
-    padding: 0.2rem 0.45rem;
-    border-radius: 0.35rem;
-    background: var(--night-soft);
-    border: 1px solid var(--night-border);
+  .faq-answer p:last-child {
+    margin-bottom: 0;
+  }
+
+  .faq-answer code {
     color: var(--mint);
+    background: var(--night);
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
     font-family: var(--mono);
     font-size: 0.88em;
+  }
+
+  .faq-answer a {
+    color: var(--mint);
+    text-decoration: underline;
+    text-underline-offset: 3px;
   }
 </style>

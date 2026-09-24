@@ -12,8 +12,8 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     <div>
       <h1 id="docs-title">Docs for a small tool.</h1>
       <p>
-        The alpha has two paths. Run a page locally with the CLI, or save one standalone HTML file
-        in your private cloud workspace.
+        Everything you need to run, inspect, and vault agent-generated web artifacts. Preview
+        pages locally with zero latency, or preserve them forever in your secure cloud workspace.
       </p>
     </div>
     <a class="page-action" href="../cli/">Start with the CLI</a>
@@ -22,43 +22,204 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   <section class="content-section" aria-labelledby="docs-list-title">
     <h2 id="docs-list-title">Start here.</h2>
 
-    <div class="feature-list">
-      <article class="feature-row">
-        <span class="feature-number">01</span>
-        <div>
-          <h2>Install the CLI</h2>
-          <p>Install the command once, then give an HTML file a local URL whenever an agent makes one.</p>
+    <div class="docs-grid">
+      <article class="doc-card">
+        <div class="doc-card-badge">Step 1</div>
+        <h3>Install the CLI</h3>
+        <p>
+          Install the command globally via npm. It gives any standalone HTML file or directory an
+          instant local loopback URL.
+        </p>
+        <div class="code-pill">
+          <code>npm install --global @abijith-suresh/planview</code>
         </div>
-        <code class="feature-command">npm install --global @abijith-suresh/planview</code>
       </article>
 
-      <article class="feature-row">
-        <span class="feature-number">02</span>
-        <div>
-          <h2>Publish a local page</h2>
-          <p>
-            Publish a file or page folder. The CLI keeps the snapshot on your machine and prints the
-            URL.
-          </p>
+      <article class="doc-card">
+        <div class="doc-card-badge">Step 2</div>
+        <h3>Publish a local page</h3>
+        <p>
+          Publish a file or page folder. The background daemon creates a lightweight local snapshot
+          and automatically opens your browser.
+        </p>
+        <div class="code-pill">
+          <code>planview publish --open ./page.html</code>
         </div>
-        <code class="feature-command">planview publish --open ./page.html</code>
       </article>
 
-      <article class="feature-row">
-        <span class="feature-number">03</span>
-        <div>
-          <h2>Save a cloud copy</h2>
-          <p>
-            Sign in to the staging app and upload one standalone HTML file. The current cloud
-            workflow does not accept bundled assets yet.
-          </p>
+      <article class="doc-card">
+        <div class="doc-card-badge">Step 3</div>
+        <h3>Save a cloud copy</h3>
+        <p>
+          Sign in to the plansplease workspace and upload your HTML file. Your tools and dashboards
+          stay permanently accessible from any browser.
+        </p>
+        <div class="meta-tag-pill">
+          <span>Private cloud workspace • GitHub sign-in</span>
         </div>
-        <span class="feature-command">private / one file</span>
       </article>
     </div>
 
+    <!-- Guides Breakdown -->
+    <div class="docs-guides">
+      <h3 class="guides-heading">Core Guides</h3>
+      <div class="guides-grid">
+        <a class="guide-item" href="../cli/">
+          <h4>CLI Reference & Options</h4>
+          <p>Learn how to use <code>publish</code>, <code>get</code>, <code>start</code>, and daemon management.</p>
+          <span class="guide-link-text">Read CLI guide</span>
+        </a>
+
+        <a class="guide-item" href="../features/">
+          <h4>Architecture & Web Standards</h4>
+          <p>Understand how loopback isolation, single-file HTML, and multi-asset bundles work.</p>
+          <span class="guide-link-text">Explore features</span>
+        </a>
+
+        <a class="guide-item" href="../faq/">
+          <h4>Frequently Asked Questions</h4>
+          <p>Common questions regarding security, CORS policies, limits, and team workflows.</p>
+          <span class="guide-link-text">View FAQ</span>
+        </a>
+      </div>
+    </div>
+
     <p class="page-note">
-      More detailed API and self-hosting docs will come after the alpha workflow settles.
+      Detailed API endpoints and self-hosting documentation will be added as the platform evolves.
     </p>
   </section>
 </SiteLayout>
+
+<style>
+  .docs-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.75rem;
+    margin-bottom: 3.5rem;
+  }
+
+  .doc-card {
+    padding: 2rem;
+    border: 1px solid var(--night-border);
+    border-radius: 14px;
+    background: var(--night-card);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .doc-card-badge {
+    align-self: flex-start;
+    padding: 0.25rem 0.65rem;
+    margin-bottom: 1.25rem;
+    border-radius: 6px;
+    background: var(--iris-soft);
+    border: 1px solid var(--iris-border);
+    color: var(--iris);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .doc-card h3 {
+    margin: 0 0 0.85rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.25rem;
+    font-weight: 700;
+  }
+
+  .doc-card p {
+    margin: 0 0 1.5rem;
+    color: var(--night-muted);
+    font-size: 0.92rem;
+    line-height: 1.6;
+    flex-grow: 1;
+  }
+
+  .code-pill {
+    padding: 0.65rem 0.85rem;
+    border-radius: 8px;
+    background: var(--night);
+    border: 1px solid var(--night-border);
+    overflow-x: auto;
+  }
+
+  .code-pill code {
+    color: var(--mint);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+  .meta-tag-pill {
+    padding: 0.65rem 0.85rem;
+    border-radius: 8px;
+    background: var(--night);
+    border: 1px solid var(--night-border);
+    color: var(--night-subtle);
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .docs-guides {
+    padding-top: 2rem;
+    border-top: 1px solid var(--night-border);
+  }
+
+  .guides-heading {
+    margin: 0 0 1.5rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.35rem;
+    font-weight: 700;
+  }
+
+  .guides-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1.5rem;
+  }
+
+  .guide-item {
+    display: block;
+    padding: 1.75rem;
+    border: 1px solid var(--night-border);
+    border-radius: 12px;
+    background: var(--night-card);
+    text-decoration: none;
+    transition: all 160ms ease;
+  }
+
+  .guide-item:hover {
+    border-color: var(--mint-border);
+    transform: translateY(-2px);
+  }
+
+  .guide-item h4 {
+    margin: 0 0 0.5rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.1rem;
+    font-weight: 700;
+  }
+
+  .guide-item p {
+    margin: 0 0 1rem;
+    color: var(--night-muted);
+    font-size: 0.88rem;
+    line-height: 1.55;
+  }
+
+  .guide-link-text {
+    color: var(--mint);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  @media (max-width: 960px) {
+    .docs-grid,
+    .guides-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
