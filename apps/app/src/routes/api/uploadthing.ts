@@ -5,8 +5,12 @@ import { uploadRouter } from "~/server/uploadthing";
 const handler = createRouteHandler({
   router: uploadRouter,
   config: {
-    token: process.env.UPLOADTHING_TOKEN,
-    callbackUrl: process.env.UPLOADTHING_CALLBACK_URL,
+    ...(process.env["UPLOADTHING_TOKEN"] === undefined
+      ? {}
+      : { token: process.env["UPLOADTHING_TOKEN"] }),
+    ...(process.env["UPLOADTHING_CALLBACK_URL"] === undefined
+      ? {}
+      : { callbackUrl: process.env["UPLOADTHING_CALLBACK_URL"] }),
   },
 });
 

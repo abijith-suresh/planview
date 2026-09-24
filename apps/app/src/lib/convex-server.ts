@@ -3,8 +3,8 @@ import { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
 
-const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
-export const convexSiteUrl = process.env.CONVEX_SITE_URL ?? process.env.VITE_CONVEX_SITE_URL;
+const convexUrl = process.env["CONVEX_URL"] ?? process.env["VITE_CONVEX_URL"];
+export const convexSiteUrl = process.env["CONVEX_SITE_URL"] ?? process.env["VITE_CONVEX_SITE_URL"];
 
 export { api };
 
