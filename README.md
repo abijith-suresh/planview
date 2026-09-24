@@ -100,12 +100,13 @@ Vercel is not used for the marketing site.
 
 ## Security follow-up
 
-`npm audit` on the checked-in lockfile reports 8 vulnerable dependency entries:
-1 low, 6 high, and 1 critical. They include `astro@5.18.1`, `esbuild@0.27.7`,
-`sharp@0.34.5`, and `unstorage@1.17.5`, along with `uploadthing@7.7.4`,
-`@uploadthing/solid@7.3.3`, `@uploadthing/shared@7.1.10`, and its nested
-`effect@3.17.7` packages. The count is by affected package entry; one package
-can have several advisory records.
+`npm audit` on the checked-in lockfile reports 8 vulnerable package names
+(1 low, 6 high, and 1 critical), affecting 9 installed lockfile nodes. The names
+are `astro@5.18.1`, `esbuild@0.27.7`, `sharp@0.34.5`, `unstorage@1.17.5`,
+`uploadthing@7.7.4`, `@uploadthing/solid@7.3.3`, `@uploadthing/shared@7.1.10`,
+and `effect@3.17.7`. Effect appears in two nodes, nested under `@uploadthing/shared`
+and `uploadthing`. npm's severity totals count vulnerable package names; one
+name can have multiple affected lockfile nodes and several advisory records.
 
 Astro is a development dependency used to build the static `apps/site`; it does
 not run in the SolidStart app's runtime. Its findings include
