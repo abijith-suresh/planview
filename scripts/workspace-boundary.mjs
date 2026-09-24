@@ -1,9 +1,10 @@
-import { lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
+const astroCompiler = require("@astrojs/compiler/sync");
 
 const allowedDependencies = new Map([
   ["@planview/core", []],
@@ -395,7 +396,10 @@ const isExcludedPath = (path, workspaceRoot) => {
   const segments = relativePath.split(/[\\/]+/);
   const fileName = segments.at(-1) ?? "";
   return (
-    segments.some((segment) => excludedDirectoryNames.has(segment)) ||
+    segments.some(
+      (segment) =>
+        excludedDirectoryNames.has(segment) || additionalExcludedDirectoryNames.has(segment)
+    ) ||
     /(?:^|\.)(?:test|spec)\.[^.]+$/i.test(fileName) ||
     /(?:^|[._-])(?:gen|generated)\.[^.]+$/i.test(fileName)
   );
@@ -412,8 +416,26 @@ const collectSourceFiles = (workspace, workspaces) => {
     }
     const entries = readDirectoryEntries(path);
     for (const entry of entries) {
-      if (entry.isSymbolicLink() || !entry.isFile()) continue;
       const childPath = join(path, entry.name);
+      if (entry.isSymbolicLink()) {
+        if (isExcludedPath(childPath, workspace.path)) continue;
+        const target = statSync(childPath);
+        if (target.isDirectory()) {
+          throw new Error(`Source directory symlink is unsupported: ${childPath}`);
+        }
+        if (target.isFile()) {
+          const targetPath = realpathSync(childPath);
+          if (
+            sourceExtensions.has(extname(childPath).toLowerCase()) ||
+            sourceExtensions.has(extname(targetPath).toLowerCase())
+          ) {
+            throw new Error(`Source symlink is unsupported: ${childPath}`);
+          }
+          continue;
+        }
+        throw new Error(`Unsupported source symlink target: ${childPath}`);
+      }
+      if (!entry.isFile()) continue;
       if (
         !isExcludedPath(childPath, workspace.path) &&
         sourceExtensions.has(extname(childPath).toLowerCase())
@@ -427,36 +449,180 @@ const collectSourceFiles = (workspace, workspaces) => {
   return files.sort((left, right) => left.localeCompare(right));
 };
 
-const extractAstroScripts = (contents) => {
-  const scripts = [];
-  const frontmatter = contents.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
-  if (frontmatter) {
-    const opening = contents.match(/^\uFEFF?---\r?\n/)?.[0] ?? "";
-    scripts.push({
-      text: frontmatter[1],
-      lineOffset: contents.slice(0, opening.length).split("\n").length - 1,
-      columnOffset: 0,
-    });
+const extractAstroScripts = (contents, path) => {
+  const { ast, diagnostics } = astroCompiler.parse(contents);
+  const errors = diagnostics.filter((diagnostic) => diagnostic.severity === 1);
+  if (errors.length > 0) {
+    const details = errors.map((diagnostic) => diagnostic.text).join("; ");
+    throw new Error(`Cannot parse Astro source ${path}${details ? `: ${details}` : "."}`);
   }
 
-  const inlineScript = /<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi;
-  for (const match of contents.matchAll(inlineScript)) {
-    const contentStart = match.index + match[0].indexOf(">") + 1;
-    const lineStart = contents.lastIndexOf("\n", contentStart - 1) + 1;
-    scripts.push({
-      text: match[1],
-      lineOffset: contents.slice(0, contentStart).split("\n").length - 1,
-      columnOffset: contentStart - lineStart,
-    });
+  const frontmatter = [];
+  const templateExpressions = [];
+  const scripts = [];
+  const scriptSourceImports = [];
+  const lineStarts = [0];
+  for (const match of contents.matchAll(/\r\n|[\r\n]/g)) {
+    lineStarts.push(match.index + match[0].length);
   }
-  return scripts;
+  const sourceOffset = ({ line, column }) => lineStarts[line - 1] + column - 1;
+  const addText = (node, kind) => {
+    if (typeof node.value === "string" && node.value.length > 0) {
+      const startOffset = contents.indexOf(node.value, sourceOffset(node.position.start));
+      if (startOffset < 0) {
+        throw new Error(`Cannot locate Astro expression source in ${path}.`);
+      }
+      const segment = { text: node.value, startOffset };
+      (kind === "script" ? scripts : templateExpressions).push(segment);
+    }
+    for (const child of node.children ?? []) addText(child, kind);
+  };
+  const addAttributeExpression = (attribute) => {
+    const text = attribute.kind === "spread" ? attribute.name : attribute.value;
+    if (typeof text !== "string" || text.length === 0) return;
+    const parserStart = sourceOffset(attribute.position.start);
+    const startOffset =
+      attribute.kind === "spread" ? parserStart : contents.indexOf(text, parserStart);
+    if (startOffset < 0) {
+      throw new Error(`Cannot locate Astro attribute expression source in ${path}.`);
+    }
+    templateExpressions.push({ text, startOffset });
+  };
+  const isExecutableScript = (element) => {
+    const typeAttribute = element.attributes?.find(
+      (attribute) => attribute.name?.toLowerCase() === "type"
+    );
+    if (!typeAttribute || typeAttribute.kind === "expression") return true;
+
+    const type = typeof typeAttribute.value === "string" ? typeAttribute.value.trim() : "";
+    if (type.length === 0) return true;
+    const mediaType = type.split(";", 1)[0].trim().toLowerCase();
+    return (
+      mediaType === "module" ||
+      /^(?:text|application)\/(?:x-)?(?:javascript|ecmascript|jscript)(?:[0-9]+(?:\.[0-9]+)?)?$/.test(
+        mediaType
+      )
+    );
+  };
+  const visit = (node, inScript = false) => {
+    if (node.type === "frontmatter") {
+      const startOffset = contents.indexOf(node.value);
+      if (startOffset < 0) {
+        throw new Error(`Cannot locate Astro frontmatter source in ${path}.`);
+      }
+      frontmatter.push({ text: node.value, startOffset });
+      return;
+    }
+    if (node.type === "expression") {
+      for (const child of node.children ?? []) addText(child, "template");
+      return;
+    }
+    if (inScript && node.type === "text") {
+      addText(node, "script");
+      return;
+    }
+
+    const isScript =
+      inScript || (node.type === "element" && node.name === "script" && isExecutableScript(node));
+    if (
+      node.type === "element" &&
+      node.name === "script" &&
+      node.attributes?.length === 1 &&
+      node.attributes[0].name?.toLowerCase() === "src" &&
+      node.attributes[0].kind === "quoted" &&
+      typeof node.attributes[0].value === "string"
+    ) {
+      const specifier = node.attributes[0].value;
+      const extension = extname(specifier).toLowerCase();
+      if (
+        (specifier.startsWith("./") || specifier.startsWith("../")) &&
+        extension !== ".astro" &&
+        sourceExtensions.has(extension)
+      ) {
+        const startOffset = contents.indexOf(
+          specifier,
+          sourceOffset(node.attributes[0].position.start)
+        );
+        if (startOffset < 0) {
+          throw new Error(`Cannot locate Astro script src in ${path}.`);
+        }
+        scriptSourceImports.push({ specifier, startOffset });
+      }
+    }
+    for (const attribute of node.attributes ?? []) {
+      if (attribute.kind === "expression" || attribute.kind === "spread") {
+        addAttributeExpression(attribute);
+      }
+    }
+    for (const child of node.children ?? []) visit(child, isScript);
+  };
+  visit(ast);
+  return { frontmatter, templateExpressions, scripts, scriptSourceImports };
+};
+
+const createMappedSourceUnit = (parts) => {
+  let text = "";
+  const mappings = [];
+  for (const part of parts) {
+    const sourceStartOffset = part.sourceStartOffset ?? part.startOffset;
+    const start = text.length;
+    text += part.text;
+    if (sourceStartOffset !== undefined) {
+      mappings.push({
+        start,
+        end: text.length,
+        sourceStartOffset,
+      });
+    }
+  }
+
+  return {
+    text,
+    sourceOffsetAt(offset) {
+      const mapping = mappings.find(({ start, end }) => offset >= start && offset < end);
+      if (!mapping) throw new Error(`Cannot map analysis offset ${offset} to source.`);
+      return mapping.sourceStartOffset + offset - mapping.start;
+    },
+  };
 };
 
 const sourceTextsForFile = (path) => {
   const contents = readFileSync(path, "utf8");
-  return path.endsWith(".astro")
-    ? extractAstroScripts(contents)
-    : [{ text: contents, lineOffset: 0, columnOffset: 0 }];
+  if (!path.endsWith(".astro")) {
+    return {
+      contents,
+      units: [createMappedSourceUnit([{ text: contents, sourceStartOffset: 0 }])],
+    };
+  }
+
+  const { frontmatter, templateExpressions, scripts, scriptSourceImports } = extractAstroScripts(
+    contents,
+    path
+  );
+  const templateParts = [];
+  for (const segment of frontmatter) {
+    templateParts.push(segment, { text: "\n" });
+  }
+  for (const segment of templateExpressions) {
+    templateParts.push({ text: "\n; void (\n" }, segment, { text: "\n);\n" });
+  }
+
+  return {
+    contents,
+    units: [
+      ...(templateParts.length > 0 ? [createMappedSourceUnit(templateParts)] : []),
+      ...scripts.map((segment) => createMappedSourceUnit([segment])),
+      ...scriptSourceImports.map(({ specifier, startOffset }) =>
+        createMappedSourceUnit([{ text: `import(${JSON.stringify(specifier)})`, startOffset }])
+      ),
+    ],
+  };
+};
+
+const sourceLocation = (contents, offset) => {
+  const precedingText = contents.slice(0, offset);
+  const lines = precedingText.split(/\r\n|[\r\n]/);
+  return { line: lines.length, column: lines.at(-1).length + 1 };
 };
 
 const sourceKindForFile = (path) => {
@@ -478,13 +644,336 @@ const moduleSpecifierFromImportType = (node) => {
   }
 };
 
+const createSourceChecker = (sourceFile) => {
+  const fileName = resolve(sourceFile.fileName);
+  const compilerOptions = {
+    allowJs: true,
+    noLib: true,
+    noResolve: true,
+    skipLibCheck: true,
+    types: [],
+  };
+  const defaultHost = ts.createCompilerHost(compilerOptions);
+  const host = {
+    ...defaultHost,
+    getSourceFile: (path, languageVersion, onError, shouldCreateNewSourceFile) =>
+      resolve(path) === fileName
+        ? sourceFile
+        : defaultHost.getSourceFile(path, languageVersion, onError, shouldCreateNewSourceFile),
+    fileExists: (path) => resolve(path) === fileName || defaultHost.fileExists(path),
+    readFile: (path) => (resolve(path) === fileName ? sourceFile.text : defaultHost.readFile(path)),
+  };
+  const program = ts.createProgram([fileName], compilerOptions, host);
+  return program.getTypeChecker();
+};
+
 const getModuleSpecifiers = (sourceFile) => {
+  const analysisFile = sourceFile.fileName.endsWith(".astro")
+    ? ts.createSourceFile(
+        `${sourceFile.fileName}.tsx`,
+        sourceFile.text,
+        ts.ScriptTarget.Latest,
+        true,
+        ts.ScriptKind.TSX
+      )
+    : sourceFile;
+  const checker = createSourceChecker(analysisFile);
   const specifiers = [];
+  const bindingKinds = new Map();
+  const declarations = [];
   const addLiteral = (node, sourceNode = node) => {
     if (node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) {
       specifiers.push({ specifier: node.text, node: sourceNode });
     }
   };
+  const unwrapExpression = (expression) => {
+    let candidate = expression;
+    while (true) {
+      if (
+        ts.isParenthesizedExpression(candidate) ||
+        ts.isAsExpression(candidate) ||
+        ts.isSatisfiesExpression(candidate) ||
+        ts.isNonNullExpression(candidate) ||
+        ts.isTypeAssertionExpression(candidate)
+      ) {
+        candidate = candidate.expression;
+      } else {
+        break;
+      }
+    }
+    return candidate;
+  };
+  const symbolFor = (node) => checker.getSymbolAtLocation(node);
+  const kindFor = (node) => {
+    const symbol = symbolFor(node);
+    return symbol ? bindingKinds.get(symbol) : undefined;
+  };
+  const isUnshadowedBuiltin = (node, builtinName) => {
+    if (!ts.isIdentifier(node) || node.text !== builtinName) return false;
+    const symbol = symbolFor(node);
+    return (
+      !symbol ||
+      (!symbol.declarations?.some((declaration) => declaration.getSourceFile() === analysisFile) &&
+        !kindFor(node))
+    );
+  };
+  const bind = (node, kind) => {
+    const symbol = symbolFor(node);
+    if (symbol && !bindingKinds.has(symbol)) {
+      bindingKinds.set(symbol, kind);
+      return true;
+    }
+    return false;
+  };
+  const isNodeModule = (specifier) =>
+    (ts.isStringLiteral(specifier) || ts.isNoSubstitutionTemplateLiteral(specifier)) &&
+    (specifier.text === "node:module" || specifier.text === "module");
+  const isProcessReference = (expression) => {
+    const candidate = unwrapExpression(expression);
+    return (
+      ts.isIdentifier(candidate) &&
+      (kindFor(candidate) === "process" || isUnshadowedBuiltin(candidate, "process"))
+    );
+  };
+  const isProcessGetBuiltinModuleCall = (expression) => {
+    const candidate = unwrapExpression(expression);
+    if (!ts.isCallExpression(candidate)) return false;
+    const member = unwrapExpression(candidate.expression);
+    return (
+      (ts.isPropertyAccessExpression(member) || ts.isElementAccessExpression(member)) &&
+      staticMemberName(member) === "getBuiltinModule" &&
+      isProcessReference(member.expression) &&
+      candidate.arguments.some(isNodeModule)
+    );
+  };
+  const staticMemberName = (expression) => {
+    const candidate = unwrapExpression(expression);
+    if (ts.isPropertyAccessExpression(candidate)) return candidate.name.text;
+    if (ts.isElementAccessExpression(candidate)) {
+      const argument = candidate.argumentExpression;
+      if (
+        argument &&
+        (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument))
+      ) {
+        return argument.text;
+      }
+    }
+  };
+  const isModuleRequire = (expression) => {
+    const candidate = unwrapExpression(expression);
+    const receiver =
+      ts.isPropertyAccessExpression(candidate) || ts.isElementAccessExpression(candidate)
+        ? unwrapExpression(candidate.expression)
+        : undefined;
+    if (
+      (!ts.isPropertyAccessExpression(candidate) && !ts.isElementAccessExpression(candidate)) ||
+      !receiver ||
+      !ts.isIdentifier(receiver) ||
+      staticMemberName(candidate) !== "require"
+    ) {
+      return false;
+    }
+    return kindFor(receiver) === "cjs-module" || isUnshadowedBuiltin(receiver, "module");
+  };
+  const isGlobalRequire = (expression) => {
+    const candidate = unwrapExpression(expression);
+    if (!ts.isIdentifier(candidate)) return false;
+    return kindFor(candidate) === "loader" || isUnshadowedBuiltin(candidate, "require");
+  };
+  const isModuleRequireCall = (expression) => {
+    if (!expression) return false;
+    const candidate = unwrapExpression(expression);
+    return (
+      ts.isCallExpression(candidate) &&
+      (isGlobalRequire(candidate.expression) || isModuleRequire(candidate.expression)) &&
+      candidate.arguments.some(isNodeModule)
+    );
+  };
+  const isAwaitedNodeModuleImport = (expression) => {
+    if (!expression) return false;
+    const candidate = unwrapExpression(expression);
+    if (!ts.isAwaitExpression(candidate)) return false;
+    const importedModule = unwrapExpression(candidate.expression);
+    return (
+      ts.isCallExpression(importedModule) &&
+      importedModule.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      importedModule.arguments.some(isNodeModule)
+    );
+  };
+  const isNodeModuleApiLoad = (expression) =>
+    isModuleRequireCall(expression) ||
+    isAwaitedNodeModuleImport(expression) ||
+    isProcessGetBuiltinModuleCall(expression);
+  const isModuleNamespaceReference = (expression) => {
+    if (!expression) return false;
+    const candidate = unwrapExpression(expression);
+    if (ts.isIdentifier(candidate)) return kindFor(candidate) === "module";
+    if (
+      (ts.isPropertyAccessExpression(candidate) || ts.isElementAccessExpression(candidate)) &&
+      staticMemberName(candidate) === "default"
+    ) {
+      return isModuleNamespaceReference(candidate.expression);
+    }
+    return isNodeModuleApiLoad(candidate);
+  };
+  const isCjsModuleObjectReference = (expression) => {
+    if (!expression) return false;
+    const candidate = unwrapExpression(expression);
+    return (
+      ts.isIdentifier(candidate) &&
+      (kindFor(candidate) === "cjs-module" || isUnshadowedBuiltin(candidate, "module"))
+    );
+  };
+  const isTrackedModuleReference = (expression) =>
+    isModuleNamespaceReference(expression) || isCjsModuleObjectReference(expression);
+  const isFactoryReference = (expression) => {
+    const candidate = unwrapExpression(expression);
+    if (ts.isIdentifier(candidate)) return kindFor(candidate) === "factory";
+    if (
+      (!ts.isPropertyAccessExpression(candidate) && !ts.isElementAccessExpression(candidate)) ||
+      staticMemberName(candidate) !== "createRequire"
+    ) {
+      return false;
+    }
+    const receiver = unwrapExpression(candidate.expression);
+    return isModuleNamespaceReference(receiver);
+  };
+  const isLoaderReference = (expression) => {
+    const candidate = unwrapExpression(expression);
+    if (ts.isIdentifier(candidate)) {
+      const kind = kindFor(candidate);
+      return kind === "loader" || isUnshadowedBuiltin(candidate, "require");
+    }
+    if (ts.isCallExpression(candidate) && isFactoryReference(candidate.expression)) return true;
+    return isModuleRequire(candidate);
+  };
+  const isImportMetaReference = (expression) => {
+    const candidate = unwrapExpression(expression);
+    return (
+      ts.isMetaProperty(candidate) &&
+      candidate.keywordToken === ts.SyntaxKind.ImportKeyword &&
+      candidate.name.text === "meta"
+    );
+  };
+  const isModuleResolutionCall = (call) => {
+    const callee = unwrapExpression(call.expression);
+    return (
+      (ts.isPropertyAccessExpression(callee) || ts.isElementAccessExpression(callee)) &&
+      staticMemberName(callee) === "resolve" &&
+      (isLoaderReference(callee.expression) || isImportMetaReference(callee.expression))
+    );
+  };
+  const destructuredModuleBindingKind = (declaration, bindingElement) => {
+    const propertyName = bindingElement.propertyName ?? bindingElement.name;
+    const propertyNameText =
+      ts.isIdentifier(propertyName) || ts.isStringLiteral(propertyName)
+        ? propertyName.text
+        : undefined;
+    if (!propertyNameText) return undefined;
+    if (propertyNameText === "require" && isCjsModuleObjectReference(declaration.initializer)) {
+      return "loader";
+    }
+    if (!isModuleNamespaceReference(declaration.initializer)) return undefined;
+    if (propertyNameText === "createRequire") return "factory";
+    if (propertyNameText === "default") return "module";
+  };
+  const initializerKind = (declaration) => {
+    const initializer = declaration.initializer;
+    if (!initializer) return undefined;
+
+    if (ts.isObjectBindingPattern(declaration.name) && isTrackedModuleReference(initializer)) {
+      for (const element of declaration.name.elements) {
+        const kind = destructuredModuleBindingKind(declaration, element);
+        if (kind) bind(element.name, kind);
+      }
+      return undefined;
+    }
+    if (!ts.isIdentifier(declaration.name)) return undefined;
+
+    const identifierInitializer = unwrapExpression(initializer);
+    if (
+      ts.isIdentifier(identifierInitializer) &&
+      isUnshadowedBuiltin(identifierInitializer, "module")
+    ) {
+      return "cjs-module";
+    }
+    if (
+      ts.isIdentifier(identifierInitializer) &&
+      isUnshadowedBuiltin(identifierInitializer, "process")
+    ) {
+      return "process";
+    }
+    if (
+      ts.isCallExpression(unwrapExpression(initializer)) &&
+      isFactoryReference(unwrapExpression(initializer).expression)
+    ) {
+      return "loader";
+    }
+    if (isModuleNamespaceReference(initializer)) return "module";
+    if (isFactoryReference(initializer)) return "factory";
+    if (isLoaderReference(initializer)) return "loader";
+    if (ts.isIdentifier(unwrapExpression(initializer))) {
+      return kindFor(unwrapExpression(initializer));
+    }
+    if (isCjsModuleObjectReference(initializer)) return "cjs-module";
+  };
+
+  const visitBindings = (node) => {
+    if (ts.isImportDeclaration(node) && isNodeModule(node.moduleSpecifier)) {
+      const clause = node.importClause;
+      if (clause?.name) bind(clause.name, "module");
+      if (clause?.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+        bind(clause.namedBindings.name, "module");
+      } else if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+        for (const specifier of clause.namedBindings.elements) {
+          const importedName = specifier.propertyName?.text ?? specifier.name.text;
+          if (importedName === "createRequire") bind(specifier.name, "factory");
+          else if (importedName === "default") bind(specifier.name, "module");
+        }
+      }
+    }
+    if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      isNodeModule(node.moduleReference.expression)
+    ) {
+      bind(node.name, "module");
+    }
+    if (ts.isVariableDeclaration(node)) declarations.push(node);
+    ts.forEachChild(node, visitBindings);
+  };
+  visitBindings(analysisFile);
+
+  const references = [
+    ...(analysisFile.referencedFiles ?? []),
+    ...(analysisFile.typeReferenceDirectives ?? []),
+  ].sort((left, right) => left.pos - right.pos);
+  for (const reference of references) {
+    specifiers.push({
+      specifier: reference.fileName,
+      offset: reference.pos,
+      isReferenceDirective: true,
+    });
+  }
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const declaration of declarations) {
+      if (ts.isIdentifier(declaration.name)) {
+        const kind = initializerKind(declaration);
+        if (kind) changed = bind(declaration.name, kind) || changed;
+      } else if (
+        ts.isObjectBindingPattern(declaration.name) &&
+        isTrackedModuleReference(declaration.initializer)
+      ) {
+        for (const element of declaration.name.elements) {
+          const kind = destructuredModuleBindingKind(declaration, element);
+          if (kind) changed = bind(element.name, kind) || changed;
+        }
+      }
+    }
+  }
 
   const visit = (node) => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
@@ -496,16 +985,9 @@ const getModuleSpecifiers = (sourceFile) => {
       const specifier = moduleSpecifierFromImportType(node);
       if (specifier !== undefined) specifiers.push({ specifier, node });
     } else if (ts.isCallExpression(node)) {
-      const isModuleRequire =
-        ts.isPropertyAccessExpression(node.expression) &&
-        ts.isIdentifier(node.expression.expression) &&
-        node.expression.expression.text === "module" &&
-        node.expression.name.text === "require";
       const isModuleCall =
-        node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-        (ts.isIdentifier(node.expression) && node.expression.text === "require") ||
-        isModuleRequire;
-      if (isModuleCall) {
+        node.expression.kind === ts.SyntaxKind.ImportKeyword || isLoaderReference(node.expression);
+      if (isModuleCall || isModuleResolutionCall(node)) {
         const argument = node.arguments[0];
         if (
           argument &&
@@ -521,22 +1003,41 @@ const getModuleSpecifiers = (sourceFile) => {
     ts.forEachChild(node, visit);
   };
 
-  visit(sourceFile);
+  visit(analysisFile);
   return specifiers;
 };
 
-const collectTypeScriptConfigs = (workspace) =>
-  readDirectoryEntries(workspace.path)
-    .filter(
-      (entry) =>
-        entry.isFile() && !entry.isSymbolicLink() && /^tsconfig(?:\..+)?\.json$/i.test(entry.name)
-    )
-    .map((entry) => join(workspace.path, entry.name))
-    .sort((left, right) => left.localeCompare(right));
+const collectTypeScriptConfigs = (workspace, workspaces) => {
+  const configs = [];
+  const visit = (directory) => {
+    for (const entry of readDirectoryEntries(directory)) {
+      const configPath = join(directory, entry.name);
+      if (/^tsconfig(?:\..+)?\.json$/i.test(entry.name)) {
+        if (entry.isSymbolicLink()) {
+          throw new Error(`TypeScript config symlinks are unsupported: ${configPath}`);
+        }
+        if (entry.isFile()) configs.push(configPath);
+      }
+    }
+    for (const childPath of childDirectories(directory, { includeHidden: true })) {
+      const childWorkspace = workspaceForPath(childPath, workspaces);
+      if (childWorkspace && childWorkspace.path !== workspace.path) continue;
+      visit(childPath);
+    }
+  };
 
-const getCompilerOptionsForWorkspace = (workspace) => {
+  visit(workspace.path);
+  return configs.sort((left, right) => left.localeCompare(right));
+};
+
+const canonicalFilePath = (path) => {
+  const absolutePath = resolve(path);
+  return ts.sys.useCaseSensitiveFileNames ? absolutePath : absolutePath.toLowerCase();
+};
+
+const getCompilerOptionsForWorkspace = (workspace, workspaces) => {
   const options = [];
-  for (const configPath of collectTypeScriptConfigs(workspace)) {
+  for (const configPath of collectTypeScriptConfigs(workspace, workspaces)) {
     const unrecoverableDiagnostics = [];
     const parsed = ts.getParsedCommandLineOfConfigFile(
       configPath,
@@ -557,32 +1058,71 @@ const getCompilerOptionsForWorkspace = (workspace) => {
         `Cannot parse TypeScript config ${configPath}${details ? `: ${details}` : "."}`
       );
     }
-    options.push(parsed.options);
+    options.push({
+      path: configPath,
+      directory: dirname(configPath),
+      options: parsed.options,
+      fileNames: new Set(parsed.fileNames.map(canonicalFilePath)),
+    });
   }
-  if (options.length === 0) options.push({ moduleResolution: ts.ModuleResolutionKind.Node10 });
   return options;
 };
 
-const resolvedWorkspaceTargets = (specifier, containingFile, compilerOptions, workspaces) => {
+const compilerOptionsForSource = (sourcePath, configs) => {
+  let applicable = configs.filter((config) => config.fileNames.has(canonicalFilePath(sourcePath)));
+
+  // Scanned files omitted from TypeScript's project roots still use the nearest conventional config.
+  // Auxiliary configs such as tsconfig.test.json only apply when their fileNames include the source.
+  if (applicable.length === 0) {
+    applicable = configs.filter(
+      (config) =>
+        basename(config.path).toLowerCase() === "tsconfig.json" &&
+        isWithinPath(sourcePath, config.directory)
+    );
+  }
+
+  if (applicable.length === 0) {
+    return [{ path: undefined, options: { moduleResolution: ts.ModuleResolutionKind.Node10 } }];
+  }
+
+  const nearestDirectoryLength = Math.max(...applicable.map(({ directory }) => directory.length));
+  return applicable
+    .filter(({ directory }) => directory.length === nearestDirectoryLength)
+    .map(({ path, options }) => ({ path, options }));
+};
+
+const resolvedWorkspaceTargets = (specifier, containingFile, compilerProjects, workspaces) => {
   const targets = new Set();
-  let isResolved = false;
-  for (const options of compilerOptions) {
+  const outcomes = compilerProjects.map(({ path, options }) => {
     const result = ts.resolveModuleName(specifier, containingFile, options, ts.sys);
     const resolvedFileName = result.resolvedModule?.resolvedFileName;
-    if (!resolvedFileName) continue;
-    isResolved = true;
+    if (!resolvedFileName) return { path, isResolved: false, target: undefined };
 
     let canonicalPath;
     try {
       canonicalPath = realpathSync(resolvedFileName);
     } catch (error) {
-      if (isMissingPathError(error)) continue;
+      if (isMissingPathError(error)) return { path, isResolved: false, target: undefined };
       throw error;
     }
     const target = workspaceForPath(canonicalPath, workspaces);
     if (target) targets.add(target);
+    return { path, isResolved: true, target };
+  });
+
+  const outcomeNames = new Set(
+    outcomes.map(({ isResolved, target }) =>
+      !isResolved ? "<unresolved>" : (target?.name ?? "<external>")
+    )
+  );
+  if (outcomeNames.size > 1) {
+    const configNames = outcomes.map(({ path }) => path ?? "<default resolution>").join(", ");
+    throw new Error(
+      `Ambiguous TypeScript module resolution for ${JSON.stringify(specifier)} in ${containingFile} across ${configNames}.`
+    );
   }
-  return { isResolved, targets };
+
+  return { isResolved: outcomes.some(({ isResolved }) => isResolved), targets };
 };
 
 const isDependencyAllowed = (sourceWorkspace, targetWorkspace) => {
@@ -590,13 +1130,16 @@ const isDependencyAllowed = (sourceWorkspace, targetWorkspace) => {
   return (allowedDependencies.get(sourceWorkspace.name) ?? []).includes(targetWorkspace.name);
 };
 
-const createViolation = ({ file, kind, source, target, specifier }) => ({
+const createViolation = ({ file, kind, source, target, specifier, location }) => ({
   file,
   kind,
   source,
   target,
   specifier,
-  message: `${file}: ${source} may not depend on ${target} through ${specifier}`,
+  ...(location ? { line: location.line, column: location.column } : {}),
+  message: location
+    ? `${file}:${location.line}:${location.column}: ${source} may not depend on ${target} through ${specifier}`
+    : `${file}: ${source} may not depend on ${target} through ${specifier}`,
 });
 
 /**
@@ -639,29 +1182,32 @@ export const auditWorkspaceBoundaries = (repositoryRoot) => {
       }
     }
 
-    const compilerOptions = getCompilerOptionsForWorkspace(workspace);
+    const workspaceConfigs = getCompilerOptionsForWorkspace(workspace, workspaces);
     for (const filePath of collectSourceFiles(workspace, workspaces)) {
       const fileName = relative(root, filePath).split(sep).join("/");
-      for (const { text, lineOffset, columnOffset } of sourceTextsForFile(filePath)) {
+      const compilerOptions = compilerOptionsForSource(filePath, workspaceConfigs);
+      const { contents, units } = sourceTextsForFile(filePath);
+      for (const unit of units) {
         const sourceFile = ts.createSourceFile(
           filePath,
-          text,
+          unit.text,
           ts.ScriptTarget.Latest,
           true,
           sourceKindForFile(filePath)
         );
-        for (const { specifier, node } of getModuleSpecifiers(sourceFile)) {
-          const start = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
+        for (const { specifier, node, offset, isReferenceDirective } of getModuleSpecifiers(
+          sourceFile
+        )) {
+          const analysisOffset = offset ?? node.getStart(sourceFile);
+          const location = sourceLocation(contents, unit.sourceOffsetAt(analysisOffset));
           if (specifier === undefined) {
-            const sourceColumn = start.character + (start.line === 0 ? columnOffset : 0) + 1;
-            const location = `${fileName}:${start.line + lineOffset + 1}:${sourceColumn}`;
             violations.push({
               file: fileName,
               kind: "unresolved-import",
               source: workspace.name,
               target: "<unresolved>",
               specifier: "<non-literal module call>",
-              message: `${location}: module call must use a statically resolvable string literal`,
+              message: `${fileName}:${location.line}:${location.column}: module call must use a statically resolvable string literal`,
             });
             continue;
           }
@@ -696,6 +1242,7 @@ export const auditWorkspaceBoundaries = (repositoryRoot) => {
                   source: workspace.name,
                   target: target.name,
                   specifier,
+                  location: isReferenceDirective ? location : undefined,
                 })
               );
             }
