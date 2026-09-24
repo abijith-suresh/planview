@@ -8,6 +8,8 @@
     "build": "vite build",
     "start": "node .output/server/index.mjs",
     "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck:test && node --experimental-strip-types --test \"test/**/*.test.mts\"",
+    "typecheck:test": "tsc --project tsconfig.test.json",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -28,6 +30,7 @@
     "node": ">=24"
   },
   "devDependencies": {
+    "@types/node": "24.10.1",
     "typescript": "6.0.3"
   }
 }

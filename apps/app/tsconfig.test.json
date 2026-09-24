@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.test.base.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+  },
+  "include": ["test/**/*.mts"]
+}
