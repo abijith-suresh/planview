@@ -38,6 +38,8 @@ export type DocumentFileStoreOptions = {
   readonly documentFileScanObservation?: (
     observation: DocumentFileObservation
   ) => DocumentFileObservation;
+  /** Private test/benchmark seam for physical document-directory listings. */
+  readonly onDocumentFileDirectoryEnumeration?: () => void;
   /** Private race-test seam immediately before scan-marker cleanup. */
   readonly beforeDocumentFileScanMarkerCleanup?: (markerPath: string) => Promise<void>;
 };

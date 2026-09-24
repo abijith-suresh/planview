@@ -767,6 +767,7 @@ const createStore = ({
   beforeDocumentFilePageScan,
   documentFileScanStartedAt,
   documentFileScanObservation,
+  onDocumentFileDirectoryEnumeration,
   beforeDocumentFileScanMarkerCleanup,
 }: {
   readonly documentsDir: TrustedDirectory;
@@ -789,6 +790,7 @@ const createStore = ({
   readonly documentFileScanObservation?: (
     observation: DocumentFileObservation
   ) => DocumentFileObservation;
+  readonly onDocumentFileDirectoryEnumeration?: () => void;
   readonly beforeDocumentFileScanMarkerCleanup?: (markerPath: string) => Promise<void>;
 }) => {
   const stagedIdentities = new Map<string, FileIdentity>();
@@ -2334,6 +2336,7 @@ const createStore = ({
     Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
 
   const documentEntryIds = async (afterId?: string, throughId?: string) => {
+    onDocumentFileDirectoryEnumeration?.();
     const entries = await readdir(entryPath(documentsDir, ""));
     return entries
       .flatMap((entry) => {
@@ -2352,6 +2355,34 @@ const createStore = ({
           (throughId === undefined || compareNames(id, throughId) <= 0)
       )
       .sort(compareNames);
+  };
+
+  type DocumentFileScanSnapshot = Readonly<{
+    readonly throughId: string;
+    readonly startedAt: number | undefined;
+    readonly hasStartedAt: boolean;
+    readonly ids: readonly string[];
+  }>;
+  const documentFileScanSnapshots = new WeakMap<
+    DocumentFileScanWatermark,
+    DocumentFileScanSnapshot
+  >();
+
+  const firstIdAfter = (ids: readonly string[], afterId: string | undefined) => {
+    if (afterId === undefined) {
+      return 0;
+    }
+    let low = 0;
+    let high = ids.length;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      if (compareNames(ids[middle]!, afterId) <= 0) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low;
   };
 
   const listDocumentFiles = async () => {
@@ -2385,6 +2416,8 @@ const createStore = ({
       ensureTrustedRoots();
       const cursor = afterId === undefined ? undefined : validateDocumentId(afterId);
       const suppliedStartedAt = watermark?.startedAt;
+      const suppliedHasStartedAt =
+        watermark === undefined ? false : Object.hasOwn(watermark, "startedAt");
       if (
         suppliedStartedAt !== undefined &&
         (!Number.isFinite(suppliedStartedAt) || suppliedStartedAt < 0)
@@ -2405,8 +2438,31 @@ const createStore = ({
         throw new RangeError("Document file scan watermark must contain a valid timestamp.");
       }
       await beforeDocumentFilePageScan?.(scanStartedAt);
-      const ids = await documentEntryIds(cursor, scanWatermark?.throughId);
-      const pageIds = ids.slice(0, limit);
+
+      const cachedSnapshot =
+        watermark === undefined ? undefined : documentFileScanSnapshots.get(watermark);
+      const cacheMatchesWatermark =
+        cachedSnapshot !== undefined &&
+        watermark !== undefined &&
+        Object.hasOwn(watermark, "throughId") &&
+        Object.hasOwn(watermark, "startedAt") === cachedSnapshot.hasStartedAt &&
+        watermark.throughId === cachedSnapshot.throughId &&
+        watermark.startedAt === cachedSnapshot.startedAt &&
+        scanWatermark?.throughId === cachedSnapshot.throughId &&
+        scanWatermark?.startedAt === cachedSnapshot.startedAt &&
+        suppliedHasStartedAt === cachedSnapshot.hasStartedAt;
+      if (cachedSnapshot !== undefined && !cacheMatchesWatermark && watermark !== undefined) {
+        // A watermark is normally immutable by contract, but callers can still
+        // mutate it at runtime. Once that is observed, discard its snapshot so
+        // later restoration of the old values cannot revive a stale cache hit.
+        documentFileScanSnapshots.delete(watermark);
+      }
+
+      const ids = cacheMatchesWatermark
+        ? cachedSnapshot.ids
+        : await documentEntryIds(cursor, scanWatermark?.throughId);
+      const startIndex = cacheMatchesWatermark ? firstIdAfter(ids, cursor) : 0;
+      const pageIds = ids.slice(startIndex, startIndex + limit);
       const files: DocumentFileObservation[] = [];
       for (const documentId of pageIds) {
         const observed = await getDocumentFileObservation(documentId);
@@ -2426,16 +2482,24 @@ const createStore = ({
       const nextId = pageIds.at(-1);
       const lastId = ids.at(-1);
       const pageWatermark =
-        scanWatermark ??
+        watermark ??
         (lastId === undefined
           ? undefined
           : {
               throughId: lastId,
               ...(scanStartedAt === undefined ? {} : { startedAt: scanStartedAt }),
             });
+      if (watermark === undefined && pageWatermark !== undefined) {
+        documentFileScanSnapshots.set(pageWatermark, {
+          throughId: pageWatermark.throughId,
+          startedAt: pageWatermark.startedAt,
+          hasStartedAt: Object.hasOwn(pageWatermark, "startedAt"),
+          ids,
+        });
+      }
       return {
         files,
-        hasMore: ids.length > limit,
+        hasMore: ids.length - startIndex > limit,
         ...(nextId === undefined ? {} : { nextId }),
         ...(pageWatermark === undefined ? {} : { watermark: pageWatermark }),
       } satisfies DocumentFilePage;
@@ -2969,6 +3033,9 @@ const initializeStore = (options: DocumentFileStoreOptions): DocumentFileStore =
       ...(options.documentFileScanObservation === undefined
         ? {}
         : { documentFileScanObservation: options.documentFileScanObservation }),
+      ...(options.onDocumentFileDirectoryEnumeration === undefined
+        ? {}
+        : { onDocumentFileDirectoryEnumeration: options.onDocumentFileDirectoryEnumeration }),
       ...(options.beforeDocumentFileScanMarkerCleanup === undefined
         ? {}
         : { beforeDocumentFileScanMarkerCleanup: options.beforeDocumentFileScanMarkerCleanup }),
