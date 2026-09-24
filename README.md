@@ -100,12 +100,39 @@ Vercel is not used for the marketing site.
 
 ## Security follow-up
 
-`npm audit` currently reports XSS/SSRF advisories for the pinned
-`astro@5.18.1`, an arbitrary-file-read issue in its `esbuild@0.27.7`
-Windows development server, and inherited libvips issues in transitive `sharp`.
-npm's available fix is `astro@7.2.0`, a major upgrade from Astro 5, so this
-slice does not apply it without a compatibility review. These findings remain a
-build-toolchain follow-up; no audit suppression is used.
+`npm audit` on the checked-in lockfile reports 8 vulnerable package names
+(1 low, 6 high, and 1 critical), affecting 9 installed lockfile nodes. The names
+are `astro@5.18.1`, `esbuild@0.27.7`, `sharp@0.34.5`, `unstorage@1.17.5`,
+`uploadthing@7.7.4`, `@uploadthing/solid@7.3.3`, `@uploadthing/shared@7.1.10`,
+and `effect@3.17.7`. Effect appears in two nodes, nested under `@uploadthing/shared`
+and `uploadthing`. npm's severity totals count vulnerable package names; one
+name can have multiple affected lockfile nodes and several advisory records.
+
+Astro is a development dependency used to build the static `apps/site`; it does
+not run in the SolidStart app's runtime. Its findings include
+[XSS](https://github.com/advisories/GHSA-j687-52p2-xcff),
+[SSRF](https://github.com/advisories/GHSA-2pvr-wf23-7pc7),
+[base-path authorization](https://github.com/advisories/GHSA-376h-93r7-7g6f),
+the critical [AVIF optimization RCE](https://github.com/advisories/GHSA-26w7-cxv4-gfx2),
+an [esbuild Windows dev-server file-read issue](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr),
+and transitive [sharp/libvips](https://github.com/advisories/GHSA-f88m-g3jw-g9cj)
+and [sharp/libheif](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c) findings.
+The AVIF RCE applies when an attacker can cause Astro to process an untrusted
+AVIF image. The current site source has no AVIF assets or Astro image-processing
+calls, and app uploads do not flow into the site build. The audit entry alone
+does not establish that an attacker can supply input to Astro's optimizer. For
+this lockfile, npm reports `astro@7.3.4` as the aggregate fix; the AVIF advisory
+itself lists `7.2.8` as patched.
+
+The app uses UploadThing's upload route, client helpers, and `UTApi`. Its
+dependency tree contains Effect `3.17.7`, separate from the repository's Effect
+v4 dependency. The [Effect advisory](https://github.com/advisories/GHSA-38f7-945m-qr2g)
+describes `AsyncLocalStorage` context loss or contamination in Effect fibers
+under concurrent load when RPC is involved. The lockfile confirms the affected
+version is present, but does not show that this app exercises that RPC path.
+The audit's suggested fixes are `astro@7.3.4`, `uploadthing@6.12.0`, and
+`@uploadthing/solid@6.5.0`, each a major-version change from the lockfile. No
+broad override or major upgrade has been applied pending compatibility review.
 
 ## Contributing
 
