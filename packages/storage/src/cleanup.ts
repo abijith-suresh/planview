@@ -121,6 +121,8 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
   let running: Promise<DocumentCleanupResult> | undefined;
   let candidateCursor: DocumentMetadataAccessCursor | undefined;
   let metadataCursor: string | undefined;
+  // The final page can complete the phase while consuming the whole item budget.
+  let metadataReconciliationComplete = false;
   let fileCursor: string | undefined;
   let reconciliationCursor: DocumentFileReconciliationCursor | undefined;
   let metadataWatermark: number | undefined;
@@ -165,6 +167,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
       if (!resumable) {
         // A completed pass must take a fresh watermark next time. Keeping an
         // old rowid watermark would permanently hide rows inserted after this pass.
+        metadataReconciliationComplete = false;
         metadataWatermark = undefined;
         fileWatermark = undefined;
       }
@@ -319,7 +322,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
       // Reconciliation uses bounded id pages rather than a full metadata map.
       // It catches fresh metadata rows whose file disappeared and mismatched
       // pairs, while stale retention remains driven by the indexed query above.
-      while (!budgetExhausted) {
+      while (!budgetExhausted && !metadataReconciliationComplete) {
         if (!canProcess()) {
           budgetExhausted = true;
           break;
@@ -337,6 +340,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
         })();
         if (page.rows.length === 0) {
           metadataCursor = undefined;
+          metadataReconciliationComplete = true;
           break;
         }
 
@@ -403,6 +407,7 @@ export const createDocumentCleanupCoordinator = (options: DocumentCleanupCoordin
         }
         if (!page.hasMore) {
           metadataCursor = undefined;
+          metadataReconciliationComplete = true;
           break;
         }
       }

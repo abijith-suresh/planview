@@ -599,6 +599,66 @@ test("keeps reconciliation inside the cleanup item budget", () =>
     assert.deepEqual(await readdir(stagingDir), []);
   }));
 
+test("resumes file reconciliation after metadata completes exactly at the item budget", async () => {
+  const now = DAY * 31 + 1;
+  const metadataRows = Array.from({ length: V1_CLEANUP_ITEM_BUDGET }, (_, index) => ({
+    id: index.toString().padStart(4, "0"),
+    createdAt: 1,
+    lastAccessedAt: DAY + 1,
+    size: 4,
+  }));
+  let metadataPageCalls = 0;
+  let filePageCalls = 0;
+  const metadataStore = {
+    getDocumentMetadataScanWatermark: () => metadataRows.length,
+    listDocumentMetadataCandidates: () => ({ rows: [], hasMore: false }),
+    listDocumentMetadataPage: (limit: number, afterId?: string) => {
+      metadataPageCalls += 1;
+      const afterIndex =
+        afterId === undefined ? -1 : metadataRows.findIndex((row) => row.id === afterId);
+      const start = afterIndex + 1;
+      const rows = metadataRows.slice(start, start + limit);
+      return { rows, hasMore: start + rows.length < metadataRows.length };
+    },
+  } as unknown as MetadataStore;
+  const documentFileStore = {
+    reconcileDocumentFiles: async () => ({
+      stagedFilesRemoved: 0,
+      readReferencesRemoved: 0,
+      finalizationLocksRemoved: 0,
+      retainedEntries: 0,
+      processedItems: 0,
+      resumable: false,
+    }),
+    getDocumentFileObservation: async (documentId: string) => ({
+      id: documentId,
+      size: 4,
+      modifiedAt: now,
+      identity: { dev: 0, ino: 0, birthtimeMs: 0 },
+    }),
+    listDocumentFilesPage: async () => {
+      filePageCalls += 1;
+      return { files: [], hasMore: false };
+    },
+  } as unknown as Parameters<typeof createDocumentCleanupCoordinator>[0]["documentFileStore"];
+  const cleanup = createDocumentCleanupCoordinator({
+    documentFileStore,
+    metadataStore,
+    now: () => now,
+  });
+
+  const first = await runEffect(cleanup.clean());
+  assert.equal(first.processedItems, V1_CLEANUP_ITEM_BUDGET);
+  assert.equal(first.resumable, true);
+  assert.equal(filePageCalls, 0);
+  const completedMetadataPageCalls = metadataPageCalls;
+
+  const resumed = await runEffect(cleanup.clean());
+  assert.equal(metadataPageCalls, completedMetadataPageCalls);
+  assert.equal(filePageCalls, 1);
+  assert.equal(resumed.resumable, false);
+});
+
 test("does not delete an ABA-replaced metadata row", () =>
   withEnvironment(async ({ documentFileStore, metadataStore, directory }) => {
     const documentId = id("q");
