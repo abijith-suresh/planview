@@ -136,6 +136,14 @@ export type CliError =
 export const describe = (cause: unknown) =>
   cause instanceof Error ? cause.message : String(cause);
 
+export const openBrowserFailure = (sourcePath: string, url: string, cause: unknown) =>
+  new OpenBrowserCommandError({
+    sourcePath,
+    url,
+    cause,
+    message: `Could not open ${url} in a browser: ${describe(cause)}`,
+  });
+
 export type OutputFormat = "text" | "json";
 
 export const unexpectedArguments = (argumentsList: readonly string[], message: string) =>
