@@ -8,10 +8,10 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   description="How plansplease handles local snapshots and cloud HTML uploads in the alpha."
   activePath="privacy"
 >
-  <section class="privacy-hero" aria-labelledby="privacy-title">
-    <div class="privacy-hero-content">
+  <section class="page-heading" aria-labelledby="privacy-title">
+    <div>
       <h1 id="privacy-title">Your pages are yours.</h1>
-      <p class="privacy-lead">
+      <p>
         We believe developers and makers should maintain complete ownership and control over the
         code, documents, and tools their AI agents create.
       </p>
@@ -62,32 +62,6 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 </SiteLayout>
 
 <style>
-  .privacy-hero {
-    padding: clamp(3.5rem, 6vh, 5rem) 0 2.5rem;
-    border-bottom: 1px solid var(--night-border);
-  }
-
-  .privacy-hero-content {
-    max-width: 44rem;
-  }
-
-  .privacy-hero h1 {
-    margin: 0 0 1rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: clamp(2.2rem, 3.8vw, 3.2rem);
-    font-weight: 800;
-    letter-spacing: -0.035em;
-    line-height: 1.1;
-  }
-
-  .privacy-lead {
-    margin: 0;
-    color: var(--night-muted);
-    font-size: clamp(1.05rem, 1.3vw, 1.15rem);
-    line-height: 1.65;
-  }
-
   .privacy-content {
     padding: 3.5rem 0 5rem;
   }
@@ -101,7 +75,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   .privacy-card {
     padding: 2.25rem;
     border: 1px solid var(--night-border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: var(--night-card);
   }
 
@@ -109,8 +83,8 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     margin: 0 0 0.75rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: 1.15rem;
+    font-weight: 600;
   }
 
   .privacy-card p {

@@ -24,7 +24,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#0a0b0d" />
+    <meta name="theme-color" content="#09090b" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="icon" href={`${assetBase}favicon.svg`} type="image/svg+xml" />
@@ -33,8 +33,8 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
 
-    <div class="site-shell">
-      <header class="site-header">
+    <header class="site-header">
+      <div class="site-shell site-header-row">
         <a class="brand" href={homeHref} aria-label="plansplease home">
           <span class="brand-name"><span class="brand-plans">plans</span><span class="brand-please">please</span></span>
         </a>
@@ -46,11 +46,6 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
             aria-current={activePath === "features" ? "page" : undefined}
           >Features</a>
           <a
-            class:list={["site-nav-link", { "is-current": activePath === "pricing" }]}
-            href={pageHref("pricing")}
-            aria-current={activePath === "pricing" ? "page" : undefined}
-          >Pricing</a>
-          <a
             class:list={["site-nav-link", { "is-current": activePath === "docs" }]}
             href={pageHref("docs")}
             aria-current={activePath === "docs" ? "page" : undefined}
@@ -60,6 +55,11 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
             href={pageHref("cli")}
             aria-current={activePath === "cli" ? "page" : undefined}
           >CLI</a>
+          <a
+            class:list={["site-nav-link", { "is-current": activePath === "pricing" }]}
+            href={pageHref("pricing")}
+            aria-current={activePath === "pricing" ? "page" : undefined}
+          >Pricing</a>
           <a
             class:list={["site-nav-link", { "is-current": activePath === "faq" }]}
             href={pageHref("faq")}
@@ -80,11 +80,6 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
               aria-current={activePath === "features" ? "page" : undefined}
             >Features</a>
             <a
-              class:list={["mobile-menu-link", { "is-current": activePath === "pricing" }]}
-              href={pageHref("pricing")}
-              aria-current={activePath === "pricing" ? "page" : undefined}
-            >Pricing</a>
-            <a
               class:list={["mobile-menu-link", { "is-current": activePath === "docs" }]}
               href={pageHref("docs")}
               aria-current={activePath === "docs" ? "page" : undefined}
@@ -94,6 +89,11 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
               href={pageHref("cli")}
               aria-current={activePath === "cli" ? "page" : undefined}
             >CLI</a>
+            <a
+              class:list={["mobile-menu-link", { "is-current": activePath === "pricing" }]}
+              href={pageHref("pricing")}
+              aria-current={activePath === "pricing" ? "page" : undefined}
+            >Pricing</a>
             <a
               class:list={["mobile-menu-link", { "is-current": activePath === "faq" }]}
               href={pageHref("faq")}
@@ -107,19 +107,23 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
             <a class="mobile-menu-cta" href={appSignInUrl}>Sign in with GitHub</a>
           </nav>
         </details>
-      </header>
+      </div>
+    </header>
 
-      <main id="main-content" tabindex="-1">
+    <main id="main-content" tabindex="-1">
+      <div class="site-shell site-main-shell">
         <slot />
-      </main>
+      </div>
+    </main>
 
-      <footer class="site-footer">
+    <footer class="site-footer">
+      <div class="site-shell">
         <div class="site-footer-main">
           <div class="footer-brand">
             <a class="brand" href={homeHref} aria-label="plansplease home">
               <span class="brand-name"><span class="brand-plans">plans</span><span class="brand-please">please</span></span>
             </a>
-            <p>Instant local previews and private cloud vault for agent-generated HTML artifacts.</p>
+            <p>Local previews and a private cloud workspace for the HTML your agent writes.</p>
           </div>
 
           <div class="footer-group">
@@ -151,42 +155,48 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
         </div>
 
         <div class="site-footer-bottom">
-          <p>plansplease • Local loopback daemon + secure cloud workspace</p>
-          <p>The fastest way to see and keep the HTML files your agent writes.</p>
+          <p>plansplease</p>
+          <p>Local previews, private cloud pages. Built for agent workflows.</p>
         </div>
-      </footer>
-    </div>
+      </div>
+    </footer>
   </body>
 </html>
 
 <style is:global>
-  @import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap");
+  @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap");
 
   :root {
-    /* Grounded charcoal-black canvas (real developer tool aesthetic) */
-    --night: #0a0b0d;
-    --night-soft: #111317;
-    --night-card: #15171d;
-    --night-card-elevated: #1a1d24;
-    --night-border: #23262f;
-    --night-border-hover: #333742;
-    --night-muted: #8b8f9e;
-    --night-subtle: #555866;
+    /* Canvas */
+    --night: #09090b;
+    --night-soft: #0d0d10;
+    --night-card: #101013;
+    --night-card-elevated: #151518;
 
-    /* High contrast text */
-    --text: #ededf0;
-    --text-white: #ffffff;
-    --ink: #07080a;
+    /* Hairlines */
+    --night-border: #1e1e22;
+    --night-border-hover: #2c2c31;
 
-    /* Single sharp emerald-mint accent */
+    /* Text */
+    --night-muted: #9b9ba4;
+    --night-subtle: #63636c;
+    --text: #d6d6db;
+    --text-white: #fafafa;
+    --ink: #09090b;
+
+    /* Accent — used sparingly */
     --mint: #38d39f;
-    --mint-hover: #22c55e;
-    --mint-soft: rgba(56, 211, 159, 0.08);
-    --mint-border: rgba(56, 211, 159, 0.24);
+    --mint-hover: #5fe3b6;
+    --mint-soft: rgba(56, 211, 159, 0.07);
+    --mint-border: rgba(56, 211, 159, 0.22);
 
-    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
-    --sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    --display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --display: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+
+    --radius-sm: 6px;
+    --radius: 8px;
+    --radius-lg: 10px;
   }
 
   * {
@@ -205,11 +215,17 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     background-color: var(--night);
     color: var(--text);
     font-family: var(--sans);
-    font-size: 1rem;
-    line-height: 1.6;
-    letter-spacing: -0.012em;
+    font-size: 0.95rem;
+    line-height: 1.65;
+    letter-spacing: -0.011em;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: rgba(56, 211, 159, 0.18);
+    color: var(--text-white);
   }
 
   a {
@@ -217,7 +233,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
   }
 
   .site-shell {
-    width: min(calc(100% - 3.5rem), 74rem);
+    width: min(calc(100% - 3rem), 72rem);
     margin: 0 auto;
   }
 
@@ -227,17 +243,16 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     z-index: 50;
     top: 1rem;
     left: 1rem;
-    padding: 0.75rem 1.25rem;
-    background: var(--night-card);
-    border: 1px solid var(--mint);
-    border-radius: 8px;
-    color: var(--text);
+    padding: 0.7rem 1.1rem;
+    background: var(--night-card-elevated);
+    border: 1px solid var(--night-border-hover);
+    border-radius: var(--radius);
+    color: var(--text-white);
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: 500;
     text-decoration: none;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
     transform: translateY(-200%);
-    transition: transform 180ms ease;
+    transition: transform 160ms ease;
   }
 
   .skip-link:focus-visible {
@@ -246,15 +261,23 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     transform: translateY(0);
   }
 
-  /* Navigation Header */
+  /* Header */
   .site-header {
-    position: relative;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    background: rgba(9, 9, 11, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--night-border);
+  }
+
+  .site-header-row {
     display: flex;
-    min-height: 5rem;
+    min-height: 3.75rem;
     align-items: center;
     justify-content: space-between;
     gap: 2rem;
-    border-bottom: 1px solid var(--night-border);
   }
 
   .brand {
@@ -264,41 +287,35 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
   }
 
   .brand-name {
-    font-family: var(--display);
-    font-size: 1.35rem;
-    font-weight: 800;
-    letter-spacing: -0.05em;
     display: inline-flex;
+    font-family: var(--display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: -0.045em;
     line-height: 1;
   }
 
   .brand-plans {
-    color: #ffffff;
+    color: var(--text-white);
   }
 
   .brand-please {
     color: var(--mint);
-    transition: color 150ms ease;
-  }
-
-  .brand:hover .brand-please {
-    color: var(--mint-hover);
   }
 
   .site-nav {
     display: flex;
     align-items: center;
-    gap: 1.75rem;
-    color: var(--night-muted);
-    font-size: 0.92rem;
-    font-weight: 500;
+    gap: 1.6rem;
+    font-size: 0.875rem;
+    font-weight: 450;
   }
 
   .site-nav-link,
   .footer-link {
     color: var(--night-muted);
     text-decoration: none;
-    transition: color 150ms ease;
+    transition: color 140ms ease;
   }
 
   .site-nav-link:hover,
@@ -309,31 +326,33 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     color: var(--text-white);
   }
 
-  .site-nav-link.is-current {
-    color: var(--mint);
-    font-weight: 600;
-  }
-
   .site-nav-cta {
     display: inline-flex;
     align-items: center;
-    padding: 0.45rem 1.1rem;
+    margin-left: 0.4rem;
+    padding: 0.42rem 0.95rem;
     border: 1px solid var(--night-border-hover);
-    border-radius: 8px;
-    background: var(--night-card);
+    border-radius: var(--radius);
     color: var(--text-white);
-    font-size: 0.88rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-size: 0.85rem;
+    font-weight: 500;
     text-decoration: none;
-    transition: all 150ms ease;
+    transition: border-color 140ms ease, background-color 140ms ease;
   }
 
   .site-nav-cta:hover,
   .site-nav-cta:focus-visible {
-    border-color: var(--mint-border);
-    color: var(--mint);
-    background: var(--night-card-elevated);
+    border-color: #3d3d44;
+    background: var(--night-card);
+  }
+
+  /* Main */
+  .site-main-shell {
+    min-height: 60vh;
+  }
+
+  main:focus {
+    outline: none;
   }
 
   /* Shared Page Headings */
@@ -342,108 +361,105 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     justify-content: space-between;
     align-items: flex-end;
     gap: 2rem;
-    padding: clamp(3.5rem, 5vh, 4.5rem) 0 2rem;
+    padding: clamp(4rem, 7vh, 5.5rem) 0 2.5rem;
     border-bottom: 1px solid var(--night-border);
   }
 
   .page-heading h1 {
-    max-width: 24ch;
-    margin: 0 0 0.85rem;
+    max-width: 22ch;
+    margin: 0 0 0.9rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(2.2rem, 3.8vw, 3.2rem);
-    font-weight: 800;
-    letter-spacing: -0.035em;
-    line-height: 1.1;
+    font-size: clamp(2rem, 3.4vw, 2.6rem);
+    font-weight: 650;
+    letter-spacing: -0.032em;
+    line-height: 1.12;
   }
 
   .page-heading p {
-    max-width: 42rem;
+    max-width: 40rem;
     margin: 0;
     color: var(--night-muted);
-    font-size: 1.05rem;
-    line-height: 1.6;
+    font-size: 1rem;
+    line-height: 1.65;
   }
 
   .page-action {
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
-    padding: 0.75rem 1.4rem;
+    padding: 0.62rem 1.15rem;
     border: 1px solid var(--night-border-hover);
-    border-radius: 8px;
-    background: var(--night-card);
+    border-radius: var(--radius);
     color: var(--text-white);
-    font-size: 0.92rem;
-    font-weight: 600;
+    font-size: 0.88rem;
+    font-weight: 500;
     text-decoration: none;
-    transition: all 150ms ease;
+    transition: border-color 140ms ease, background-color 140ms ease;
   }
 
   .page-action:hover,
   .page-action:focus-visible {
-    border-color: var(--mint-border);
-    color: var(--mint);
-    background: var(--night-card-elevated);
+    border-color: #3d3d44;
+    background: var(--night-card);
   }
 
   /* Shared Content Section */
   .content-section {
-    padding: 3.5rem 0 5rem;
+    padding: 3.5rem 0 4.5rem;
   }
 
   .content-section h2 {
-    margin: 0 0 1.75rem;
+    margin: 0 0 1.9rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.5rem;
-    font-weight: 700;
-    letter-spacing: -0.025em;
+    font-size: 1.35rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
   }
 
   .page-note {
     max-width: 38rem;
     margin: 3rem 0 0;
     color: var(--night-subtle);
-    font-size: 0.88rem;
+    font-size: 0.86rem;
     line-height: 1.6;
   }
 
   /* Footer */
   .site-footer {
-    margin-top: 5rem;
     border-top: 1px solid var(--night-border);
-    padding: 4rem 0 3.5rem;
+    padding: 3.5rem 0 3rem;
   }
 
   .site-footer-main {
     display: grid;
     grid-template-columns: minmax(0, 1.8fr) repeat(3, minmax(0, 1fr));
     gap: 3rem;
-    margin-bottom: 3.5rem;
+    margin-bottom: 3rem;
   }
 
   .footer-brand p {
-    max-width: 22rem;
+    max-width: 20rem;
     margin: 1rem 0 0;
     color: var(--night-muted);
-    font-size: 0.9rem;
+    font-size: 0.88rem;
     line-height: 1.6;
   }
 
   .footer-heading {
     margin: 0 0 1rem;
-    color: var(--text-white);
-    font-size: 0.84rem;
+    color: var(--night-subtle);
+    font-size: 0.72rem;
     font-weight: 600;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
   .footer-links {
     display: flex;
     flex-direction: column;
-    gap: 0.65rem;
+    gap: 0.6rem;
   }
 
   .footer-link {
@@ -459,7 +475,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     padding-top: 2rem;
     border-top: 1px solid var(--night-border);
     color: var(--night-subtle);
-    font-size: 0.82rem;
+    font-size: 0.8rem;
   }
 
   .site-footer-bottom p {
@@ -476,14 +492,13 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     list-style: none;
     display: inline-flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.5rem 0.85rem;
-    border: 1px solid var(--night-border);
-    border-radius: 8px;
-    background: var(--night-card);
+    gap: 0.55rem;
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--night-border-hover);
+    border-radius: var(--radius);
     color: var(--text);
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: 500;
     cursor: pointer;
   }
 
@@ -511,47 +526,43 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     position: absolute;
     top: calc(100% + 0.5rem);
     right: 0;
-    width: 16rem;
-    padding: 0.85rem;
-    border: 1px solid var(--night-border);
-    border-radius: 12px;
-    background: var(--night-card);
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+    width: 15rem;
+    padding: 0.6rem;
+    border: 1px solid var(--night-border-hover);
+    border-radius: var(--radius-lg);
+    background: var(--night-card-elevated);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: 0.15rem;
     z-index: 40;
   }
 
   .mobile-menu-link {
     display: block;
-    padding: 0.6rem 0.8rem;
-    border-radius: 6px;
+    padding: 0.55rem 0.75rem;
+    border-radius: var(--radius-sm);
     color: var(--night-muted);
     font-size: 0.9rem;
-    font-weight: 500;
+    font-weight: 450;
     text-decoration: none;
   }
 
   .mobile-menu-link:hover,
   .mobile-menu-link.is-current {
     color: var(--text-white);
-    background: var(--night-card-elevated);
-  }
-
-  .mobile-menu-link.is-current {
-    color: var(--mint);
+    background: var(--night-card);
   }
 
   .mobile-menu-cta {
     display: block;
     margin-top: 0.4rem;
-    padding: 0.65rem 0.8rem;
-    border-radius: 6px;
-    background: var(--mint);
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--radius-sm);
+    background: var(--text-white);
     color: var(--ink);
-    font-size: 0.88rem;
-    font-weight: 700;
+    font-size: 0.86rem;
+    font-weight: 600;
     text-align: center;
     text-decoration: none;
   }

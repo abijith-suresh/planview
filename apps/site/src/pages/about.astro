@@ -8,10 +8,10 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   description="plansplease gives the useful pages made by coding agents a place to land."
   activePath="about"
 >
-  <section class="about-hero" aria-labelledby="about-title">
-    <div class="about-hero-content">
+  <section class="page-heading" aria-labelledby="about-title">
+    <div>
       <h1 id="about-title">A place for the useful things agents make.</h1>
-      <p class="about-lead">
+      <p>
         plansplease solves a simple problem: AI agents like Claude Code create HTML because Markdown
         is too limited, but viewing and sharing those HTML files has too much friction.
       </p>
@@ -79,32 +79,6 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 </SiteLayout>
 
 <style>
-  .about-hero {
-    padding: clamp(3.5rem, 6vh, 5rem) 0 2.5rem;
-    border-bottom: 1px solid var(--night-border);
-  }
-
-  .about-hero-content {
-    max-width: 46rem;
-  }
-
-  .about-hero h1 {
-    margin: 0 0 1rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: clamp(2.2rem, 3.8vw, 3.2rem);
-    font-weight: 800;
-    letter-spacing: -0.035em;
-    line-height: 1.1;
-  }
-
-  .about-lead {
-    margin: 0;
-    color: var(--night-muted);
-    font-size: clamp(1.05rem, 1.3vw, 1.15rem);
-    line-height: 1.65;
-  }
-
   .about-content {
     padding: 3.5rem 0 5rem;
   }
@@ -118,9 +92,9 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     margin: 0 0 1.25rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.6rem;
-    font-weight: 700;
-    letter-spacing: -0.025em;
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.022em;
   }
 
   .about-narrative p {
@@ -149,7 +123,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   .value-card {
     padding: 2rem;
     border: 1px solid var(--night-border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: var(--night-card);
   }
 
@@ -157,8 +131,8 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     margin: 0 0 0.75rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.2rem;
-    font-weight: 700;
+    font-size: 1.15rem;
+    font-weight: 600;
   }
 
   .value-card p {

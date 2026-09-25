@@ -141,10 +141,16 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("Your agent made a page."));
   assert.ok(html.includes("Keep it somewhere useful."));
   assert.ok(html.includes("Continue with GitHub"));
-  assert.ok(html.includes("Private cloud workspace. Local CLI included."));
+  assert.ok(html.includes("Free during alpha"));
+  assert.ok(html.includes("npm install --global @abijith-suresh/planview"));
+  assert.ok(html.includes("planview publish --open"));
+  assert.ok(html.includes("localhost:4777/auth-migration-spec"));
   assert.ok(html.includes("Preview locally"));
   assert.ok(html.includes("Keep a cloud copy"));
   assert.ok(html.includes("app-staging-a39a.up.railway.app/dashboard"));
+  assert.ok(html.includes('class="preview-card"'));
+  assert.ok(html.includes('class="publish-strip"'));
+  assert.ok(html.includes('class="install-row"'));
   assert.ok(html.includes('class="mobile-menu"'));
   assert.ok(html.includes("Pricing"));
   assert.ok(html.includes("Docs"));
@@ -154,6 +160,7 @@ const assertHomepage = (output, expectedBase) => {
   assert.equal(html.includes("hero-sticker"), false);
   assert.equal(html.includes("↗"), false);
   assert.equal(html.includes("<button"), false);
+  assert.equal(html.includes("terminal-card"), false);
   assert.equal(html.includes("share on your network"), false);
   assert.equal(html.includes("permanent address"), false);
   assertSiteBasics(html);

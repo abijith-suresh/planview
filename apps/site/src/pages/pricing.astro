@@ -75,20 +75,18 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     flex-direction: column;
     padding: clamp(2.25rem, 4vw, 3rem);
     border: 1px solid var(--night-border);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     background: var(--night-card);
-    transition: all 160ms ease;
+    transition: border-color 160ms ease;
   }
 
   .pricing-card-current {
-    border-color: var(--mint-border);
+    border-color: var(--night-border-hover);
     background: var(--night-card-elevated);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
   }
 
   .pricing-card:not(.pricing-card-current):hover {
     border-color: var(--night-border-hover);
-    transform: translateY(-2px);
   }
 
   .pricing-header {
@@ -107,23 +105,23 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     border: 1px solid var(--mint-border);
     color: var(--mint);
     font-size: 0.75rem;
-    font-weight: 700;
+    font-weight: 600;
     text-transform: uppercase;
   }
 
   .pricing-label.future {
-    background: var(--iris-soft);
-    border-color: var(--iris-border);
-    color: var(--iris);
+    background: transparent;
+    border-color: var(--night-border-hover);
+    color: var(--night-muted);
   }
 
   .pricing-card h2 {
     margin: 0;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.85rem;
-    font-weight: 800;
-    letter-spacing: -0.03em;
+    font-size: 1.7rem;
+    font-weight: 650;
+    letter-spacing: -0.028em;
   }
 
   .pricing-price-box {
@@ -136,10 +134,10 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   .price-number {
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 3rem;
-    font-weight: 800;
+    font-size: 2.8rem;
+    font-weight: 650;
     line-height: 1;
-    letter-spacing: -0.04em;
+    letter-spacing: -0.035em;
   }
 
   .price-tenure {
@@ -177,11 +175,11 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     position: absolute;
     left: 0;
     color: var(--mint);
-    font-weight: 800;
+    font-weight: 600;
   }
 
   .pricing-card:not(.pricing-card-current) .pricing-features li::before {
-    color: var(--iris);
+    color: var(--night-subtle);
   }
 
   @media (max-width: 860px) {

@@ -8,10 +8,10 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   description="Answers about the plansplease CLI, cloud workspace, privacy, and alpha plans."
   activePath="faq"
 >
-  <section class="faq-hero" aria-labelledby="faq-title">
-    <div class="faq-hero-content">
+  <section class="page-heading" aria-labelledby="faq-title">
+    <div>
       <h1 id="faq-title">Questions we expect to hear.</h1>
-      <p class="faq-lead">
+      <p>
         Clear, direct answers about how plansplease handles local loopback serving, private cloud
         vaults, and agent integrations.
       </p>
@@ -127,32 +127,6 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 </SiteLayout>
 
 <style>
-  .faq-hero {
-    padding: clamp(3.5rem, 6vh, 5rem) 0 2.5rem;
-    border-bottom: 1px solid var(--night-border);
-  }
-
-  .faq-hero-content {
-    max-width: 44rem;
-  }
-
-  .faq-hero h1 {
-    margin: 0 0 1rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: clamp(2.2rem, 3.8vw, 3.2rem);
-    font-weight: 800;
-    letter-spacing: -0.035em;
-    line-height: 1.1;
-  }
-
-  .faq-lead {
-    margin: 0;
-    color: var(--night-muted);
-    font-size: clamp(1.05rem, 1.3vw, 1.15rem);
-    line-height: 1.65;
-  }
-
   .faq-content {
     padding: 3.5rem 0 5rem;
   }
@@ -160,13 +134,13 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   .faq-list {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 1rem;
     max-width: 48rem;
   }
 
   .faq-item {
     border: 1px solid var(--night-border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: var(--night-card);
     overflow: hidden;
     transition: border-color 160ms ease;
@@ -183,11 +157,11 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     justify-content: space-between;
     align-items: center;
     gap: 1.5rem;
-    padding: 1.5rem 1.75rem;
+    padding: 1.35rem 1.6rem;
     color: var(--text-white);
     font-family: var(--display);
-    font-size: 1.15rem;
-    font-weight: 700;
+    font-size: 1.02rem;
+    font-weight: 550;
     cursor: pointer;
     user-select: none;
   }
@@ -198,19 +172,21 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
   .faq-toggle-icon {
     font-family: var(--mono);
-    font-size: 1.25rem;
-    color: var(--mint);
-    transition: transform 180ms ease;
+    font-size: 1.15rem;
+    font-weight: 400;
+    color: var(--night-subtle);
+    transition: transform 180ms ease, color 180ms ease;
   }
 
   .faq-item[open] .faq-toggle-icon {
     transform: rotate(45deg);
+    color: var(--mint);
   }
 
   .faq-answer {
-    padding: 0 1.75rem 1.75rem;
+    padding: 0 1.6rem 1.5rem;
     color: var(--night-muted);
-    font-size: 0.98rem;
+    font-size: 0.94rem;
     line-height: 1.65;
     border-top: 1px solid var(--night-border);
     padding-top: 1.25rem;

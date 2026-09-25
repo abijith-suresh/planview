@@ -20,7 +20,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   </section>
 
   <section class="content-section" aria-labelledby="docs-list-title">
-    <h2 id=\"docs-list-title\">Start here.</h2>
+    <h2 id="docs-list-title">Start here.</h2>
 
     <div class="docs-grid">
       <article class="doc-card">
@@ -98,7 +98,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   .doc-card {
     padding: 2rem;
     border: 1px solid var(--night-border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: var(--night-card);
     display: flex;
     flex-direction: column;
@@ -110,7 +110,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     color: var(--text-white);
     font-family: var(--display);
     font-size: 1.25rem;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   .doc-card p {
@@ -132,8 +132,9 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   .code-pill code {
     color: var(--mint);
     font-family: var(--mono);
-    font-size: 0.82rem;
-    white-space: nowrap;
+    font-size: 0.78rem;
+    overflow-wrap: anywhere;
+    white-space: normal;
   }
 
   .meta-tag-pill {
@@ -156,7 +157,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     color: var(--text-white);
     font-family: var(--display);
     font-size: 1.35rem;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   .guides-grid {
@@ -169,7 +170,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     display: block;
     padding: 1.75rem;
     border: 1px solid var(--night-border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: var(--night-card);
     text-decoration: none;
     transition: all 160ms ease;
@@ -184,7 +185,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     color: var(--text-white);
     font-family: var(--display);
     font-size: 1.05rem;
-    font-weight: 700;
+    font-weight: 600;
   }
 
   .guide-item p {
