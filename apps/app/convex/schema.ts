@@ -15,5 +15,7 @@ export default defineSchema({
     sizeBytes: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_owner_createdAt", ["ownerId", "createdAt"]),
+  })
+    .index("by_owner_createdAt", ["ownerId", "createdAt"])
+    .index("by_owner_storageKey", ["ownerId", "storageKey"]),
 });

@@ -69,6 +69,11 @@ npx convex env set GITHUB_CLIENT_SECRET
 Do not commit `.env.local`, `.env.staging`, or OAuth secrets. The staging
 deployment uses the same functions and has its own values for these variables.
 
+Generate a random `DOCUMENT_MUTATION_SECRET` of at least 32 bytes and set the
+same value in the app server environment and its Convex deployment. It signs
+short-lived proofs for metadata creation and metadata-only deletion. Uploads
+will fail closed until both sides have this value.
+
 ## Deployment contract
 
 Railway deploys from the repository root. The service should use:
@@ -80,7 +85,7 @@ Health check: /api/health
 ```
 
 The current staging service is configured with that contract. It needs
-`CONVEX_URL`, `CONVEX_SITE_URL`, `UPLOADTHING_TOKEN`, and the Convex staging
+`CONVEX_URL`, `CONVEX_SITE_URL`, `UPLOADTHING_TOKEN`, `DOCUMENT_MUTATION_SECRET`, and the Convex staging
 deployment's `SITE_URL` before GitHub OAuth and uploads can be tested.
 
 ## Current API surface
