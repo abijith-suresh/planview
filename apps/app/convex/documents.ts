@@ -134,9 +134,11 @@ export const remove = mutation({
       throw new Error("Document not found");
     }
 
-    if (document.storageId) {
-      await ctx.storage.delete(document.storageId);
+    if (!document.storageId || document.storageProvider || document.storageKey) {
+      throw new Error("External documents require storage cleanup before metadata removal");
     }
+
+    await ctx.storage.delete(document.storageId);
 
     await ctx.db.delete(args.id);
   },
