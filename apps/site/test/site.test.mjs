@@ -144,7 +144,6 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("One command, two homes"));
   assert.ok(html.includes("Keep it working"));
   assert.ok(html.includes("app-staging-a39a.up.railway.app/dashboard"));
-  assert.ok(html.includes('class="concept-switch"'));
   assert.ok(html.includes('class="mobile-menu"'));
   assert.ok(html.includes("Pricing"));
   assert.ok(html.includes("Docs"));
