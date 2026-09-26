@@ -3,7 +3,7 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 
-import { authComponent, createAuth } from "./betterAuth/auth";
+import { authComponent, createAuth } from "./authConfig";
 
 const http = httpRouter();
 
@@ -37,7 +37,10 @@ const previewHeaders = (contentType: string) => ({
   "X-Content-Type-Options": "nosniff",
 });
 
-authComponent.registerRoutes(http, createAuth);
+authComponent.registerRoutes(
+  http,
+  createAuth as Parameters<typeof authComponent.registerRoutes>[1]
+);
 
 http.route({
   path: "/documents/content",

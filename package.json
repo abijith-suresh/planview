@@ -7,11 +7,16 @@
     "npm": ">=11.16.0"
   },
   "packageManager": "npm@11.16.0",
+  "overrides": {
+    "better-auth": "^1.7.6"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
+    "postinstall": "node scripts/prepare-auth-adapter.mjs",
+    "precheck": "node scripts/prepare-auth-adapter.mjs",
     "build": "npm run build --workspaces --if-present",
     "start": "npm start --workspace @planview/app",
     "changeset": "changeset",
