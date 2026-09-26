@@ -100,29 +100,13 @@ Vercel is not used for the marketing site.
 
 ## Security follow-up
 
-`npm audit` on the checked-in lockfile reports 7 vulnerable package names
-(1 low, 5 high, and 1 critical). The names
-are `astro@5.18.1`, `esbuild@0.27.7`, `sharp@0.34.5`, `unstorage@1.17.5`,
-`uploadthing@7.7.4`, `@uploadthing/shared@7.1.10`,
-and `effect@3.17.7`. Effect appears in two nodes, nested under `@uploadthing/shared`
-and `uploadthing`. npm's severity totals count vulnerable package names; one
-name can have multiple affected lockfile nodes and several advisory records.
-
-Astro is a development dependency used to build the static `apps/site`; it does
-not run in the SolidStart app's runtime. Its findings include
-[XSS](https://github.com/advisories/GHSA-j687-52p2-xcff),
-[SSRF](https://github.com/advisories/GHSA-2pvr-wf23-7pc7),
-[base-path authorization](https://github.com/advisories/GHSA-376h-93r7-7g6f),
-the critical [AVIF optimization RCE](https://github.com/advisories/GHSA-26w7-cxv4-gfx2),
-an [esbuild Windows dev-server file-read issue](https://github.com/advisories/GHSA-g7r4-m6w7-qqqr),
-and transitive [sharp/libvips](https://github.com/advisories/GHSA-f88m-g3jw-g9cj)
-and [sharp/libheif](https://github.com/advisories/GHSA-rgj7-g3m4-5g8c) findings.
-The AVIF RCE applies when an attacker can cause Astro to process an untrusted
-AVIF image. The current site source has no AVIF assets or Astro image-processing
-calls, and app uploads do not flow into the site build. The audit entry alone
-does not establish that an attacker can supply input to Astro's optimizer. For
-this lockfile, npm reports `astro@7.3.5` as the aggregate fix; the AVIF advisory
-itself lists `7.2.8` as patched.
+`npm audit` on the checked-in lockfile reports five high-severity package names:
+`astro@7.3.5`, `unstorage@1.17.5`, `uploadthing@7.7.4`,
+`@uploadthing/shared@7.1.10`, and `effect@3.17.7`. Astro 7.3.5 removes the
+prior critical AVIF advisory and the affected esbuild and sharp versions.
+Astro and unstorage remain in npm's report because unstorage declares an
+optional UploadThing peer dependency. Astro builds the static `apps/site`; it
+does not run in the SolidStart app's runtime.
 
 The app uses UploadThing's server-side `UTApi`. Its
 dependency tree contains Effect `3.17.7`, separate from the repository's Effect
@@ -130,9 +114,12 @@ v4 dependency. The [Effect advisory](https://github.com/advisories/GHSA-38f7-945
 describes `AsyncLocalStorage` context loss or contamination in Effect fibers
 under concurrent load when RPC is involved. The lockfile confirms the affected
 version is present, but does not show that this app exercises that RPC path.
-The audit's suggested fixes are `astro@7.3.5` and `uploadthing@6.12.0`,
-each a major-version change from the lockfile. No
-broad override or major upgrade has been applied pending compatibility review.
+UploadThing pins Effect `3.17.7`. An attempted npm override to a patched Effect
+version resolved the repository's incompatible Effect v4 copy for UploadThing,
+so it was not retained. npm suggests downgrading UploadThing to `6.12.0`; that
+version predates the current server upload API and needs a separate compatibility
+review. The remaining five names stay open until UploadThing updates its pin or
+the provider is changed.
 
 ## Contributing
 
