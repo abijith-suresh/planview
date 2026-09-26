@@ -16,6 +16,7 @@ function createHandler(overrides: Partial<DocumentUploadHandlerDependencies<Test
     getCurrentUser: 0,
     uploads: [] as { customId: string; fileName: string }[],
     metadata: [] as DocumentUploadMetadata[],
+    metadataOwners: [] as string[],
     deletedKeys: [] as string[],
   };
   const handler = createDocumentUploadHandler<TestClient>({
@@ -28,8 +29,9 @@ function createHandler(overrides: Partial<DocumentUploadHandlerDependencies<Test
     uploadFile: async ({ file, customId }) => {
       calls.uploads.push({ customId, fileName: file.name });
     },
-    createMetadata: async (_client, input) => {
+    createMetadata: async (_client, input, ownerId) => {
       calls.metadata.push(input);
+      calls.metadataOwners.push(ownerId);
       return "document_123";
     },
     deleteStorageObject: async (key) => {
@@ -187,6 +189,7 @@ test("stores one HTML file and binds its storage key to the authenticated owner"
       sizeBytes: 14,
     },
   ]);
+  assert.deepEqual(calls.metadataOwners, ["owner_123"]);
   assert.deepEqual(calls.deletedKeys, []);
 });
 
