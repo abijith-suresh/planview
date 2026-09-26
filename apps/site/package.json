@@ -12,6 +12,6 @@
   "devDependencies": {
     "@astrojs/check": "0.9.10",
     "@types/node": "24.10.1",
-    "astro": "5.18.1"
+    "astro": "7.3.5"
   }
 }
