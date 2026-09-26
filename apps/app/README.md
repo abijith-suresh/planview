@@ -89,6 +89,10 @@ deployment's `SITE_URL` before GitHub OAuth and uploads can be tested. Set
 
 - `/api/auth/*` proxies Better Auth to the Convex site.
 - `GET /api/documents` lists the signed-in user's documents.
+- `GET /api/documents?limit=50` returns a page with `page`, `isDone`, and
+  `continueCursor`. Pass `cursor=<continueCursor>` to read the next page. The
+  limit must be between 1 and 100. Requests without pagination parameters
+  retain the original array response for existing clients.
 - `GET` and `POST /api/uploadthing` expose the typed UploadThing file route.
 - `POST /api/documents` records the uploaded HTML file in Convex metadata.
 - `GET` and `DELETE /api/documents/:id` view or remove a workspace document.
