@@ -28,19 +28,51 @@ const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_SIZE_BYTES = MAX_FILE_SIZE_BYTES + 64 * 1024;
 const STORAGE_KEY_PREFIX = "uploadthing-custom-id:";
 
+async function readBoundedFormData(request: Request): Promise<FormData | null> {
+  const reader = request.body?.getReader();
+  if (!reader) throw new Error("The upload form has no body");
+
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    byteLength += value.byteLength;
+    if (byteLength > MAX_REQUEST_SIZE_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  const contentType = request.headers.get("content-type");
+  if (!contentType) throw new Error("The upload form has no content type");
+  return new Request(request.url, {
+    method: "POST",
+    headers: { "content-type": contentType },
+    body: new Blob([bytes]),
+  }).formData();
+}
+
 export function createDocumentUploadHandler<Client>(
   dependencies: DocumentUploadHandlerDependencies<Client>
 ) {
   return async ({ request }: { request: Request }) => {
-    const contentLength = Number(request.headers.get("content-length"));
+    const contentLengthHeader = request.headers.get("content-length");
+    const contentLength = contentLengthHeader === null ? null : Number(contentLengthHeader);
 
-    if (!Number.isSafeInteger(contentLength) || contentLength <= 0) {
-      return Response.json(
-        { error: "A bounded Content-Length header is required" },
-        { status: 411 }
-      );
+    if (contentLength !== null && (!Number.isSafeInteger(contentLength) || contentLength <= 0)) {
+      return Response.json({ error: "Content-Length must be a positive integer" }, { status: 400 });
     }
-    if (contentLength > MAX_REQUEST_SIZE_BYTES) {
+    if (contentLength !== null && contentLength > MAX_REQUEST_SIZE_BYTES) {
       return Response.json(
         { error: "The upload request exceeds the 8 MiB limit" },
         { status: 413 }
@@ -65,11 +97,17 @@ export function createDocumentUploadHandler<Client>(
         );
       }
 
-      let formData: FormData;
+      let formData: FormData | null;
       try {
-        formData = await request.formData();
+        formData = await readBoundedFormData(request);
       } catch {
         return Response.json({ error: "The upload form could not be read" }, { status: 400 });
+      }
+      if (!formData) {
+        return Response.json(
+          { error: "The upload request exceeds the 8 MiB limit" },
+          { status: 413 }
+        );
       }
 
       const files = formData.getAll("file");
