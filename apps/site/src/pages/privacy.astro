@@ -23,17 +23,17 @@ import SiteLayout from "../layouts/SiteLayout.astro";
       <article class="privacy-card">
         <h3>Cloud pages belong to your account</h3>
         <p>
-          Files uploaded to the cloud workspace are tied strictly to your authenticated GitHub
-          account. Your dashboard only lists your account's documents, and nobody else can browse
-          your library.
+          Uploaded documents are tied to your authenticated GitHub account. Your dashboard only
+          lists your account's documents. The underlying files have public direct URLs during alpha.
         </p>
       </article>
 
       <article class="privacy-card">
-        <h3>Cloud previews require your session</h3>
+        <h3>Cloud file URLs are public during alpha</h3>
         <p>
-          In the current alpha, preview requests verify your active session token before returning
-          the stored HTML. Private artifacts are protected by default.
+          App preview requests verify your session, but UploadThing stores the HTML as public-read.
+          Anyone with a direct file URL can fetch it. Avoid uploading sensitive content while this
+          storage setup is in use.
         </p>
       </article>
 
