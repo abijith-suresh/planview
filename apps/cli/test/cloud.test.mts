@@ -346,10 +346,7 @@ test("signing in again revokes the old credential and retains it when rotation f
       assert.match(readFileSync(cloudCredentialsPath("rotation"), "utf8"), /planview_cli_second/);
 
       failSecondRevocation = true;
-      await assert.rejects(
-        saveTestCredentials("rotation", cloudUrl, "third"),
-        /could not revoke/
-      );
+      await assert.rejects(saveTestCredentials("rotation", cloudUrl, "third"), /could not revoke/);
       assert.deepEqual(revokedTokens, [
         "Bearer planview_cli_first",
         "Bearer planview_cli_second",
