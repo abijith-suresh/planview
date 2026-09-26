@@ -185,6 +185,17 @@ export const removeCloudCredentials = async (profile?: string) => {
 
   if (stats) {
     assertCurrentUserFile(stats, "the cloud credentials file");
+    const credentials = await loadCredentials(profile);
+    if (credentials) {
+      const response = await fetch(`${credentials.cloudUrl}/api/cli/session`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${credentials.token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        throw new Error("The cloud could not revoke this computer's credential. Try again.");
+      }
+    }
     await unlink(path);
   }
 };

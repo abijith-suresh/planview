@@ -13,10 +13,15 @@ export type DocumentUploadMetadata = {
 
 export type DocumentUploadHandlerDependencies<Client> = {
   getAuthedClient(request: Request): Promise<{ client: Client; token: string | null | undefined }>;
-  getCurrentUser(client: Client): Promise<{ subject: string } | null | undefined>;
+  getCurrentUser(client: Client, request: Request): Promise<{ subject: string } | null | undefined>;
   isStorageConfigured(): boolean;
   uploadFile(input: { file: File; customId: string }): Promise<void>;
-  createMetadata(client: Client, input: DocumentUploadMetadata, ownerId: string): Promise<string>;
+  createMetadata(
+    client: Client,
+    input: DocumentUploadMetadata,
+    ownerId: string,
+    request: Request
+  ): Promise<string>;
   deleteStorageObject(key: string): Promise<void>;
   reportCompensationFailure?: DocumentUploadCompensationReporter;
   createUploadId(): string;
@@ -86,7 +91,7 @@ export function createDocumentUploadHandler<Client>(
         return Response.json({ error: "Authentication required" }, { status: 401 });
       }
 
-      const identity = await dependencies.getCurrentUser(client);
+      const identity = await dependencies.getCurrentUser(client, request);
       if (!identity) {
         return Response.json({ error: "Authentication required" }, { status: 401 });
       }
@@ -146,7 +151,8 @@ export function createDocumentUploadHandler<Client>(
             contentType: "text/html",
             sizeBytes: file.size,
           },
-          identity.subject
+          identity.subject,
+          request
         );
       } catch (error) {
         try {

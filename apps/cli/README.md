@@ -86,7 +86,10 @@ normal publish result and adds the browser-opening side effect.
 `planview login` opens GitHub sign-in in a browser and asks you to authorize the
 local CLI. The CLI stores the cloud credential in the selected profile's
 Planview data directory. On POSIX systems the directory is mode `0700` and the
-credential file is mode `0600`. `planview logout` removes that local credential.
+credential file is mode `0600`. The credential permits cloud uploads only and
+stays valid until revoked. `planview logout` revokes it on the cloud service,
+then removes the local file; it needs a connection to complete. Credentials
+saved before this change need a new `planview login`.
 Set `PLANVIEW_CLOUD_URL` or pass `--cloud-url <origin>` to `planview login` to
 use another cloud app. The alpha default is
 `https://app-staging-a39a.up.railway.app`.
