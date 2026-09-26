@@ -55,6 +55,18 @@ const assertSiteBasics = (html) => {
   assert.equal(html.includes("astro-island"), false, "the static site should not emit islands");
 };
 
+const assertCloudStorageCopy = (html) => {
+  assert.ok(
+    html.includes("Cloud files have public URLs during alpha"),
+    "the site should disclose public direct cloud file access"
+  );
+  assert.doesNotMatch(
+    html,
+    /private (?:cloud|workspace|copy|artifacts)|encrypted and private|private by default|securely archives/i,
+    "the site must not promise private cloud file storage during alpha"
+  );
+};
+
 const assertStylesheetAndInternalLinks = (html, output, expectedBase) => {
   const stylesheetHrefs = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(
     ([, href]) => href
@@ -124,6 +136,7 @@ const assertMarketingPages = (output) => {
     assert.ok(html.includes(`<title>${title}</title>`), `${directory} should have its page title`);
     assert.ok(html.includes(heading), `${directory} should render its primary heading`);
     assertSiteBasics(html);
+    assertCloudStorageCopy(html);
     assert.equal(html.includes("<button"), false, `${directory} should not render a button`);
   }
 };
@@ -134,6 +147,7 @@ const assertHomepage = (output, expectedBase) => {
 
   const html = readFileSync(homepage, "utf8");
   assert.ok(html.includes("plansplease"));
+  assertCloudStorageCopy(html);
   assert.ok(html.includes("Your agent made a page."));
   assert.ok(html.includes("Give it somewhere useful to live."));
   assert.ok(html.includes("Continue with GitHub"));
@@ -141,7 +155,8 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("planview publish ./auth-migration-spec.html"));
   assert.ok(html.includes("plansplease.app/p/auth-migration-spec"));
   assert.ok(html.includes("http://localhost:4777/auth-migration-spec"));
-  assert.ok(html.includes("One command, two homes"));
+  assert.ok(html.includes("Two commands, two homes"));
+  assert.ok(html.includes("planview upload ./auth-migration-spec.html"));
   assert.ok(html.includes("Keep it working"));
   assert.ok(html.includes("app-staging-a39a.up.railway.app/dashboard"));
   assert.ok(html.includes('class="mobile-menu"'));
