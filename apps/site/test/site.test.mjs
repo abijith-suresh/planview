@@ -141,7 +141,7 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("Your agent made a page."));
   assert.ok(html.includes("Keep it somewhere useful."));
   assert.ok(html.includes("Continue with GitHub"));
-  assert.ok(html.includes("Private cloud workspace. Local CLI included."));
+  assert.ok(html.includes("Cloud storage URLs are public during alpha. Local CLI included."));
   assert.ok(html.includes("Preview locally"));
   assert.ok(html.includes("Keep a cloud copy"));
   assert.ok(html.includes("app-staging-a39a.up.railway.app/dashboard"));

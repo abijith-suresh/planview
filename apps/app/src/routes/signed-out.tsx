@@ -8,7 +8,7 @@ export default function SignedOut() {
       <main class="signed-out-page">
         <span class="wordmark">plansplease</span>
         <h1>You're signed out.</h1>
-        <p>Return to your private workspace whenever you are ready.</p>
+        <p>Return to your cloud workspace whenever you are ready.</p>
         <a class="dashboard-link" href="/auth/github">
           Sign in with GitHub <span aria-hidden="true">→</span>
         </a>
