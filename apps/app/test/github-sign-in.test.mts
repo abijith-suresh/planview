@@ -205,6 +205,26 @@ test("prefers Better Auth's Location header and forwards its cookie", async () =
   assert.equal(result.headers.get("set-cookie"), "better-auth.state=abc; Path=/; HttpOnly; Secure");
 });
 
+test("forwards each Better Auth cookie as a separate Set-Cookie header", async () => {
+  const stateCookie = "better-auth.state=abc; Path=/; HttpOnly; Secure";
+  const sessionCookie =
+    "better-auth.session=xyz; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/; HttpOnly";
+  const result = await startGitHubSignIn(
+    createRequest("https://app.example/auth/github", { host: "app.example" }),
+    createDependencies(async () => {
+      const headers = new Headers({ "content-type": "application/json" });
+      headers.append("set-cookie", stateCookie);
+      headers.append("set-cookie", sessionCookie);
+      return new Response(JSON.stringify({ url: "https://github.com/login/oauth/authorize" }), {
+        headers,
+      });
+    })
+  );
+
+  assert.equal(result.status, 302);
+  assert.deepEqual(result.headers.getSetCookie(), [stateCookie, sessionCookie]);
+});
+
 test("maps a successful response without a redirect to AUTH_REDIRECT_MISSING", async () => {
   const result = await startGitHubSignIn(
     createRequest("https://app.example/auth/github", { host: "app.example" }),

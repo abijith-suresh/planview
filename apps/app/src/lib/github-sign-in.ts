@@ -129,9 +129,9 @@ export const startGitHubSignIn = async (
     }
 
     const redirectHeaders = new Headers({ Location: location });
-    const setCookie = response.headers.get("set-cookie");
-
-    if (setCookie) redirectHeaders.set("set-cookie", setCookie);
+    for (const cookie of response.headers.getSetCookie()) {
+      redirectHeaders.append("set-cookie", cookie);
+    }
 
     return new Response(null, { status: 302, headers: redirectHeaders });
   } catch (error) {
