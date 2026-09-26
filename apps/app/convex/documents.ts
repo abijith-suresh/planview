@@ -88,7 +88,7 @@ export const listPage = query({
   },
 });
 
-const createForOwner = async (ctx: MutationCtx, ownerId: string, args: CreateArgs) => {
+export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: CreateArgs) => {
   if (
     args.storageProvider !== "uploadthing" ||
     !args.storageKey.startsWith(uploadThingLocatorPrefix(ownerId)) ||
@@ -164,43 +164,48 @@ export const createWithCliCredential = mutation({
   },
 });
 
+export const requestDeletionForOwner = async (
+  ctx: MutationCtx,
+  ownerId: string,
+  id: Id<"documents">
+) => {
+  const document = await ctx.db.get(id);
+
+  if (!document || document.ownerId !== ownerId) {
+    return "not_found" as const;
+  }
+
+  if (document.deletionRequestedAt !== undefined) {
+    return "accepted" as const;
+  }
+
+  if (document.storageProvider && document.storageKey) {
+    if (document.storageProvider !== "uploadthing") {
+      throw new Error("Unsupported document storage provider");
+    }
+    const now = Date.now();
+    await ctx.db.patch(id, { deletionRequestedAt: now });
+    const jobId = await ctx.db.insert("deletionJobs", {
+      documentId: id,
+      storageKey: document.storageKey,
+      nextAttemptAt: now,
+      attempts: 0,
+    });
+    await ctx.scheduler.runAfter(0, deletionWorker, { jobId });
+    return "accepted" as const;
+  }
+
+  if (document.storageId) {
+    await ctx.storage.delete(document.storageId);
+  }
+
+  await ctx.db.delete(id);
+  return "deleted" as const;
+};
+
 export const requestDeletion = mutation({
   args: { id: v.id("documents") },
-  handler: async (ctx, args) => {
-    const ownerId = await requireOwnerId(ctx);
-    const document = await ctx.db.get(args.id);
-
-    if (!document || document.ownerId !== ownerId) {
-      return "not_found" as const;
-    }
-
-    if (document.deletionRequestedAt !== undefined) {
-      return "accepted" as const;
-    }
-
-    if (document.storageProvider && document.storageKey) {
-      if (document.storageProvider !== "uploadthing") {
-        throw new Error("Unsupported document storage provider");
-      }
-      const now = Date.now();
-      await ctx.db.patch(args.id, { deletionRequestedAt: now });
-      const jobId = await ctx.db.insert("deletionJobs", {
-        documentId: args.id,
-        storageKey: document.storageKey,
-        nextAttemptAt: now,
-        attempts: 0,
-      });
-      await ctx.scheduler.runAfter(0, deletionWorker, { jobId });
-      return "accepted" as const;
-    }
-
-    if (document.storageId) {
-      await ctx.storage.delete(document.storageId);
-    }
-
-    await ctx.db.delete(args.id);
-    return "deleted" as const;
-  },
+  handler: async (ctx, args) => requestDeletionForOwner(ctx, await requireOwnerId(ctx), args.id),
 });
 
 export const get = query({

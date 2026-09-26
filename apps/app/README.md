@@ -75,6 +75,47 @@ same value in the app server environment and its Convex deployment. It signs
 short-lived proofs for metadata creation. Uploads
 will fail closed until both sides have this value.
 
+## Hosted MCP
+
+The cloud agent endpoint is `${SITE_URL}/mcp`. It uses Better Auth 1.7 OAuth
+with Client ID Metadata Documents (CIMD), account sign-in, explicit consent,
+and a `cloud:documents` scope. Agents can list, read, upload, and delete only
+the signed-in account's cloud documents. `read_document` returns at most 32,768
+characters per call; repeat with `nextOffset` to read the rest. Uploads accept
+one HTML document up to 8 MiB. There is no document count quota during
+development. Deletes hide the document and queue storage cleanup; the existing
+Convex retry worker finishes cleanup in the background. UploadThing files have
+public URLs during development, including files uploaded through MCP.
+
+The app and Convex deployment both need the same public `SITE_URL` and a
+random `CIMD_FETCH_SECRET` of at least 32 bytes. The Convex HTTP runtime sends
+CIMD metadata requests to the app's private
+`/api/internal/cimd-fetch` endpoint; the Node transport validates DNS and pins
+the connection to a public address. Set `CONVEX_SITE_URL` on the app so it can
+proxy OAuth endpoints and authorization server metadata. Configure
+`DOCUMENT_MUTATION_SECRET` and `UPLOADTHING_TOKEN` on both app and Convex as
+described above. Set these variables on the Convex deployment before deploying
+the app, then deploy the app with the same `SITE_URL`.
+
+The current Convex Better Auth adapter is still published against Better Auth
+1.6 and imports a provider removed in 1.7. The repository's postinstall and
+build hooks remove that obsolete adapter hook from the installed package; the
+new OAuth provider owns the agent flow. The auth component is installed locally
+under its original `betterAuth` name, with a schema that retains the existing
+tables and adds the 1.7 OAuth tables. Review an adapter upgrade before removing
+the compatibility hook. To regenerate its schema, run
+`node scripts/prepare-auth-adapter.mjs` from the repository root, then from
+`apps/app` run:
+
+```sh
+npx auth@latest generate --config ./convex/betterAuth/auth.ts --output ./convex/betterAuth/generatedSchema.ts --yes
+```
+
+The generated file should retain its repository header. OAuth account sign-in
+requires the existing GitHub provider configuration. Point an MCP client at
+`${SITE_URL}/mcp`; it discovers the protected resource and authorization server
+through `/.well-known/` metadata, then requests consent in the browser.
+
 ## Deployment contract
 
 Railway deploys from the repository root. The service should use:
@@ -86,12 +127,15 @@ Health check: /api/health
 ```
 
 The current staging service is configured with that contract. It needs
-`CONVEX_URL`, `CONVEX_SITE_URL`, `UPLOADTHING_TOKEN`, `DOCUMENT_MUTATION_SECRET`, and the Convex staging
-deployment's `SITE_URL` before GitHub OAuth and uploads can be tested.
+`CONVEX_URL`, `CONVEX_SITE_URL`, `UPLOADTHING_TOKEN`, `DOCUMENT_MUTATION_SECRET`,
+`CIMD_FETCH_SECRET`, and `SITE_URL` before OAuth and cloud uploads can be tested.
 
 ## Current API surface
 
 - `/api/auth/*` proxies Better Auth to the Convex site.
+- `/mcp` is the OAuth protected hosted agent endpoint. The OAuth metadata
+  lives at `/.well-known/oauth-protected-resource/mcp` and
+  `/.well-known/oauth-authorization-server/api/auth`.
 - `GET /api/documents` lists the signed-in user's documents.
 - `GET /api/documents?limit=50` returns a page with `page`, `isDone`, and
   `continueCursor`. Pass `cursor=<continueCursor>` to read the next page. The
