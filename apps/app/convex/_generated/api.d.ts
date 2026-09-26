@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as betterAuth_auth from "../betterAuth/auth.js";
+import type * as cliCredentials from "../cliCredentials.js";
 import type * as documents from "../documents.js";
 import type * as http from "../http.js";
 
@@ -22,6 +23,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   "betterAuth/auth": typeof betterAuth_auth;
+  cliCredentials: typeof cliCredentials;
   documents: typeof documents;
   http: typeof http;
 }>;

@@ -1,17 +1,25 @@
-import { getSessionCookie } from "better-auth/cookies";
-
 import {
   api,
   errorResponse,
   getAuthedConvexClient,
+  getUnauthedConvexClient,
   missingServerConfigurationResponse,
 } from "~/lib/convex-server";
-import { createCliSessionHandler } from "~/lib/cli-session-handler";
+import { issueCliCredential } from "~/lib/cli-credential";
+import { createCliRevocationHandler, createCliSessionHandler } from "~/lib/cli-session-handler";
 
-export const GET = createCliSessionHandler({
+export const POST = createCliSessionHandler({
   getAuthedClient: getAuthedConvexClient,
   getCurrentUser: (client) => client.query(api.auth.currentUser, {}),
-  getSessionToken: (headers) => getSessionCookie(headers) ?? null,
+  createCredential: issueCliCredential,
+  issueCredential: (client, tokenHash) => client.mutation(api.cliCredentials.issue, { tokenHash }),
   missingServerConfigurationResponse,
+  errorResponse,
+});
+
+export const DELETE = createCliRevocationHandler({
+  getClient: getUnauthedConvexClient,
+  revokeCredential: (client, tokenHash) =>
+    client.mutation(api.cliCredentials.revoke, { tokenHash }),
   errorResponse,
 });

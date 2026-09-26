@@ -98,7 +98,11 @@ deployment's `SITE_URL` before GitHub OAuth and uploads can be tested.
   limit must be between 1 and 100. Requests without pagination parameters
   retain the original array response for existing clients.
 - `POST /api/documents/upload` uploads an HTML file and records its metadata
-  in one server request.
+  in one server request. It accepts either a web session or a CLI upload-only
+  credential; CLI credentials cannot list, view, or delete documents.
+- `POST /api/cli/session` issues a revocable upload-only credential after the
+  signed-in user approves the local CLI in the browser.
+- `DELETE /api/cli/session` revokes the presented CLI credential.
 - `GET /api/documents/:id` views a workspace document.
 - `DELETE /api/documents/:id` returns `202 Accepted` for UploadThing documents
   after marking them hidden. A Convex worker deletes the file and metadata in

@@ -59,6 +59,7 @@ export default function AuthorizeCli() {
 
     try {
       const response = await fetch("/api/cli/session", {
+        method: "POST",
         headers: { Accept: "application/json" },
         cache: "no-store",
       });

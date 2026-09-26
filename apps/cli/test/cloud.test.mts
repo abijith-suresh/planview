@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   chmodSync,
+  existsSync,
   lstatSync,
   mkdtempSync,
   readFileSync,
@@ -16,7 +17,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { resolveAppDataPaths } from "@planview/local";
 import { MAX_HTML_SIZE_BYTES, readBoundedCloudFile } from "../dist/cloud-file.js";
-import { loginToCloud, uploadCloudDocument } from "../dist/cloud.js";
+import { loginToCloud, removeCloudCredentials, uploadCloudDocument } from "../dist/cloud.js";
 
 const collectRequest = async (request: IncomingMessage) => {
   const chunks: Buffer[] = [];
@@ -149,7 +150,14 @@ test("cloud login callback and upload preserve the local protocol", async () => 
   await withIsolatedAppData(async (root) => {
     let responseMode: "success" | "expired" | "failure" = "success";
     const uploadRequests: Array<{ headers: IncomingMessage["headers"]; body: string }> = [];
+    const revokedTokens: string[] = [];
     const server = createServer(async (request, response) => {
+      if (request.method === "DELETE" && request.url === "/api/cli/session") {
+        revokedTokens.push(request.headers.authorization ?? "");
+        response.writeHead(204);
+        response.end();
+        return;
+      }
       if (request.method !== "POST" || request.url !== "/api/documents/upload") {
         sendJson(response, 404, { error: "Not found" });
         return;
@@ -282,6 +290,24 @@ test("cloud login callback and upload preserve the local protocol", async () => 
         "cloud-credentials.json"
       );
       assert.ok(readFileSync(credentialsPath, "utf8").includes("planview_cli_test-token"));
+      await removeCloudCredentials("cloud-test");
+      assert.deepEqual(revokedTokens, ["Bearer planview_cli_test-token"]);
+      assert.equal(existsSync(credentialsPath), false);
+    } finally {
+      server.closeAllConnections();
+      await close(server);
+    }
+  });
+});
+
+test("logout retains a credential when server revocation fails", async () => {
+  await withIsolatedAppData(async () => {
+    const server = createServer((_request, response) => sendJson(response, 503, { error: "down" }));
+    const cloudUrl = await listen(server);
+    try {
+      await saveTestCredentials("logout-retry", cloudUrl);
+      await assert.rejects(removeCloudCredentials("logout-retry"), /could not revoke/);
+      assert.equal(existsSync(cloudCredentialsPath("logout-retry")), true);
     } finally {
       server.closeAllConnections();
       await close(server);
