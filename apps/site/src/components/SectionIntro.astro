@@ -1,0 +1,40 @@
+---
+interface Props {
+  id: string;
+  title: string;
+  lede?: string;
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: Astro uses these props in the template below.
+const { id, title, lede } = Astro.props;
+---
+
+<div class="section-intro">
+  <h2 id={id}>{title}</h2>
+  {lede ? <p>{lede}</p> : null}
+</div>
+
+<style>
+  .section-intro {
+    max-width: 42rem;
+    margin-bottom: 3.5rem;
+  }
+
+  .section-intro h2 {
+    margin: 0 0 1rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(1.8rem, 3.2vw, 2.5rem);
+    font-weight: 640;
+    letter-spacing: -0.034em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+
+  .section-intro p {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 1.05rem;
+    line-height: 1.62;
+  }
+</style>
