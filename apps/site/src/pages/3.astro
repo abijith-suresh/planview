@@ -1,0 +1,455 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
+import { appSignInUrl } from "../lib/app-url";
+---
+
+<SiteLayout
+  title="The file is done. Make it a page. | plansplease"
+  description="One command turns any HTML file your agent writes into a page at a URL — local instantly, private in the cloud."
+>
+  <section class="hero" aria-labelledby="hero-title">
+    <h1 id="hero-title">
+      The file is done.<br />
+      <span class="u">Make it a page.</span>
+    </h1>
+    <p class="hero-lede">
+      Your agent hands you HTML — specs, reviews, prototypes, tools. plansplease publishes it: a
+      local URL the second you run the command, a private cloud link that outlives the chat.
+    </p>
+    <div class="hero-actions">
+      <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
+      <a class="btn-line" href="/docs/">Read the docs</a>
+    </div>
+
+    <div class="url-line" role="img" aria-label="A published page address">
+      <span class="url-tail" aria-hidden="true"></span>
+      <code>plansplease.app/p/auth-migration-spec</code>
+    </div>
+  </section>
+
+  <section class="pieces" aria-label="What agents publish">
+    <div class="piece">
+      <p class="piece-name">auth-plan.html</p>
+      <span class="piece-line w90"></span>
+      <span class="piece-line w70"></span>
+      <span class="piece-boxes" aria-hidden="true"><span></span><span></span><span></span></span>
+      <p class="piece-role">Specs &amp; plans</p>
+    </div>
+    <div class="piece">
+      <p class="piece-name">pr-482-review.html</p>
+      <span class="piece-diff is-add">+ retry with backoff</span>
+      <span class="piece-diff is-del">- sleep(1000)</span>
+      <span class="piece-line w60"></span>
+      <p class="piece-role">Code reviews</p>
+    </div>
+    <div class="piece">
+      <p class="piece-name">latency-report.html</p>
+      <span class="piece-bars" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></span>
+      <span class="piece-line w50"></span>
+      <p class="piece-role">Reports</p>
+    </div>
+    <div class="piece">
+      <p class="piece-name">flags-editor.html</p>
+      <span class="piece-field"></span>
+      <span class="piece-field w70"></span>
+      <span class="piece-line w40"></span>
+      <p class="piece-role">Small tools</p>
+    </div>
+  </section>
+
+  <section class="do" aria-labelledby="do-title">
+    <h2 id="do-title" class="visually-hidden">How it works</h2>
+    <div class="do-row">
+      <span class="do-index" aria-hidden="true">01</span>
+      <p><code>planview publish ./auth-plan.html</code> — the command is the whole setup.</p>
+    </div>
+    <div class="do-row">
+      <span class="do-index" aria-hidden="true">02</span>
+      <p>A local URL for your machine. A private cloud link for your phone and your team.</p>
+    </div>
+    <div class="do-row">
+      <span class="do-index" aria-hidden="true">03</span>
+      <p>Pages stay in your workspace after the chat ends — searchable, deletable, yours.</p>
+    </div>
+    <div class="do-row">
+      <span class="do-index" aria-hidden="true">04</span>
+      <p>Works with Claude Code, Cursor, Codex — anything that writes HTML. MCP is planned.</p>
+    </div>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-title">
+    <h2 id="cta-title">Your agent's next file deserves an address.</h2>
+    <div class="cta-actions">
+      <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
+      <a class="btn-line" href="/features/">Explore features</a>
+    </div>
+    <p class="cta-note">Free during alpha · Private by default</p>
+  </section>
+
+  <nav class="concept-switch" aria-label="Landing page design concepts">
+    <span aria-hidden="true">concept</span>
+    <a href="/">A</a>
+    <a href="/1/">B</a>
+    <a href="/2/">C</a>
+    <a href="/3/" aria-current="page">D</a>
+  </nav>
+</SiteLayout>
+
+<style>
+  :global(body) {
+    background: #101012;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* ---------- Hero ---------- */
+
+  .hero {
+    padding: clamp(5rem, 10vh, 7.5rem) 0 4rem;
+  }
+
+  h1 {
+    max-width: 14ch;
+    margin: 0 0 1.8rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(3rem, 6.5vw, 4.8rem);
+    font-weight: 640;
+    letter-spacing: -0.048em;
+    line-height: 1.01;
+    text-wrap: balance;
+  }
+
+  .u {
+    text-decoration: underline;
+    text-decoration-color: var(--mint);
+    text-decoration-thickness: 0.06em;
+    text-underline-offset: 0.14em;
+  }
+
+  .hero-lede {
+    max-width: 35rem;
+    margin: 0 0 2.4rem;
+    color: var(--night-muted);
+    font-size: 1.1rem;
+    line-height: 1.62;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+  }
+
+  .btn-solid {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.72rem 1.4rem;
+    border-radius: 10px;
+    background: var(--text-white);
+    color: var(--ink);
+    font-size: 0.92rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    transition: background-color 140ms ease;
+  }
+
+  .btn-solid:hover,
+  .btn-solid:focus-visible {
+    background: #ded9d0;
+  }
+
+  .btn-line {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.72rem 1.3rem;
+    border: 1px solid var(--night-border-hover);
+    border-radius: 10px;
+    color: var(--text-white);
+    font-size: 0.92rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color 140ms ease, background-color 140ms ease;
+  }
+
+  .btn-line:hover,
+  .btn-line:focus-visible {
+    border-color: #3a3833;
+    background: #141416;
+  }
+
+  .url-line {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 4.5rem;
+  }
+
+  .url-tail {
+    width: 2.2rem;
+    height: 1px;
+    background: var(--mint);
+  }
+
+  .url-line code {
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: clamp(0.85rem, 1.7vw, 1.05rem);
+    letter-spacing: 0.01em;
+  }
+
+  /* ---------- Pieces ---------- */
+
+  .pieces {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 2rem;
+    padding: 4.5rem 0;
+    border-top: 1px solid var(--night-border);
+  }
+
+  .piece {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .piece-name {
+    margin: 0 0 0.7rem;
+    color: var(--night-subtle);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .piece-line {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--night-border-hover);
+  }
+
+  .w40 { width: 40%; }
+  .w50 { width: 50%; }
+  .w60 { width: 60%; }
+  .w70 { width: 70%; }
+  .w90 { width: 90%; }
+
+  .piece-boxes {
+    display: flex;
+    gap: 0.3rem;
+    margin: 0.35rem 0;
+  }
+
+  .piece-boxes span {
+    flex: 1;
+    height: 1.4rem;
+    border: 1px solid var(--night-border-hover);
+    border-radius: 5px;
+  }
+
+  .piece-boxes span:nth-child(2) {
+    background: var(--mint-soft);
+    border-color: var(--mint-border);
+  }
+
+  .piece-diff {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    background: #161618;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--night-muted);
+  }
+
+  .piece-diff.is-add {
+    color: #9fae9a;
+  }
+
+  .piece-diff.is-del {
+    color: #b08a80;
+  }
+
+  .piece-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.3rem;
+    height: 2.2rem;
+    margin: 0.3rem 0;
+  }
+
+  .piece-bars span {
+    flex: 1;
+    background: var(--night-border-hover);
+    border-radius: 3px 3px 0 0;
+  }
+
+  .piece-bars span:nth-child(1) { height: 35%; }
+  .piece-bars span:nth-child(2) { height: 60%; }
+  .piece-bars span:nth-child(3) { height: 45%; }
+  .piece-bars span:nth-child(4) { height: 90%; background: var(--mint-border); }
+  .piece-bars span:nth-child(5) { height: 70%; }
+
+  .piece-field {
+    display: block;
+    height: 1.5rem;
+    border: 1px solid var(--night-border-hover);
+    border-radius: 6px;
+    margin: 0.3rem 0;
+  }
+
+  .piece-role {
+    margin: auto 0 0;
+    padding-top: 1rem;
+    color: var(--text);
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  /* ---------- Do ---------- */
+
+  .do {
+    padding: 4.5rem 0;
+    border-top: 1px solid var(--night-border);
+  }
+
+  .do-row {
+    display: flex;
+    align-items: baseline;
+    gap: 2.5rem;
+    padding: 1.1rem 0;
+    border-bottom: 1px solid var(--night-border);
+  }
+
+  .do-row:last-child {
+    border-bottom: 0;
+  }
+
+  .do-index {
+    flex-shrink: 0;
+    color: var(--mint);
+    font-family: var(--mono);
+    font-size: 0.74rem;
+  }
+
+  .do-row p {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 1.02rem;
+    line-height: 1.6;
+  }
+
+  .do-row code {
+    padding: 0.12rem 0.45rem;
+    border-radius: 5px;
+    background: #161618;
+    border: 1px solid var(--night-border);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.84em;
+    white-space: nowrap;
+  }
+
+  /* ---------- CTA ---------- */
+
+  .cta {
+    padding: 6rem 0 6.5rem;
+    border-top: 1px solid var(--night-border);
+  }
+
+  .cta h2 {
+    max-width: 22ch;
+    margin: 0 0 2rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(1.9rem, 3.4vw, 2.7rem);
+    font-weight: 640;
+    letter-spacing: -0.036em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+
+  .cta-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .cta-note {
+    margin: 0;
+    color: var(--night-subtle);
+    font-family: var(--mono);
+    font-size: 0.74rem;
+  }
+
+  @media (max-width: 960px) {
+    .pieces {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 560px) {
+    .pieces {
+      grid-template-columns: 1fr;
+    }
+
+    .do-row {
+      gap: 1.4rem;
+    }
+  }
+
+  /* ---------- Concept switcher (temporary, for design review) ---------- */
+
+  .concept-switch {
+    position: fixed;
+    right: 1.1rem;
+    bottom: 1.1rem;
+    z-index: 60;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid var(--night-border-hover);
+    border-radius: 999px;
+    background: rgba(18, 18, 20, 0.92);
+    backdrop-filter: blur(8px);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+  }
+
+  .concept-switch span {
+    margin-right: 0.4rem;
+    color: var(--night-subtle);
+    letter-spacing: 0.06em;
+  }
+
+  .concept-switch a {
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    color: var(--night-subtle);
+    text-decoration: none;
+  }
+
+  .concept-switch a:hover,
+  .concept-switch a:focus-visible {
+    color: var(--text-white);
+  }
+
+  .concept-switch a[aria-current="page"] {
+    background: var(--night-card-elevated);
+    color: var(--mint);
+  }
+</style>

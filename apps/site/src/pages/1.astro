@@ -1,0 +1,834 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
+import { appSignInUrl } from "../lib/app-url";
+---
+
+<SiteLayout
+  title="From prompt to published page | plansplease"
+  description="plansplease takes the HTML your coding agent writes and puts it at a URL — local in seconds, private in the cloud, readable from your phone."
+>
+  <section class="hero" aria-labelledby="hero-title">
+    <h1 id="hero-title">From prompt to published page.</h1>
+    <p class="hero-lede">
+      Your coding agent already writes the artifacts — specs, reviews, prototypes, small tools.
+      plansplease turns each file into a URL you can open from your phone, share with your team,
+      and find again long after the chat is gone.
+    </p>
+    <div class="hero-actions">
+      <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
+      <a class="btn-line" href="/docs/">Read the docs</a>
+    </div>
+  </section>
+
+  <section class="strip" aria-label="Examples of agent-made pages">
+    <div class="strip-rail">
+      <div class="thumb t-spec">
+        <p class="t-title">auth-plan.html</p>
+        <span class="t-line w60"></span>
+        <span class="t-line w90"></span>
+        <span class="t-line w75"></span>
+        <span class="t-boxes"><span></span><span></span><span></span></span>
+      </div>
+
+      <div class="thumb t-review">
+        <p class="t-title">pr-482-review.html</p>
+        <span class="t-diff is-add">+ retry with backoff</span>
+        <span class="t-diff is-del">- sleep(1000)</span>
+        <span class="t-diff is-add">+ cap at 3 attempts</span>
+        <span class="t-note">blocking · backpressure</span>
+      </div>
+
+      <div class="thumb t-dash">
+        <p class="t-title">latency-report.html</p>
+        <span class="t-bars"><span></span><span></span><span></span><span></span><span></span><span></span></span>
+        <span class="t-line w40"></span>
+      </div>
+
+      <div class="thumb t-editor">
+        <p class="t-title">flags-editor.html</p>
+        <span class="t-field"></span>
+        <span class="t-field w70"></span>
+        <span class="t-toggle"><span class="is-on"></span><span></span></span>
+      </div>
+
+      <div class="thumb t-explain">
+        <p class="t-title">rate-limits.html</p>
+        <span class="t-num">1</span><span class="t-line w80"></span>
+        <span class="t-num">2</span><span class="t-line w65"></span>
+        <span class="t-num">3</span><span class="t-line w85"></span>
+      </div>
+    </div>
+    <p class="strip-caption">The artifacts agents already write — each one becomes a page at a URL.</p>
+  </section>
+
+  <section class="change" aria-labelledby="change-title">
+    <h2 id="change-title" class="visually-hidden">The same file, two very different outcomes</h2>
+
+    <div class="row">
+      <div class="row-copy">
+        <h3>The file dies in a folder</h3>
+        <p>
+          Without a home, agent output is buried in a project directory. Opening it means finding
+          the file and double-clicking — a non-starter from your phone, and useless to a teammate.
+        </p>
+      </div>
+      <div class="row-visual" aria-hidden="true">
+        <div class="chat">
+          <div class="bubble is-agent">
+            I've written the migration plan to <b>auth-plan.html</b> in your project root.
+          </div>
+          <div class="bubble is-user">Can I open this from my phone?</div>
+          <div class="bubble is-agent is-faded">
+            You'd need to find the file and open it in a browser — it's at
+            <span class="path">~/code/app/auth-plan.html</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row is-flipped">
+      <div class="row-copy">
+        <h3>The page stays at a URL</h3>
+        <p>
+          Published with plansplease, the same file is served instantly on your machine and saved
+          to a private workspace. The link opens on any device, for as long as you want it.
+        </p>
+      </div>
+      <div class="row-visual" aria-hidden="true">
+        <div class="pub-card">
+          <div class="pub-url">plansplease.app/p/auth-plan</div>
+          <p class="pub-title">Auth migration — plan</p>
+          <span class="pub-line w90"></span>
+          <span class="pub-line w70"></span>
+          <span class="pub-line w80"></span>
+        </div>
+        <div class="pub-phone">
+          <span class="pub-phone-url">/p/auth-plan</span>
+          <span class="pub-phone-line w80"></span>
+          <span class="pub-phone-line w60"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="flow" aria-labelledby="flow-title">
+    <h2 id="flow-title">Three steps, zero setup</h2>
+    <ol class="flow-list">
+      <li>
+        <span class="flow-point" aria-hidden="true"></span>
+        <div>
+          <h3>Publish</h3>
+          <code>planview publish ./auth-plan.html</code>
+          <p>Serves the page locally and saves a private cloud copy in the same breath.</p>
+        </div>
+      </li>
+      <li>
+        <span class="flow-point" aria-hidden="true"></span>
+        <div>
+          <h3>Open</h3>
+          <p>Your machine gets a local address. Everything else gets a private cloud link that
+          works from any browser, including your phone.</p>
+        </div>
+      </li>
+      <li>
+        <span class="flow-point" aria-hidden="true"></span>
+        <div>
+          <h3>Keep</h3>
+          <p>Pages live in your workspace after the chat ends — searchable and deletable. Private
+          unless you say otherwise.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+
+  <section class="agents" aria-labelledby="agents-title">
+    <h2 id="agents-title">The CLI is just one surface</h2>
+    <p>
+      plansplease works with whatever writes your HTML. Publish from Claude Code, Cursor, Codex, or
+      any harness — and MCP support is on the roadmap, so agents will publish directly from the
+      tools they already live in.
+    </p>
+    <div class="agents-chips" aria-label="Supported agent harnesses">
+      <span>Claude Code</span>
+      <span>Cursor</span>
+      <span>Codex</span>
+      <span>Aider</span>
+      <span class="is-soon">MCP — soon</span>
+    </div>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-title">
+    <h2 id="cta-title">Give the next file a URL.</h2>
+    <p>Sign in and publish your first agent-made page in under a minute.</p>
+    <div class="cta-actions">
+      <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
+      <a class="btn-line" href="/features/">Explore features</a>
+    </div>
+    <p class="cta-note">Free during alpha · Private by default</p>
+  </section>
+
+  <nav class="concept-switch" aria-label="Landing page design concepts">
+    <span aria-hidden="true">concept</span>
+    <a href="/">A</a>
+    <a href="/1/" aria-current="page">B</a>
+    <a href="/2/">C</a>
+    <a href="/3/">D</a>
+  </nav>
+</SiteLayout>
+
+<style>
+  :global(body) {
+    background: #0e1114;
+  }
+
+  h1 {
+    max-width: 16ch;
+    margin: 0 auto 1.5rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(2.7rem, 5.6vw, 4.2rem);
+    font-weight: 640;
+    letter-spacing: -0.045em;
+    line-height: 1.02;
+    text-align: center;
+    text-wrap: balance;
+  }
+
+  .hero {
+    padding: clamp(4.5rem, 9vh, 6.5rem) 0 3.5rem;
+    text-align: center;
+  }
+
+  .hero-lede {
+    max-width: 36rem;
+    margin: 0 auto 2.2rem;
+    color: #97a3b4;
+    font-size: 1.1rem;
+    line-height: 1.62;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.8rem;
+  }
+
+  .btn-solid {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.72rem 1.4rem;
+    border-radius: 10px;
+    background: var(--text-white);
+    color: var(--ink);
+    font-size: 0.92rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    transition: background-color 140ms ease;
+  }
+
+  .btn-solid:hover,
+  .btn-solid:focus-visible {
+    background: #dfe4ec;
+  }
+
+  .btn-line {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.72rem 1.3rem;
+    border: 1px solid rgba(151, 177, 208, 0.18);
+    border-radius: 10px;
+    color: var(--text-white);
+    font-size: 0.92rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color 140ms ease, background-color 140ms ease;
+  }
+
+  .btn-line:hover,
+  .btn-line:focus-visible {
+    border-color: rgba(151, 177, 208, 0.32);
+    background: #12161a;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* ---------- Filmstrip ---------- */
+
+  .strip {
+    padding: 2.5rem 0 4.5rem;
+  }
+
+  .strip-rail {
+    display: flex;
+    gap: 1.1rem;
+    align-items: flex-start;
+    justify-content: center;
+    min-width: 0;
+    overflow-x: auto;
+    padding: 1.5rem 0.5rem 1rem;
+  }
+
+  .thumb {
+    display: flex;
+    flex-shrink: 0;
+    flex-direction: column;
+    gap: 0.45rem;
+    width: 11rem;
+    padding: 1rem 1rem 1.2rem;
+    border: 1px solid rgba(151, 177, 208, 0.13);
+    border-radius: 12px;
+    background: #12161a;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.4);
+  }
+
+  .thumb:nth-child(odd) {
+    transform: rotate(-1.4deg) translateY(0.35rem);
+  }
+
+  .thumb:nth-child(even) {
+    transform: rotate(1.2deg);
+  }
+
+  .t-title {
+    margin: 0 0 0.4rem;
+    color: #7d8996;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .t-line {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(151, 177, 208, 0.16);
+  }
+
+  .w40 { width: 40%; }
+  .w60 { width: 60%; }
+  .w65 { width: 65%; }
+  .w70 { width: 70%; }
+  .w75 { width: 75%; }
+  .w80 { width: 80%; }
+  .w85 { width: 85%; }
+  .w90 { width: 90%; }
+
+  .t-boxes {
+    display: flex;
+    gap: 0.35rem;
+    margin-top: 0.35rem;
+  }
+
+  .t-boxes span {
+    flex: 1;
+    height: 1.5rem;
+    border: 1px solid rgba(151, 177, 208, 0.2);
+    border-radius: 5px;
+  }
+
+  .t-boxes span:nth-child(2) {
+    background: rgba(127, 168, 240, 0.14);
+    border-color: rgba(127, 168, 240, 0.4);
+  }
+
+  .t-diff {
+    padding: 0.22rem 0.45rem;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+  }
+
+  .t-diff.is-add {
+    background: rgba(110, 190, 140, 0.09);
+    color: #8fc6a2;
+  }
+
+  .t-diff.is-del {
+    background: rgba(226, 120, 100, 0.09);
+    color: #d99a8c;
+  }
+
+  .t-note {
+    margin-top: 0.2rem;
+    color: #5f6b7a;
+    font-family: var(--mono);
+    font-size: 0.58rem;
+  }
+
+  .t-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.3rem;
+    height: 2.4rem;
+    margin: 0.3rem 0 0.5rem;
+  }
+
+  .t-bars span {
+    flex: 1;
+    background: rgba(151, 177, 208, 0.22);
+    border-radius: 3px 3px 0 0;
+  }
+
+  .t-bars span:nth-child(2) { height: 45%; }
+  .t-bars span:nth-child(3) { height: 80%; }
+  .t-bars span:nth-child(4) { height: 55%; }
+  .t-bars span:nth-child(5) { height: 95%; background: rgba(127, 168, 240, 0.55); }
+  .t-bars span:nth-child(6) { height: 65%; }
+  .t-bars span:nth-child(1) { height: 30%; }
+
+  .t-field {
+    display: block;
+    height: 1.5rem;
+    border: 1px solid rgba(151, 177, 208, 0.18);
+    border-radius: 6px;
+  }
+
+  .t-toggle {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.35rem;
+  }
+
+  .t-toggle span {
+    width: 1.9rem;
+    height: 1rem;
+    border: 1px solid rgba(151, 177, 208, 0.25);
+    border-radius: 999px;
+  }
+
+  .t-toggle span.is-on {
+    background: rgba(127, 168, 240, 0.25);
+    border-color: rgba(127, 168, 240, 0.55);
+  }
+
+  .t-num {
+    color: #7fa8f0;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+  }
+
+  .strip-caption {
+    margin: 0.4rem 0 0;
+    color: #5f6b7a;
+    font-size: 0.82rem;
+    text-align: center;
+  }
+
+  /* ---------- Before / after ---------- */
+
+  .change {
+    padding: 4rem 0 5rem;
+    border-top: 1px solid rgba(151, 177, 208, 0.09);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 3.5rem;
+    align-items: center;
+    padding: 3rem 0;
+  }
+
+  .row + .row {
+    border-top: 1px solid rgba(151, 177, 208, 0.09);
+  }
+
+  .row h3 {
+    margin: 0 0 0.7rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.45rem;
+    font-weight: 640;
+    letter-spacing: -0.025em;
+  }
+
+  .row p {
+    margin: 0;
+    color: #97a3b4;
+    font-size: 0.98rem;
+    line-height: 1.65;
+  }
+
+  .chat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    max-width: 26rem;
+    padding: 1.4rem;
+    border: 1px solid rgba(151, 177, 208, 0.12);
+    border-radius: 14px;
+    background: #0c0f12;
+  }
+
+  .bubble {
+    max-width: 85%;
+    padding: 0.6rem 0.85rem;
+    border-radius: 12px;
+    font-size: 0.84rem;
+    line-height: 1.5;
+  }
+
+  .bubble.is-agent {
+    background: #151a1f;
+    border: 1px solid rgba(151, 177, 208, 0.12);
+    color: #b9c2cf;
+  }
+
+  .bubble.is-agent b {
+    color: var(--text-white);
+    font-weight: 600;
+  }
+
+  .bubble.is-user {
+    align-self: flex-end;
+    background: rgba(127, 168, 240, 0.1);
+    border: 1px solid rgba(127, 168, 240, 0.25);
+    color: #cfdcec;
+  }
+
+  .bubble.is-faded {
+    opacity: 0.55;
+  }
+
+  .bubble .path {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: #7d8996;
+  }
+
+  .row-visual {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 14rem;
+  }
+
+  .pub-card {
+    width: 20rem;
+    padding: 1.3rem 1.4rem 1.5rem;
+    border: 1px solid rgba(151, 177, 208, 0.16);
+    border-radius: 14px;
+    background: #12161a;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+  }
+
+  .pub-url {
+    display: inline-block;
+    margin-bottom: 1rem;
+    padding: 0.3rem 0.65rem;
+    border: 1px solid rgba(151, 177, 208, 0.14);
+    border-radius: 6px;
+    background: #0c0f12;
+    color: #8fa4bd;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+  }
+
+  .pub-title {
+    margin: 0 0 0.8rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.05rem;
+    font-weight: 640;
+    letter-spacing: -0.02em;
+  }
+
+  .pub-line {
+    display: block;
+    height: 5px;
+    margin-bottom: 0.5rem;
+    border-radius: 3px;
+    background: rgba(151, 177, 208, 0.14);
+  }
+
+  .pub-phone {
+    position: absolute;
+    right: 8%;
+    bottom: -1.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    width: 7.5rem;
+    padding: 1rem 0.9rem;
+    border: 1px solid rgba(151, 177, 208, 0.2);
+    border-radius: 18px;
+    background: #151a1f;
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+    transform: rotate(3deg);
+  }
+
+  .pub-phone-url {
+    margin-bottom: 0.3rem;
+    color: #5f6b7a;
+    font-family: var(--mono);
+    font-size: 0.56rem;
+  }
+
+  .pub-phone-line {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(151, 177, 208, 0.2);
+  }
+
+  /* ---------- Flow ---------- */
+
+  .flow {
+    padding: 5rem 0;
+    border-top: 1px solid rgba(151, 177, 208, 0.09);
+  }
+
+  .flow h2 {
+    max-width: 22ch;
+    margin: 0 0 3rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(1.75rem, 3vw, 2.35rem);
+    font-weight: 640;
+    letter-spacing: -0.032em;
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+
+  .flow-list {
+    position: relative;
+    max-width: 40rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .flow-list li {
+    position: relative;
+    display: flex;
+    gap: 1.6rem;
+    padding: 0 0 2.6rem 0;
+  }
+
+  .flow-list li:last-child {
+    padding-bottom: 0;
+  }
+
+  .flow-list li::before {
+    content: "";
+    position: absolute;
+    top: 1.4rem;
+    bottom: 0.4rem;
+    left: 0.36rem;
+    width: 1px;
+    background: rgba(151, 177, 208, 0.15);
+  }
+
+  .flow-list li:last-child::before {
+    display: none;
+  }
+
+  .flow-point {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    margin-top: 0.5rem;
+    border: 2px solid #7fa8f0;
+    border-radius: 50%;
+    background: #0e1114;
+  }
+
+  .flow-list h3 {
+    margin: 0 0 0.5rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.1rem;
+    font-weight: 640;
+    letter-spacing: -0.015em;
+  }
+
+  .flow-list code {
+    display: block;
+    margin: 0 0 0.7rem;
+    padding: 0.55rem 0.85rem;
+    border: 1px solid rgba(151, 177, 208, 0.13);
+    border-radius: 8px;
+    background: #0c0f12;
+    color: #b9c2cf;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+  }
+
+  .flow-list p {
+    margin: 0;
+    color: #97a3b4;
+    font-size: 0.94rem;
+    line-height: 1.62;
+  }
+
+  /* ---------- Agents ---------- */
+
+  .agents {
+    padding: 5rem 0;
+    border-top: 1px solid rgba(151, 177, 208, 0.09);
+  }
+
+  .agents h2 {
+    margin: 0 0 1.1rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(1.6rem, 2.6vw, 2.1rem);
+    font-weight: 640;
+    letter-spacing: -0.028em;
+  }
+
+  .agents p {
+    max-width: 40rem;
+    margin: 0 0 2rem;
+    color: #97a3b4;
+    font-size: 1.02rem;
+    line-height: 1.65;
+  }
+
+  .agents-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .agents-chips span {
+    padding: 0.45rem 0.95rem;
+    border: 1px solid rgba(151, 177, 208, 0.16);
+    border-radius: 999px;
+    color: #b9c2cf;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+  }
+
+  .agents-chips .is-soon {
+    border-color: rgba(127, 168, 240, 0.4);
+    color: #7fa8f0;
+  }
+
+  /* ---------- CTA ---------- */
+
+  .cta {
+    padding: 5.5rem 0 6.5rem;
+    border-top: 1px solid rgba(151, 177, 208, 0.09);
+    text-align: center;
+  }
+
+  .cta h2 {
+    margin: 0 auto 1rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(1.9rem, 3.4vw, 2.6rem);
+    font-weight: 640;
+    letter-spacing: -0.035em;
+    text-wrap: balance;
+  }
+
+  .cta > p {
+    margin: 0 auto 2.1rem;
+    color: #97a3b4;
+    font-size: 1rem;
+  }
+
+  .cta-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.8rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .cta-note {
+    margin: 0;
+    color: #5f6b7a;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+  }
+
+  .row.is-flipped {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  }
+
+  .row.is-flipped .row-copy {
+    order: 2;
+  }
+
+  .row.is-flipped .row-visual {
+    order: 1;
+  }
+
+  @media (max-width: 960px) {
+    .row {
+      grid-template-columns: 1fr;
+      gap: 2.2rem;
+    }
+
+    .row.is-flipped {
+      grid-template-columns: 1fr;
+    }
+
+    .row.is-flipped .row-copy {
+      order: 0;
+    }
+
+    .row.is-flipped .row-visual {
+      order: 1;
+    }
+  }
+
+  /* ---------- Concept switcher (temporary, for design review) ---------- */
+
+  .concept-switch {
+    position: fixed;
+    right: 1.1rem;
+    bottom: 1.1rem;
+    z-index: 60;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid rgba(151, 177, 208, 0.2);
+    border-radius: 999px;
+    background: rgba(18, 22, 26, 0.92);
+    backdrop-filter: blur(8px);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+  }
+
+  .concept-switch span {
+    margin-right: 0.4rem;
+    color: #5f6b7a;
+    letter-spacing: 0.06em;
+  }
+
+  .concept-switch a {
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    color: #5f6b7a;
+    text-decoration: none;
+  }
+
+  .concept-switch a:hover,
+  .concept-switch a:focus-visible {
+    color: var(--text-white);
+  }
+
+  .concept-switch a[aria-current="page"] {
+    background: #1a2027;
+    color: #7fa8f0;
+  }
+</style>

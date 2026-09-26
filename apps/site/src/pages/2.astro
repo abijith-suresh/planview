@@ -1,0 +1,668 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
+import { appSignInUrl } from "../lib/app-url";
+---
+
+<SiteLayout
+  title="A place for the pages your agent builds | plansplease"
+  description="Served locally in seconds, saved to a private workspace — every HTML file your agent writes gets a URL that works from anywhere."
+>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="hero-copy">
+      <h1 id="hero-title">
+        A place for the pages your agent builds.
+      </h1>
+      <p class="hero-lede">
+        Agents write specs, reviews, and tools as HTML — then the files vanish into a project
+        folder. plansplease serves each one locally in seconds and keeps a private cloud copy you
+        can open from your phone, months later.
+      </p>
+      <div class="hero-actions">
+        <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
+        <a class="btn-line" href="/docs/">Read the docs</a>
+      </div>
+    </div>
+
+    <div class="hero-visual" role="img" aria-label="The plansplease workspace listing agent-made pages, with one open for preview">
+      <div class="app">
+        <div class="app-bar">
+          <span class="app-ws">abijith · workspace</span>
+          <span class="app-state">private</span>
+        </div>
+        <div class="app-body">
+          <div class="app-side">
+            <p class="app-side-label">Pages</p>
+            <div class="app-item is-active">
+              <span class="app-dot" aria-hidden="true"></span>
+              <span class="app-name">auth-migration-spec</span>
+              <span class="app-time">2h</span>
+            </div>
+            <div class="app-item">
+              <span class="app-dot" aria-hidden="true"></span>
+              <span class="app-name">pr-482-review</span>
+              <span class="app-time">1d</span>
+            </div>
+            <div class="app-item">
+              <span class="app-dot" aria-hidden="true"></span>
+              <span class="app-name">checkout-prototype</span>
+              <span class="app-time">3d</span>
+            </div>
+            <div class="app-item">
+              <span class="app-dot" aria-hidden="true"></span>
+              <span class="app-name">rate-limit-explainer</span>
+              <span class="app-time">1w</span>
+            </div>
+          </div>
+          <div class="app-pane">
+            <p class="pane-kicker">auth-migration-spec.html</p>
+            <p class="pane-title">Auth migration — rollout plan</p>
+            <span class="pane-line w90"></span>
+            <span class="pane-line w75"></span>
+            <span class="pane-line w85"></span>
+            <div class="pane-meter"><span></span></div>
+            <span class="pane-line w60"></span>
+            <span class="pane-line w80"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="phone" aria-hidden="true">
+        <span class="phone-url">/p/auth-migration-spec</span>
+        <span class="phone-title">Auth migration</span>
+        <span class="phone-line w85"></span>
+        <span class="phone-line w65"></span>
+        <span class="phone-line w75"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="quiet" aria-labelledby="quiet-title">
+    <h2 id="quiet-title" class="visually-hidden">How plansplease behaves</h2>
+    <div class="quiet-grid">
+      <div class="quiet-col">
+        <h3>Local first</h3>
+        <p>
+          <code>planview publish</code> serves the page on your machine immediately. No upload step
+          in the way when you just want to look at something.
+        </p>
+      </div>
+      <div class="quiet-col">
+        <h3>Cloud when you want it</h3>
+        <p>
+          The same command keeps a private copy in your workspace. The link opens from any device —
+          your phone included.
+        </p>
+      </div>
+      <div class="quiet-col">
+        <h3>Yours until you say otherwise</h3>
+        <p>
+          Pages are private by default and searchable forever, or until you delete them. No public
+          feed, no surprises.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="line-flow" aria-labelledby="flow-title">
+    <h2 id="flow-title">One command does both</h2>
+    <div class="command">
+      <code>planview publish ./auth-migration-spec.html</code>
+      <p>
+        A local URL for the machine you're on. A workspace copy for everywhere else. The chat ends;
+        the pages don't.
+      </p>
+    </div>
+  </section>
+
+  <section class="agents" aria-labelledby="agents-title">
+    <h2 id="agents-title">Any harness that writes HTML</h2>
+    <p>
+      The CLI is one surface. Claude Code, Cursor, Codex — anything that can write a file can
+      publish. MCP support is planned so agent harnesses publish without leaving their own tools.
+    </p>
+    <div class="agents-chips" aria-label="Supported agent harnesses">
+      <span>Claude Code</span>
+      <span>Cursor</span>
+      <span>Codex</span>
+      <span>Aider</span>
+      <span class="is-soon">MCP — planned</span>
+    </div>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-title">
+    <h2 id="cta-title">Sign in, then publish the next thing your agent makes.</h2>
+    <div class="cta-actions">
+      <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
+      <a class="btn-line" href="/features/">Explore features</a>
+    </div>
+    <p class="cta-note">Free during alpha · Private by default</p>
+  </section>
+
+  <nav class="concept-switch" aria-label="Landing page design concepts">
+    <span aria-hidden="true">concept</span>
+    <a href="/">A</a>
+    <a href="/1/">B</a>
+    <a href="/2/" aria-current="page">C</a>
+    <a href="/3/">D</a>
+  </nav>
+</SiteLayout>
+
+<style>
+  :global(body) {
+    background: #0a0a0b;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* ---------- Hero ---------- */
+
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    align-items: center;
+    gap: clamp(3rem, 6vw, 5.5rem);
+    padding: clamp(4.5rem, 9vh, 6.5rem) 0 5rem;
+  }
+
+  h1 {
+    margin: 0 0 1.5rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(2.5rem, 4.6vw, 3.6rem);
+    font-weight: 640;
+    letter-spacing: -0.042em;
+    line-height: 1.04;
+    text-wrap: balance;
+  }
+
+  .hero-lede {
+    max-width: 34rem;
+    margin: 0 0 2.3rem;
+    color: #8f8f94;
+    font-size: 1.08rem;
+    line-height: 1.62;
+  }
+
+  .hero-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+  }
+
+  .btn-solid {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.72rem 1.4rem;
+    border-radius: 10px;
+    background: var(--text-white);
+    color: var(--ink);
+    font-size: 0.92rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-decoration: none;
+    transition: background-color 140ms ease;
+  }
+
+  .btn-solid:hover,
+  .btn-solid:focus-visible {
+    background: #d9d9dc;
+  }
+
+  .btn-line {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.72rem 1.3rem;
+    border: 1px solid #26262a;
+    border-radius: 10px;
+    color: var(--text-white);
+    font-size: 0.92rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color 140ms ease, background-color 140ms ease;
+  }
+
+  .btn-line:hover,
+  .btn-line:focus-visible {
+    border-color: #35353a;
+    background: #111113;
+  }
+
+  /* ---------- App mock ---------- */
+
+  .hero-visual {
+    position: relative;
+  }
+
+  .app {
+    overflow: hidden;
+    border: 1px solid #212124;
+    border-radius: 14px;
+    background: #111113;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 32px 80px rgba(0, 0, 0, 0.55);
+  }
+
+  .app-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.7rem 1.1rem;
+    border-bottom: 1px solid #1d1d20;
+    background: #0d0d0e;
+  }
+
+  .app-ws {
+    color: #c9c9cd;
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+  .app-state {
+    color: #5c5c62;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+  }
+
+  .app-body {
+    display: grid;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  }
+
+  .app-side {
+    padding: 1.1rem 0.75rem;
+    border-right: 1px solid #1d1d20;
+  }
+
+  .app-side-label {
+    margin: 0 0 0.6rem;
+    padding: 0 0.55rem;
+    color: #5c5c62;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+  }
+
+  .app-item {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.48rem 0.55rem;
+    border-radius: 7px;
+  }
+
+  .app-item.is-active {
+    background: #1a1a1d;
+  }
+
+  .app-dot {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #3a3a40;
+  }
+
+  .app-item.is-active .app-dot {
+    background: #ededea;
+  }
+
+  .app-name {
+    flex: 1;
+    overflow: hidden;
+    color: #a9a9af;
+    font-size: 0.78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .app-item.is-active .app-name {
+    color: var(--text-white);
+  }
+
+  .app-time {
+    flex-shrink: 0;
+    color: #4c4c52;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+  }
+
+  .app-pane {
+    padding: 1.4rem 1.5rem;
+  }
+
+  .pane-kicker {
+    margin: 0 0 0.4rem;
+    color: #5c5c62;
+    font-family: var(--mono);
+    font-size: 0.64rem;
+  }
+
+  .pane-title {
+    margin: 0 0 1.1rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.02rem;
+    font-weight: 640;
+    letter-spacing: -0.02em;
+  }
+
+  .pane-line {
+    display: block;
+    height: 5px;
+    margin-bottom: 0.55rem;
+    border-radius: 3px;
+    background: #1e1e22;
+  }
+
+  .w60 { width: 60%; }
+  .w65 { width: 65%; }
+  .w75 { width: 75%; }
+  .w80 { width: 80%; }
+  .w85 { width: 85%; }
+  .w90 { width: 90%; }
+
+  .pane-meter {
+    height: 4px;
+    margin: 0.9rem 0 1rem;
+    border-radius: 2px;
+    background: #1e1e22;
+    overflow: hidden;
+  }
+
+  .pane-meter span {
+    display: block;
+    width: 60%;
+    height: 100%;
+    border-radius: 2px;
+    background: #8a8a90;
+  }
+
+  .phone {
+    position: absolute;
+    left: -1.4rem;
+    bottom: -1.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: 9.5rem;
+    padding: 1.1rem 1rem 1.3rem;
+    border: 1px solid #26262a;
+    border-radius: 20px;
+    background: #131315;
+    box-shadow: 0 24px 56px rgba(0, 0, 0, 0.55);
+    transform: rotate(-2.5deg);
+  }
+
+  .phone-url {
+    margin-bottom: 0.2rem;
+    color: #5c5c62;
+    font-family: var(--mono);
+    font-size: 0.58rem;
+  }
+
+  .phone-title {
+    margin-bottom: 0.3rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 0.8rem;
+    font-weight: 640;
+    letter-spacing: -0.015em;
+  }
+
+  .phone-line {
+    display: block;
+    height: 4px;
+    border-radius: 2px;
+    background: #232327;
+  }
+
+  /* ---------- Quiet columns ---------- */
+
+  .quiet {
+    padding: 5rem 0;
+    border-top: 1px solid #1a1a1d;
+  }
+
+  .quiet-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3rem;
+  }
+
+  .quiet-col h3 {
+    margin: 0 0 0.65rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.1rem;
+    font-weight: 640;
+    letter-spacing: -0.018em;
+  }
+
+  .quiet-col p {
+    margin: 0;
+    color: #8f8f94;
+    font-size: 0.92rem;
+    line-height: 1.64;
+  }
+
+  .quiet-col code {
+    padding: 0.1rem 0.4rem;
+    border-radius: 5px;
+    background: #151517;
+    border: 1px solid #222226;
+    color: #c9c9cd;
+    font-family: var(--mono);
+    font-size: 0.76em;
+  }
+
+  /* ---------- Command ---------- */
+
+  .line-flow {
+    padding: 5rem 0;
+    border-top: 1px solid #1a1a1d;
+  }
+
+  .line-flow h2 {
+    margin: 0 0 2rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(1.7rem, 2.8vw, 2.25rem);
+    font-weight: 640;
+    letter-spacing: -0.03em;
+  }
+
+  .command {
+    max-width: 40rem;
+  }
+
+  .command code {
+    display: block;
+    padding: 1rem 1.2rem;
+    border: 1px solid #222226;
+    border-radius: 10px;
+    background: #0d0d0e;
+    color: #d6d6d9;
+    font-family: var(--mono);
+    font-size: 0.84rem;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .command p {
+    margin: 1.1rem 0 0;
+    max-width: 30rem;
+    color: #8f8f94;
+    font-size: 0.96rem;
+    line-height: 1.62;
+  }
+
+  /* ---------- Agents ---------- */
+
+  .agents {
+    padding: 5rem 0;
+    border-top: 1px solid #1a1a1d;
+  }
+
+  .agents h2 {
+    margin: 0 0 1rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(1.6rem, 2.6vw, 2.1rem);
+    font-weight: 640;
+    letter-spacing: -0.028em;
+  }
+
+  .agents p {
+    max-width: 40rem;
+    margin: 0 0 2rem;
+    color: #8f8f94;
+    font-size: 1rem;
+    line-height: 1.65;
+  }
+
+  .agents-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .agents-chips span {
+    padding: 0.45rem 0.95rem;
+    border: 1px solid #232327;
+    border-radius: 999px;
+    color: #a9a9af;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+  }
+
+  .agents-chips .is-soon {
+    border-style: dashed;
+    color: #6a6a70;
+  }
+
+  /* ---------- CTA ---------- */
+
+  .cta {
+    padding: 5.5rem 0 6.5rem;
+    border-top: 1px solid #1a1a1d;
+    text-align: center;
+  }
+
+  .cta h2 {
+    max-width: 24ch;
+    margin: 0 auto 2rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(1.8rem, 3.2vw, 2.5rem);
+    font-weight: 640;
+    letter-spacing: -0.034em;
+    line-height: 1.14;
+    text-wrap: balance;
+  }
+
+  .cta-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.8rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .cta-note {
+    margin: 0;
+    color: #5c5c62;
+    font-family: var(--mono);
+    font-size: 0.74rem;
+  }
+
+  @media (max-width: 960px) {
+    .hero {
+      grid-template-columns: 1fr;
+      gap: 3.5rem;
+    }
+
+    .quiet-grid {
+      grid-template-columns: 1fr;
+      gap: 2.2rem;
+    }
+
+    .phone {
+      left: auto;
+      right: 1rem;
+      bottom: -1.5rem;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .app-body {
+      grid-template-columns: 1fr;
+    }
+
+    .app-side {
+      border-right: 0;
+      border-bottom: 1px solid #1d1d20;
+    }
+
+    .phone {
+      position: static;
+      width: min(10rem, 100%);
+      margin: -1.2rem 1rem 0 auto;
+      transform: rotate(0deg);
+    }
+
+    .hero-visual {
+      display: flex;
+      flex-direction: column;
+    }
+  }
+
+  /* ---------- Concept switcher (temporary, for design review) ---------- */
+
+  .concept-switch {
+    position: fixed;
+    right: 1.1rem;
+    bottom: 1.1rem;
+    z-index: 60;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.3rem 0.45rem;
+    border: 1px solid #26262a;
+    border-radius: 999px;
+    background: rgba(17, 17, 19, 0.92);
+    backdrop-filter: blur(8px);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+  }
+
+  .concept-switch span {
+    margin-right: 0.4rem;
+    color: #5c5c62;
+    letter-spacing: 0.06em;
+  }
+
+  .concept-switch a {
+    padding: 0.2rem 0.45rem;
+    border-radius: 999px;
+    color: #5c5c62;
+    text-decoration: none;
+  }
+
+  .concept-switch a:hover,
+  .concept-switch a:focus-visible {
+    color: var(--text-white);
+  }
+
+  .concept-switch a[aria-current="page"] {
+    background: #1e1e22;
+    color: var(--text-white);
+  }
+</style>
