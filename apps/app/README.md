@@ -43,8 +43,8 @@ Do not use a `VITE_` prefix. This token is only read by the server. The same
 value will later be added to the Railway staging service; it is not needed in
 Convex.
 
-The first UploadThing route is deliberately limited to one standalone HTML
-file up to 8 MB. The testing tier uses public-read objects, so anyone who
+The server upload endpoint is limited to one standalone HTML file up to 8 MB.
+The testing tier uses public-read objects, so anyone who
 obtains an UploadThing object URL may fetch it. The plansplease preview route
 still requires the signed-in workspace session. A future provider such as S3
 or R2 can implement the storage adapter in `src/lib/document-storage.ts`;
@@ -81,9 +81,7 @@ Health check: /api/health
 
 The current staging service is configured with that contract. It needs
 `CONVEX_URL`, `CONVEX_SITE_URL`, `UPLOADTHING_TOKEN`, and the Convex staging
-deployment's `SITE_URL` before GitHub OAuth and uploads can be tested. Set
-`UPLOADTHING_CALLBACK_URL` to the public staging URL plus
-`/api/uploadthing` only when automatic URL detection is not reliable.
+deployment's `SITE_URL` before GitHub OAuth and uploads can be tested.
 
 ## Current API surface
 
@@ -93,8 +91,8 @@ deployment's `SITE_URL` before GitHub OAuth and uploads can be tested. Set
   `continueCursor`. Pass `cursor=<continueCursor>` to read the next page. The
   limit must be between 1 and 100. Requests without pagination parameters
   retain the original array response for existing clients.
-- `GET` and `POST /api/uploadthing` expose the typed UploadThing file route.
-- `POST /api/documents` records the uploaded HTML file in Convex metadata.
+- `POST /api/documents/upload` uploads an HTML file and records its metadata
+  in one server request.
 - `GET` and `DELETE /api/documents/:id` view or remove a workspace document.
 - `/api/health` is the Railway health check.
 
