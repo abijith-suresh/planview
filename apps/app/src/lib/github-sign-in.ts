@@ -96,6 +96,9 @@ export const startGitHubSignIn = async (
       body: JSON.stringify({
         provider: "github",
         callbackURL,
+        ...(requestUrl.searchParams.has("oauth_query")
+          ? { oauth_query: requestUrl.searchParams.get("oauth_query") }
+          : {}),
       }),
       redirect: "manual",
     });

@@ -13,6 +13,7 @@ import type * as betterAuth_auth from "../betterAuth/auth.js";
 import type * as cliCredentials from "../cliCredentials.js";
 import type * as documents from "../documents.js";
 import type * as http from "../http.js";
+import type * as mcpDocuments from "../mcpDocuments.js";
 
 import type {
   ApiFromModules,
@@ -26,6 +27,7 @@ declare const fullApi: ApiFromModules<{
   cliCredentials: typeof cliCredentials;
   documents: typeof documents;
   http: typeof http;
+  mcpDocuments: typeof mcpDocuments;
 }>;
 
 /**

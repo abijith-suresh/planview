@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "node ../../scripts/prepare-auth-adapter.mjs",
+    "pretest": "node ../../scripts/prepare-auth-adapter.mjs",
+    "pretypecheck": "node ../../scripts/prepare-auth-adapter.mjs",
     "dev": "vite dev",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
@@ -13,11 +16,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@better-auth/cimd": "^1.7.6",
+    "@better-auth/mcp": "^1.7.6",
     "@convex-dev/better-auth": "^0.12.5",
+    "@modelcontextprotocol/server": "^2.1.0",
     "@solidjs/meta": "0.29.4",
     "@solidjs/router": "1.0.0",
     "@solidjs/start": "2.0.5",
-    "better-auth": "^1.6.33",
+    "better-auth": "^1.7.6",
     "convex": "^1.46.0",
     "nitro": "3.0.260903-beta",
     "solid-js": "1.9.15",
