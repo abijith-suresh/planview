@@ -15,51 +15,239 @@ import { appSignInUrl } from "../lib/app-url";
       <h1 id="cli-title">Give a local HTML file a URL.</h1>
       <p>
         Install the CLI when a coding agent makes a page you want to open on your machine. It serves
-        local snapshots through a loopback-only daemon and keeps the workflow out of your project.
+        local snapshots through a loopback-only daemon and keeps the workflow completely isolated
+        from your repository.
       </p>
     </div>
     <a class="page-action" href={appSignInUrl}>Sign in with GitHub</a>
   </section>
 
+  <!-- Installation Banner -->
   <section class="content-section" aria-labelledby="install-title">
-    <div class="command-card">
-      <div>
+    <div class="install-banner">
+      <div class="install-info">
         <h2 id="install-title">Install once. Preview as needed.</h2>
         <p>
-          The CLI accepts a standalone HTML file or a page folder with an <code>index.html</code>
-          entry point.
+          The CLI accepts a single standalone HTML file or a complete directory bundle with an
+          <code>index.html</code> entry point.
         </p>
       </div>
-      <pre class="command-block"><code><span>$</span> npm install --global @abijith-suresh/planview
-<span>$</span> planview publish --open ./report.html</code></pre>
+
+      <div class="install-code-box">
+        <div class="code-line">
+          <span class="code-comment"># Install globally via npm</span>
+          <code>npm install --global @abijith-suresh/planview</code>
+        </div>
+        <div class="code-line">
+          <span class="code-comment"># Publish an artifact and open immediately</span>
+          <code>planview publish --open ./report.html</code>
+        </div>
+      </div>
     </div>
   </section>
 
+  <!-- Commands Reference -->
   <section class="content-section" aria-labelledby="commands-title">
     <h2 id="commands-title">Commands you can use now.</h2>
 
-    <div class="content-grid">
-      <article class="content-card">
-        <h2>publish</h2>
-        <p>Write a local snapshot and print its URL. Add <code>--open</code> to open it in your browser.</p>
+    <div class="commands-grid">
+      <article class="command-card">
+        <div class="command-header">
+          <span class="command-name">publish</span>
+          <span class="command-tag">Main</span>
+        </div>
+        <p>
+          Writes a local snapshot of your HTML file or directory and prints its URL. Append
+          <code>--open</code> to launch it instantly in your system's default browser.
+        </p>
+        <div class="command-example">
+          <code>planview publish --open ./artifact.html</code>
+        </div>
       </article>
-      <article class="content-card">
-        <h2>get</h2>
-        <p>Read a snapshot back by its document id or exact local URL.</p>
+
+      <article class="command-card">
+        <div class="command-header">
+          <span class="command-name">get</span>
+          <span class="command-tag">Inspect</span>
+        </div>
+        <p>
+          Retrieve a local snapshot by its document identifier or exact loopback URL to inspect its
+          contents or verify its state.
+        </p>
+        <div class="command-example">
+          <code>planview get &lt;document-id&gt;</code>
+        </div>
       </article>
-      <article class="content-card">
-        <h2>start / stop</h2>
-        <p>Manage the local daemon explicitly when you want it running before an agent starts work.</p>
+
+      <article class="command-card">
+        <div class="command-header">
+          <span class="command-name">start / stop</span>
+          <span class="command-tag">Lifecycle</span>
+        </div>
+        <p>
+          Explicitly start or terminate the lightweight local daemon. Useful when orchestrating
+          automated agent pipelines or CI environments.
+        </p>
+        <div class="command-example">
+          <code>planview start &amp;&amp; planview stop</code>
+        </div>
       </article>
-      <article class="content-card">
-        <h2>status</h2>
-        <p>Check whether the local daemon is running without starting it.</p>
+
+      <article class="command-card">
+        <div class="command-header">
+          <span class="command-name">status</span>
+          <span class="command-tag">Daemon</span>
+        </div>
+        <p>
+          Check whether the background loopback daemon is active, its port binding, and memory
+          footprint without launching a new process.
+        </p>
+        <div class="command-example">
+          <code>planview status</code>
+        </div>
       </article>
     </div>
 
     <p class="page-note">
-      The current CLI is published as <code>@abijith-suresh/planview</code>. The product name and
-      package name may change before the public release.
+      The current CLI is published on npm as <code>@abijith-suresh/planview</code>. Complete source
+      code is available on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
     </p>
   </section>
 </SiteLayout>
+
+<style>
+  .install-banner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(22rem, 1.2fr);
+    align-items: center;
+    gap: 2.5rem;
+    padding: 2.5rem;
+    border: 1px solid var(--night-border);
+    border-radius: var(--radius-lg);
+    background: var(--night-card);
+  }
+
+  .install-info h2 {
+    margin: 0 0 0.75rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .install-info p {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+
+  .install-code-box {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-radius: 8px;
+    background: var(--night);
+    border: 1px solid var(--night-border);
+  }
+
+  .code-line {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .code-comment {
+    color: var(--night-subtle);
+    font-size: 0.78rem;
+    font-family: var(--mono);
+  }
+
+  .code-line code {
+    color: var(--mint);
+    font-family: var(--mono);
+    font-size: 0.88rem;
+  }
+
+  .commands-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.75rem;
+  }
+
+  .command-card {
+    padding: 2rem;
+    border: 1px solid var(--night-border);
+    border-radius: var(--radius-lg);
+    background: var(--night-card);
+    transition: all 160ms ease;
+  }
+
+  .command-card:hover {
+    border-color: var(--night-border-hover);
+  }
+
+  .command-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .command-name {
+    color: var(--text-white);
+    font-family: var(--mono);
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+
+  .command-tag {
+    padding: 0.2rem 0.55rem;
+    border-radius: 4px;
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    color: var(--night-muted);
+    font-size: 0.74rem;
+    font-weight: 600;
+  }
+
+  .command-card p {
+    margin: 0 0 1.25rem;
+    color: var(--night-muted);
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+
+  .command-example {
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    background: var(--night);
+    border: 1px solid var(--night-border);
+    overflow-x: auto;
+  }
+
+  .command-example code {
+    padding: 0;
+    background: none;
+    border: none;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    white-space: nowrap;
+  }
+
+
+  @media (max-width: 800px) {
+    .install-banner {
+      grid-template-columns: 1fr;
+    }
+
+    .commands-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
