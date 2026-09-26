@@ -176,6 +176,17 @@ const loadCredentials = async (profile?: string): Promise<Credentials | undefine
   }
 };
 
+const revokeCloudCredential = async (credentials: Credentials) => {
+  const response = await fetch(`${credentials.cloudUrl}/api/cli/session`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${credentials.token}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw new Error("The cloud could not revoke this computer's credential. Try again.");
+  }
+};
+
 export const removeCloudCredentials = async (profile?: string) => {
   const path = credentialPath(profile);
   const stats = await lstat(path).catch((cause: NodeJS.ErrnoException) => {
@@ -186,16 +197,7 @@ export const removeCloudCredentials = async (profile?: string) => {
   if (stats) {
     assertCurrentUserFile(stats, "the cloud credentials file");
     const credentials = await loadCredentials(profile);
-    if (credentials) {
-      const response = await fetch(`${credentials.cloudUrl}/api/cli/session`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${credentials.token}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!response.ok) {
-        throw new Error("The cloud could not revoke this computer's credential. Try again.");
-      }
-    }
+    if (credentials) await revokeCloudCredential(credentials);
     await unlink(path);
   }
 };
@@ -358,11 +360,22 @@ export const loginToCloud = async (options: {
     await options.openBrowser(signInUrl.toString());
     await options.writeStatus("Waiting for you to authorize the local CLI…\n");
     const token = await tokenPromise;
-    await saveCredentials(options.profile, {
+    const credentials: Credentials = {
       version: 1,
       cloudUrl,
       token: `${CLI_CREDENTIAL_PREFIX}${token}`,
-    });
+    };
+    try {
+      const previous = await loadCredentials(options.profile);
+      if (previous?.cloudUrl === credentials.cloudUrl && previous.token === credentials.token) {
+        return { cloudUrl };
+      }
+      if (previous) await revokeCloudCredential(previous);
+      await saveCredentials(options.profile, credentials);
+    } catch (cause) {
+      await revokeCloudCredential(credentials).catch(() => undefined);
+      throw cause;
+    }
     return { cloudUrl };
   } finally {
     clearTimeout(timer);
