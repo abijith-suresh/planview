@@ -170,25 +170,25 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     /* Canvas — warm graphite */
     --night: #0c0c0e;
     --night-soft: #0f0f11;
-    --night-card: #121213;
+    --night-card: #121214;
     --night-card-elevated: #161618;
 
-    /* Hairlines */
-    --night-border: #201f1e;
-    --night-border-hover: #2e2d2a;
+    /* Hairlines — alpha on the canvas */
+    --night-border: rgba(255, 255, 255, 0.08);
+    --night-border-hover: rgba(255, 255, 255, 0.16);
 
     /* Text */
-    --night-muted: #a09d97;
-    --night-subtle: #6e6b66;
-    --text: #d8d5d0;
-    --text-white: #f7f5f1;
+    --night-muted: #a1a1a6;
+    --night-subtle: #707076;
+    --text: #d9d9dc;
+    --text-white: #f6f5f3;
     --ink: #0c0c0e;
 
-    /* Accent — one amber, used sparingly */
-    --mint: #e9a23b;
-    --mint-hover: #f2b658;
-    --mint-soft: rgba(233, 162, 59, 0.07);
-    --mint-border: rgba(233, 162, 59, 0.24);
+    /* Accent — one clay coral, used sparingly */
+    --mint: #e5795a;
+    --mint-hover: #f09377;
+    --mint-soft: rgba(229, 121, 90, 0.08);
+    --mint-border: rgba(229, 121, 90, 0.26);
 
     --mono: "Fragment Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     --sans: "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -224,7 +224,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
   }
 
   ::selection {
-    background: rgba(233, 162, 59, 0.2);
+    background: rgba(229, 121, 90, 0.22);
     color: var(--text-white);
   }
 
@@ -233,8 +233,19 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
   }
 
   .site-shell {
-    width: min(calc(100% - 3rem), 72rem);
+    width: min(calc(100% - 3rem), 77.5rem);
     margin: 0 auto;
+  }
+
+  /* Film grain — barely there, keeps large dark surfaces from feeling flat */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    pointer-events: none;
+    opacity: 0.028;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
 
   /* Accessibility skip link required by test suite */
@@ -266,7 +277,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
     position: sticky;
     top: 0;
     z-index: 30;
-    background: rgba(12, 12, 14, 0.82);
+    background: rgba(12, 12, 14, 0.78);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--night-border);
@@ -342,7 +353,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
 
   .site-nav-cta:hover,
   .site-nav-cta:focus-visible {
-    border-color: #3a3833;
+    border-color: rgba(255, 255, 255, 0.2);
     background: var(--night-card);
   }
 
@@ -400,7 +411,7 @@ const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/
 
   .page-action:hover,
   .page-action:focus-visible {
-    border-color: #3a3833;
+    border-color: rgba(255, 255, 255, 0.2);
     background: var(--night-card);
   }
 
