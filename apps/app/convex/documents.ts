@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 
 import { internalQuery, mutation, query } from "./_generated/server";
 
@@ -26,6 +27,19 @@ export const list = query({
       .withIndex("by_owner_createdAt", (q) => q.eq("ownerId", ownerId))
       .order("desc")
       .take(100);
+  },
+});
+
+export const listPage = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { paginationOpts }) => {
+    const ownerId = await requireOwnerId(ctx);
+
+    return await ctx.db
+      .query("documents")
+      .withIndex("by_owner_createdAt", (q) => q.eq("ownerId", ownerId))
+      .order("desc")
+      .paginate(paginationOpts);
   },
 });
 
