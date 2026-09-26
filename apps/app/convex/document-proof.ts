@@ -28,9 +28,6 @@ const createMessage = (input: CreateDocumentProofInput, expiresAt: number) =>
     expiresAt,
   ]);
 
-const removeMessage = (ownerId: string, id: string, expiresAt: number) =>
-  JSON.stringify(["removeMetadata", ownerId, id, expiresAt]);
-
 const importKey = (secret: string) =>
   crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
     "sign",
@@ -81,23 +78,3 @@ export const verifyCreateDocumentProof = (
   proof: DocumentMutationProof,
   now = Date.now()
 ) => verify(secret, proof, createMessage(input, proof.expiresAt), now);
-
-export const signRemoveDocumentProof = async (secret: string, ownerId: string, id: string) => {
-  const expiresAt = Date.now() + PROOF_LIFETIME_MS;
-  const signature = new Uint8Array(
-    await crypto.subtle.sign(
-      "HMAC",
-      await importKey(secret),
-      encoder.encode(removeMessage(ownerId, id, expiresAt))
-    )
-  );
-  return { expiresAt, signature: toHex(signature) };
-};
-
-export const verifyRemoveDocumentProof = (
-  secret: string,
-  ownerId: string,
-  id: string,
-  proof: DocumentMutationProof,
-  now = Date.now()
-) => verify(secret, proof, removeMessage(ownerId, id, proof.expiresAt), now);

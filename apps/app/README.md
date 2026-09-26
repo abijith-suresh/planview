@@ -39,9 +39,10 @@ copy the app's server token into `apps/app/.env.local`:
 UPLOADTHING_TOKEN=<token-from-uploadthing>
 ```
 
-Do not use a `VITE_` prefix. This token is only read by the server. The same
-value will later be added to the Railway staging service; it is not needed in
-Convex.
+Do not use a `VITE_` prefix. This token is only read by servers. The same
+value must be set on the Railway app service and its Convex deployment:
+Convex uses it to delete UploadThing files in the background. Deploy the
+Convex variable before enabling this deletion flow.
 
 The server upload endpoint is limited to one standalone HTML file up to 8 MB.
 The testing tier uses public-read objects, so anyone who
@@ -71,7 +72,7 @@ deployment uses the same functions and has its own values for these variables.
 
 Generate a random `DOCUMENT_MUTATION_SECRET` of at least 32 bytes and set the
 same value in the app server environment and its Convex deployment. It signs
-short-lived proofs for metadata creation and metadata-only deletion. Uploads
+short-lived proofs for metadata creation. Uploads
 will fail closed until both sides have this value.
 
 ## Deployment contract
@@ -98,7 +99,12 @@ deployment's `SITE_URL` before GitHub OAuth and uploads can be tested.
   retain the original array response for existing clients.
 - `POST /api/documents/upload` uploads an HTML file and records its metadata
   in one server request.
-- `GET` and `DELETE /api/documents/:id` view or remove a workspace document.
+- `GET /api/documents/:id` views a workspace document.
+- `DELETE /api/documents/:id` returns `202 Accepted` for UploadThing documents
+  after marking them hidden. A Convex worker deletes the file and metadata in
+  the background. Failed attempts use exponential backoff, and a one-minute
+  reconciliation job recovers interrupted workers. Legacy Convex-stored
+  documents are deleted in the mutation and return `204 No Content`.
 - `/api/health` is the Railway health check.
 
 Document previews are authorized through the user's Convex session and served
