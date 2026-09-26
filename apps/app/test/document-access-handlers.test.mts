@@ -23,7 +23,6 @@ type HandlerCalls = {
   events: string[];
   storageLookups: string[];
   readUrlKeys: string[];
-  deletedKeys: string[];
   fetches: Array<{ input: string; authorization: string | null }>;
 };
 
@@ -36,7 +35,6 @@ function createHandlers(
     events: [] as string[],
     storageLookups: [] as string[],
     readUrlKeys: [] as string[],
-    deletedKeys: [] as string[],
     fetches: [] as Array<{ input: string; authorization: string | null }>,
   };
   const resolvedOverrides = typeof overrides === "function" ? overrides(calls) : overrides;
@@ -62,7 +60,7 @@ function createHandlers(
         },
         delete: async (key) => {
           calls.events.push("delete-object");
-          calls.deletedKeys.push(key);
+          assert.equal(key, storageKey);
         },
       };
     },
@@ -79,11 +77,9 @@ function createHandlers(
       calls.events.push("proxy-response");
       return response;
     },
-    removeDocument: async () => {
-      calls.events.push("remove-document");
-    },
-    removeDocumentMetadata: async () => {
-      calls.events.push("remove-metadata");
+    requestDeletion: async () => {
+      calls.events.push("request-deletion");
+      return "accepted";
     },
     missingServerConfigurationResponse: () =>
       Response.json({ error: "backend unavailable" }, { status: 503 }),
@@ -217,80 +213,57 @@ test("proxies legacy Convex-backed documents with the authenticated token", asyn
   assert.deepEqual(calls.storageLookups, []);
 });
 
-test("deletes the remote object before its Convex metadata", async () => {
+test("accepts deletion without contacting storage in the request", async () => {
   const { calls, remove } = createHandlers();
 
   const response = await remove(event());
 
-  assert.equal(response.status, 204);
-  assert.deepEqual(calls.deletedKeys, [storageKey]);
-  assert.deepEqual(calls.events, [
-    "authenticate",
-    "get-document",
-    "get-storage",
-    "delete-object",
-    "remove-metadata",
-  ]);
+  assert.equal(response.status, 202);
+  assert.deepEqual(calls.events, ["authenticate", "request-deletion"]);
+  assert.deepEqual(calls.storageLookups, []);
 });
 
-test("keeps Convex metadata when deleting the remote object fails", async () => {
+test("returns not found when deletion cannot access the document", async () => {
   const { calls, remove } = createHandlers((calls) => ({
-    getDocumentStorage: () => ({
-      provider: "uploadthing",
-      getReadUrl: async () => "https://storage.example/document.html",
-      delete: async () => {
-        calls.events.push("delete-object");
-        throw new Error("storage deletion failed");
-      },
-    }),
+    requestDeletion: async () => {
+      calls.events.push("request-deletion");
+      return "not_found";
+    },
+  }));
+
+  const response = await remove(event());
+
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: "Document not found" });
+  assert.deepEqual(calls.events, ["authenticate", "request-deletion"]);
+});
+
+test("does not acknowledge deletion if Convex cannot record it", async () => {
+  const { calls, remove } = createHandlers((calls) => ({
+    requestDeletion: async () => {
+      calls.events.push("request-deletion");
+      throw new Error("Convex unavailable");
+    },
   }));
 
   const response = await remove(event());
 
   assert.equal(response.status, 500);
-  assert.deepEqual(await response.json(), { error: "storage deletion failed" });
-  assert.deepEqual(calls.events, [
-    "authenticate",
-    "get-document",
-    "delete-object",
-    "error-response",
-  ]);
+  assert.deepEqual(await response.json(), { error: "Convex unavailable" });
+  assert.deepEqual(calls.events, ["authenticate", "request-deletion", "error-response"]);
 });
 
-test("reports metadata deletion failure after the remote object is removed", async () => {
-  let metadataDeletionAttempted = false;
-  const { calls, remove } = createHandlers({
-    removeDocumentMetadata: async () => {
-      metadataDeletionAttempted = true;
-      throw new Error("metadata deletion failed");
-    },
-  });
-
-  const response = await remove(event());
-
-  assert.equal(response.status, 500);
-  assert.deepEqual(await response.json(), { error: "metadata deletion failed" });
-  assert.equal(metadataDeletionAttempted, true);
-  assert.deepEqual(calls.events, [
-    "authenticate",
-    "get-document",
-    "get-storage",
-    "delete-object",
-    "error-response",
-  ]);
-});
-
-test("uses the legacy Convex removal mutation when the document has no external storage key", async () => {
+test("returns 204 when Convex deletes a legacy stored file atomically", async () => {
   const { calls, remove } = createHandlers((calls) => ({
-    getDocument: async () => {
-      calls.events.push("get-document");
-      return { contentType: "text/html", storageProvider: "uploadthing" };
+    requestDeletion: async () => {
+      calls.events.push("request-deletion");
+      return "deleted";
     },
   }));
 
   const response = await remove(event());
 
   assert.equal(response.status, 204);
-  assert.deepEqual(calls.events, ["authenticate", "get-document", "remove-document"]);
+  assert.deepEqual(calls.events, ["authenticate", "request-deletion"]);
   assert.deepEqual(calls.storageLookups, []);
 });

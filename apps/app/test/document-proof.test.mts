@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  signCreateDocumentProof,
-  signRemoveDocumentProof,
-  verifyCreateDocumentProof,
-  verifyRemoveDocumentProof,
-} from "../convex/document-proof.ts";
+import { signCreateDocumentProof, verifyCreateDocumentProof } from "../convex/document-proof.ts";
 
 const secret = "test-secret-for-document-mutation-proofs";
 const createInput = {
@@ -33,30 +28,6 @@ test("create proof binds the owner and every stored metadata field", async () =>
   assert.equal(await verifyCreateDocumentProof("wrong-secret", createInput, proof), false);
   assert.equal(
     await verifyCreateDocumentProof(secret, createInput, proof, proof.expiresAt + 1),
-    false
-  );
-});
-
-test("remove proof binds the owner and document ID", async () => {
-  const proof = await signRemoveDocumentProof(secret, "owner_123", "document_123");
-
-  assert.equal(await verifyRemoveDocumentProof(secret, "owner_123", "document_123", proof), true);
-  assert.equal(
-    await verifyRemoveDocumentProof(secret, "owner_other", "document_123", proof),
-    false
-  );
-  assert.equal(
-    await verifyRemoveDocumentProof(secret, "owner_123", "document_other", proof),
-    false
-  );
-  assert.equal(
-    await verifyRemoveDocumentProof(
-      secret,
-      "owner_123",
-      "document_123",
-      proof,
-      proof.expiresAt + 1
-    ),
     false
   );
 });

@@ -1,12 +1,20 @@
 import { v } from "convex/values";
-import { paginationOptsValidator } from "convex/server";
+import { makeFunctionReference, paginationOptsValidator } from "convex/server";
 
-import { internalQuery, mutation, query } from "./_generated/server";
-import { verifyCreateDocumentProof, verifyRemoveDocumentProof } from "./document-proof";
+import type { Id } from "./_generated/dataModel";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { verifyCreateDocumentProof } from "./document-proof";
 
 const uploadThingLocatorPrefix = (ownerId: string) => `uploadthing-custom-id:${ownerId}:`;
 const maxHtmlSizeBytes = 8 * 1024 * 1024;
 const proofValidator = v.object({ expiresAt: v.number(), signature: v.string() });
+const deletionWorker = makeFunctionReference<"action", { jobId: Id<"deletionJobs"> }>(
+  "documentDeletion:processDeletion"
+);
+const deletionLeaseMs = 11 * 60_000;
+
+export const deletionRetryDelay = (attempts: number) =>
+  Math.min(60 * 60_000, 30_000 * 2 ** Math.min(attempts - 1, 7));
 
 const requireMutationSecret = () => {
   const secret = process.env["DOCUMENT_MUTATION_SECRET"];
@@ -35,7 +43,9 @@ export const list = query({
 
     return await ctx.db
       .query("documents")
-      .withIndex("by_owner_createdAt", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_owner_active_createdAt", (q) =>
+        q.eq("ownerId", ownerId).eq("deletionRequestedAt", undefined)
+      )
       .order("desc")
       .take(100);
   },
@@ -48,7 +58,9 @@ export const listPage = query({
 
     return await ctx.db
       .query("documents")
-      .withIndex("by_owner_createdAt", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_owner_active_createdAt", (q) =>
+        q.eq("ownerId", ownerId).eq("deletionRequestedAt", undefined)
+      )
       .order("desc")
       .paginate(paginationOpts);
   },
@@ -100,7 +112,12 @@ export const create = mutation({
         q.eq("ownerId", ownerId).eq("storageKey", args.storageKey)
       )
       .first();
-    if (existing) return existing._id;
+    if (existing) {
+      if (existing.deletionRequestedAt !== undefined) {
+        throw new Error("Document is being deleted");
+      }
+      return existing._id;
+    }
 
     const now = Date.now();
 
@@ -117,14 +134,34 @@ export const create = mutation({
   },
 });
 
-export const remove = mutation({
+export const requestDeletion = mutation({
   args: { id: v.id("documents") },
   handler: async (ctx, args) => {
     const ownerId = await requireOwnerId(ctx);
     const document = await ctx.db.get(args.id);
 
     if (!document || document.ownerId !== ownerId) {
-      throw new Error("Document not found");
+      return "not_found" as const;
+    }
+
+    if (document.deletionRequestedAt !== undefined) {
+      return "accepted" as const;
+    }
+
+    if (document.storageProvider && document.storageKey) {
+      if (document.storageProvider !== "uploadthing") {
+        throw new Error("Unsupported document storage provider");
+      }
+      const now = Date.now();
+      await ctx.db.patch(args.id, { deletionRequestedAt: now });
+      const jobId = await ctx.db.insert("deletionJobs", {
+        documentId: args.id,
+        storageKey: document.storageKey,
+        nextAttemptAt: now,
+        attempts: 0,
+      });
+      await ctx.scheduler.runAfter(0, deletionWorker, { jobId });
+      return "accepted" as const;
     }
 
     if (document.storageId) {
@@ -132,6 +169,7 @@ export const remove = mutation({
     }
 
     await ctx.db.delete(args.id);
+    return "deleted" as const;
   },
 });
 
@@ -141,7 +179,7 @@ export const get = query({
     const ownerId = await requireOwnerId(ctx);
     const document = await ctx.db.get(args.id);
 
-    if (!document || document.ownerId !== ownerId) {
+    if (!document || document.ownerId !== ownerId || document.deletionRequestedAt !== undefined) {
       return null;
     }
 
@@ -149,27 +187,51 @@ export const get = query({
   },
 });
 
-// External storage is deleted by the application server through its provider
-// adapter. This mutation removes only the Convex metadata after that succeeds.
-export const removeMetadata = mutation({
-  args: { id: v.id("documents"), proof: proofValidator },
+export const claimDeletion = internalMutation({
+  args: { jobId: v.id("deletionJobs") },
   handler: async (ctx, args) => {
-    const ownerId = await requireOwnerId(ctx);
-    const document = await ctx.db.get(args.id);
+    const job = await ctx.db.get(args.jobId);
+    const now = Date.now();
+    if (!job || job.nextAttemptAt > now) return null;
 
-    if (!document || document.ownerId !== ownerId) {
-      throw new Error("Document not found");
+    const attempts = job.attempts + 1;
+    await ctx.db.patch(args.jobId, { attempts, nextAttemptAt: now + deletionLeaseMs });
+    return { attempts, storageKey: job.storageKey };
+  },
+});
+
+export const finishDeletion = internalMutation({
+  args: { jobId: v.id("deletionJobs"), attempts: v.number() },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job || job.attempts !== args.attempts) return;
+    const document = await ctx.db.get(job.documentId);
+    if (document) await ctx.db.delete(job.documentId);
+    await ctx.db.delete(args.jobId);
+  },
+});
+
+export const deferDeletion = internalMutation({
+  args: { jobId: v.id("deletionJobs"), attempts: v.number() },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job || job.attempts !== args.attempts) return;
+    const delay = deletionRetryDelay(job.attempts);
+    await ctx.db.patch(args.jobId, { nextAttemptAt: Date.now() + delay });
+    await ctx.scheduler.runAfter(delay, deletionWorker, { jobId: args.jobId });
+  },
+});
+
+export const reconcileDeletions = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const due = await ctx.db
+      .query("deletionJobs")
+      .withIndex("by_nextAttemptAt", (q) => q.lte("nextAttemptAt", Date.now()))
+      .take(100);
+    for (const job of due) {
+      await ctx.scheduler.runAfter(0, deletionWorker, { jobId: job._id });
     }
-
-    const validProof = await verifyRemoveDocumentProof(
-      requireMutationSecret(),
-      ownerId,
-      args.id,
-      args.proof
-    );
-    if (!validProof) throw new Error("Invalid document mutation proof");
-
-    await ctx.db.delete(args.id);
   },
 });
 
@@ -181,7 +243,11 @@ export const getContent = internalQuery({
   handler: async (ctx, args) => {
     const document = await ctx.db.get(args.id);
 
-    if (!document || document.ownerId !== args.ownerId) {
+    if (
+      !document ||
+      document.ownerId !== args.ownerId ||
+      document.deletionRequestedAt !== undefined
+    ) {
       return null;
     }
 
