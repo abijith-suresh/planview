@@ -67,10 +67,9 @@ function createUploadRequest(
   return new Request("http://localhost/api/documents/upload", init);
 }
 
-test("requires a bounded Content-Length before authentication or reading the body", async (t) => {
+test("rejects invalid or oversized Content-Length before authentication", async (t) => {
   for (const [name, contentLength, expectedStatus] of [
-    ["missing", null, 411],
-    ["not numeric", "not-a-number", 411],
+    ["not numeric", "not-a-number", 400],
     ["over the request limit", String(uploadRequestSizeLimit + 1), 413],
   ] as const) {
     await t.test(name, async () => {
@@ -87,6 +86,29 @@ test("requires a bounded Content-Length before authentication or reading the bod
       assert.equal(calls.metadata.length, 0);
     });
   }
+});
+
+test("accepts browser uploads without Content-Length", async () => {
+  const { calls, handler } = createHandler();
+  const response = await handler({ request: createUploadRequest({ contentLength: null }) });
+
+  assert.equal(response.status, 201);
+  assert.equal(calls.uploads.length, 1);
+  assert.equal(calls.metadata.length, 1);
+});
+
+test("rejects a streamed body larger than the request cap", async () => {
+  const { calls, handler } = createHandler();
+  const response = await handler({
+    request: new Request("http://localhost/api/documents/upload", {
+      method: "POST",
+      body: new Blob([new Uint8Array(uploadRequestSizeLimit + 1)]),
+    }),
+  });
+
+  assert.equal(response.status, 413);
+  assert.equal(calls.uploads.length, 0);
+  assert.equal(calls.metadata.length, 0);
 });
 
 test("rejects invalid titles, multiple files, non-HTML files, and files larger than 8 MiB", async (t) => {

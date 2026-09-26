@@ -9,7 +9,6 @@ import {
   type DocumentRecord,
   getErrorMessage,
 } from "~/lib/documents";
-import { createUploadThing } from "~/lib/uploadthing";
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
 export default function Documents() {
@@ -24,13 +23,6 @@ export default function Documents() {
   const [actionMessage, setActionMessage] = createSignal("");
   let fileInput: HTMLInputElement | undefined;
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
-  let latestUploadError = "";
-  const htmlUploader = createUploadThing("htmlDocument", {
-    onUploadError: (error) => {
-      latestUploadError = error.message;
-      setUploadError(error.message);
-    },
-  });
 
   const showActionMessage = (message: string) => {
     setActionMessage(message);
@@ -76,7 +68,6 @@ export default function Documents() {
 
   const uploadDocument = async (event: SubmitEvent) => {
     event.preventDefault();
-    latestUploadError = "";
     setUploadError("");
 
     const file = selectedFile() ?? fileInput?.files?.[0];
@@ -95,25 +86,12 @@ export default function Documents() {
 
     try {
       const title = file.name.replace(/\.html$/i, "").trim() || "Untitled HTML";
-      const uploadResults = await htmlUploader.startUpload([file], { title });
-      const uploaded = uploadResults?.[0];
-      const uploadMetadata = uploaded?.serverData;
-
-      if (!uploaded || !uploadMetadata?.ownerId || !uploadMetadata.customId) {
-        throw new Error(latestUploadError || "The HTML file could not be uploaded.");
-      }
-
-      const documentResponse = await fetch("/api/documents", {
+      const formData = new FormData();
+      formData.set("title", title);
+      formData.set("file", file);
+      const documentResponse = await fetch("/api/documents/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          storageProvider: "uploadthing",
-          uploadOwnerId: uploadMetadata.ownerId,
-          uploadCustomId: uploadMetadata.customId,
-          contentType: "text/html",
-          sizeBytes: uploaded.size,
-        }),
+        body: formData,
       });
 
       if (!documentResponse.ok) throw new Error(await getErrorMessage(documentResponse));
