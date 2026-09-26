@@ -11,6 +11,8 @@ const handlers = createDocumentCollectionHandlers({
   getAuthedClient: getAuthedConvexClient,
   getCurrentUser: (client) => client.query(api.auth.currentUser, {}),
   listDocuments: (client) => client.query(api.documents.list, {}),
+  listDocumentPage: (client, paginationOpts) =>
+    client.query(api.documents.listPage, { paginationOpts }),
   isStorageConfigured: isDocumentStorageConfigured,
   createMetadata: (client, input) => client.mutation(api.documents.create, input),
   deleteStorageObject: (key) => getDocumentStorage("uploadthing").delete(key),

@@ -18,6 +18,10 @@ export type DocumentCollectionHandlerDependencies<Client> = {
   }>;
   getCurrentUser(client: Client): Promise<{ subject: string } | null | undefined>;
   listDocuments(client: Client): Promise<unknown>;
+  listDocumentPage(
+    client: Client,
+    options: { cursor: string | null; numItems: number }
+  ): Promise<unknown>;
   isStorageConfigured(): boolean;
   createMetadata(client: Client, input: DocumentCollectionMetadata): Promise<string>;
   deleteStorageObject(key: string): Promise<void>;
@@ -54,6 +58,22 @@ export function createDocumentCollectionHandlers<Client>(
   dependencies: DocumentCollectionHandlerDependencies<Client>
 ) {
   const GET = async ({ request }: { request: Request }) => {
+    const searchParams = new URL(request.url).searchParams;
+    const hasPagination = searchParams.has("limit") || searchParams.has("cursor");
+    const limit = searchParams.get("limit") ?? "50";
+    const cursor = searchParams.get("cursor");
+
+    if (
+      hasPagination &&
+      (searchParams.getAll("limit").length > 1 ||
+        searchParams.getAll("cursor").length > 1 ||
+        !/^[1-9]\d*$/.test(limit) ||
+        Number(limit) > 100 ||
+        cursor === "")
+    ) {
+      return Response.json({ error: "Invalid pagination parameters" }, { status: 400 });
+    }
+
     try {
       const { client, token } = await dependencies.getAuthedClient(request);
 
@@ -61,7 +81,11 @@ export function createDocumentCollectionHandlers<Client>(
         return Response.json({ error: "Authentication required" }, { status: 401 });
       }
 
-      return Response.json(await dependencies.listDocuments(client));
+      return Response.json(
+        hasPagination
+          ? await dependencies.listDocumentPage(client, { cursor, numItems: Number(limit) })
+          : await dependencies.listDocuments(client)
+      );
     } catch (error) {
       return errorResponse(dependencies, error);
     }

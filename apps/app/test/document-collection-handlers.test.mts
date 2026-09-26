@@ -25,6 +25,7 @@ function createHandlers(
     getAuthedClient: 0,
     getCurrentUser: 0,
     listDocuments: 0,
+    pageOptions: [] as Array<{ cursor: string | null; numItems: number }>,
     metadata: [] as DocumentCollectionMetadata[],
     deletedKeys: [] as string[],
   };
@@ -40,6 +41,14 @@ function createHandlers(
     listDocuments: async () => {
       calls.listDocuments += 1;
       return [{ _id: "document_123", title: "My document" }];
+    },
+    listDocumentPage: async (_client, options) => {
+      calls.pageOptions.push(options);
+      return {
+        page: [{ _id: "document_123", title: "My document" }],
+        isDone: true,
+        continueCursor: "end",
+      };
     },
     isStorageConfigured: () => true,
     createMetadata: async (_client, input) => {
@@ -76,6 +85,54 @@ test("lists documents for an authenticated request", async () => {
   assert.deepEqual(await response.json(), [{ _id: "document_123", title: "My document" }]);
   assert.equal(calls.getAuthedClient, 1);
   assert.equal(calls.listDocuments, 1);
+});
+
+test("returns an owner-scoped cursor page when pagination is requested", async () => {
+  const { calls, handlers } = createHandlers();
+  const response = await handlers.GET({
+    request: new Request("http://localhost/api/documents?limit=25&cursor=next-page"),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    page: [{ _id: "document_123", title: "My document" }],
+    isDone: true,
+    continueCursor: "end",
+  });
+  assert.deepEqual(calls.pageOptions, [{ cursor: "next-page", numItems: 25 }]);
+  assert.equal(calls.listDocuments, 0);
+});
+
+test("defaults a cursor request to 50 documents", async () => {
+  const { calls, handlers } = createHandlers();
+  const response = await handlers.GET({
+    request: new Request("http://localhost/api/documents?cursor=next-page"),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls.pageOptions, [{ cursor: "next-page", numItems: 50 }]);
+});
+
+test("rejects invalid pagination before querying documents", async () => {
+  for (const query of [
+    "limit=0",
+    "limit=101",
+    "limit=1.5",
+    "limit=abc",
+    "cursor=",
+    "limit=1&limit=2",
+  ]) {
+    const { calls, handlers } = createHandlers();
+    const response = await handlers.GET({
+      request: new Request(`http://localhost/api/documents?${query}`),
+    });
+
+    assert.equal(response.status, 400, query);
+    assert.deepEqual(await response.json(), { error: "Invalid pagination parameters" });
+    assert.equal(calls.getAuthedClient, 0);
+    assert.equal(calls.listDocuments, 0);
+    assert.deepEqual(calls.pageOptions, []);
+  }
 });
 
 test("does not list documents without an authenticated token", async () => {
