@@ -16,7 +16,7 @@ export type DocumentUploadHandlerDependencies<Client> = {
   getCurrentUser(client: Client): Promise<{ subject: string } | null | undefined>;
   isStorageConfigured(): boolean;
   uploadFile(input: { file: File; customId: string }): Promise<void>;
-  createMetadata(client: Client, input: DocumentUploadMetadata): Promise<string>;
+  createMetadata(client: Client, input: DocumentUploadMetadata, ownerId: string): Promise<string>;
   deleteStorageObject(key: string): Promise<void>;
   reportCompensationFailure?: DocumentUploadCompensationReporter;
   createUploadId(): string;
@@ -137,13 +137,17 @@ export function createDocumentUploadHandler<Client>(
 
       let id: string;
       try {
-        id = await dependencies.createMetadata(client, {
-          title,
-          storageProvider: "uploadthing",
-          storageKey,
-          contentType: "text/html",
-          sizeBytes: file.size,
-        });
+        id = await dependencies.createMetadata(
+          client,
+          {
+            title,
+            storageProvider: "uploadthing",
+            storageKey,
+            contentType: "text/html",
+            sizeBytes: file.size,
+          },
+          identity.subject
+        );
       } catch (error) {
         try {
           await dependencies.deleteStorageObject(storageKey);

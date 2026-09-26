@@ -9,6 +9,7 @@ import {
 } from "~/lib/convex-server";
 import { getDocumentStorage, isDocumentStorageConfigured } from "~/lib/document-storage";
 import { createDocumentUploadHandler } from "~/lib/document-upload-handler";
+import { createDocumentProof } from "~/lib/document-mutation-proof";
 
 export const POST = createDocumentUploadHandler({
   getAuthedClient: getAuthedConvexClient,
@@ -32,7 +33,11 @@ export const POST = createDocumentUploadHandler({
       throw new Error(result.error?.message ?? "The HTML file could not be stored.");
     }
   },
-  createMetadata: (client, input) => client.mutation(api.documents.create, input),
+  createMetadata: async (client, input, ownerId) =>
+    client.mutation(api.documents.create, {
+      ...input,
+      proof: await createDocumentProof({ ownerId, ...input }),
+    }),
   deleteStorageObject: (key) => getDocumentStorage("uploadthing").delete(key),
   createUploadId: randomUUID,
   missingServerConfigurationResponse,
