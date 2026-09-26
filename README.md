@@ -1,7 +1,7 @@
 # Planview
 
 Planview is a TypeScript ESM monorepo for previewing HTML locally and saving standalone pages in a
-private alpha cloud workspace.
+account-based alpha cloud workspace. Cloud file URLs are public during testing.
 
 ## Bootstrap status
 

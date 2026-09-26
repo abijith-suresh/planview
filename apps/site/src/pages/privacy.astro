@@ -26,8 +26,9 @@ import SiteLayout from "../layouts/SiteLayout.astro";
       <li>
         <h2>Cloud previews require your session</h2>
         <p>
-          In the current alpha, preview requests check the authenticated session before returning
-          the stored HTML. There is no public sharing link yet.
+          In the current alpha, app preview requests check the authenticated session. The
+          underlying UploadThing file is public-read: anyone with its direct URL can fetch it.
+          Avoid uploading sensitive content while this storage setup is in use.
         </p>
       </li>
       <li>
