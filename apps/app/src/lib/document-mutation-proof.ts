@@ -1,6 +1,5 @@
 import {
   signCreateDocumentProof,
-  signRemoveDocumentProof,
   type CreateDocumentProofInput,
 } from "../../convex/document-proof";
 
@@ -14,6 +13,3 @@ const requireMutationSecret = () => {
 
 export const createDocumentProof = (input: CreateDocumentProofInput) =>
   signCreateDocumentProof(requireMutationSecret(), input);
-
-export const removeDocumentProof = (ownerId: string, id: string) =>
-  signRemoveDocumentProof(requireMutationSecret(), ownerId, id);

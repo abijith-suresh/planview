@@ -9,7 +9,6 @@ import {
   proxyResponse,
 } from "~/lib/convex-server";
 import { getDocumentStorage } from "~/lib/document-storage";
-import { removeDocumentProof } from "~/lib/document-mutation-proof";
 import {
   createDocumentDeleteHandler,
   createDocumentPreviewHandler,
@@ -25,16 +24,8 @@ const dependencies: DocumentAccessHandlerDependencies<ConvexClient> = {
   fetch: (input, init) => fetch(input, init),
   convexSiteUrl,
   proxyResponse,
-  removeDocument: (client, id) =>
-    client.mutation(api.documents.remove, { id: id as Id<"documents"> }),
-  removeDocumentMetadata: async (client, id) => {
-    const identity = await client.query(api.auth.currentUser, {});
-    if (!identity) throw new Error("Authentication required");
-    return client.mutation(api.documents.removeMetadata, {
-      id: id as Id<"documents">,
-      proof: await removeDocumentProof(identity.subject, id),
-    });
-  },
+  requestDeletion: (client, id) =>
+    client.mutation(api.documents.requestDeletion, { id: id as Id<"documents"> }),
   missingServerConfigurationResponse,
   errorResponse,
 };
