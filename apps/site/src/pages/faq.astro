@@ -8,107 +8,195 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   description="Answers about the plansplease CLI, cloud workspace, privacy, and alpha plans."
   activePath="faq"
 >
-  <section class="prose-page faq-page" aria-labelledby="faq-title">
-    <h1 id="faq-title">Questions we expect to hear.</h1>
-    <p>
-      plansplease is early. These answers describe what works today, not a larger product we have
-      not built yet.
-    </p>
+  <section class="page-heading" aria-labelledby="faq-title">
+    <div>
+      <h1 id="faq-title">Questions we expect to hear.</h1>
+      <p>
+        Clear, direct answers about how plansplease serves pages locally, keeps a private cloud
+        copy, and fits agent workflows.
+      </p>
+    </div>
+  </section>
 
+  <section class="faq-content">
     <div class="faq-list">
       <details class="faq-item" open>
-        <summary>What is plansplease?</summary>
-        <p>
-          It gives agent-made HTML a place to land. The CLI creates local previews. The cloud
-          workspace keeps a private copy you can open later.
-        </p>
+        <summary>
+          <span>What is plansplease?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            plansplease gives agent-generated web artifacts a permanent, interactive home. Coding
+            agents (Claude, Cursor, ChatGPT, Gemini) often output complete single-page tools,
+            simulators, or dashboards.
+          </p>
+          <p>
+            The plansplease CLI creates an instant, zero-latency local preview on your machine,
+            while our cloud workspace securely archives your pages so they never get lost in a
+            closed chat thread.
+          </p>
+        </div>
       </details>
+
       <details class="faq-item">
-        <summary>What can I upload?</summary>
-        <p>
-          The cloud alpha accepts one standalone HTML file at a time. The local CLI can also serve
-          a page folder with an <code>index.html</code> entry point.
-        </p>
+        <summary>
+          <span>What file types and assets can I preview?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            The local CLI serves both standalone HTML files and multi-file directory bundles with an
+            <code>index.html</code> entry point. You can include linked stylesheets, images, client-side
+            JavaScript, Canvas scripts, and CDN-hosted libraries (like Tailwind, Chart.js, or React).
+          </p>
+          <p>
+            The cloud workspace currently accepts standalone HTML files with full support for inline
+            scripts and CDN dependencies.
+          </p>
+        </div>
       </details>
+
       <details class="faq-item">
-        <summary>Are cloud pages public?</summary>
-        <p>
-          No. Cloud pages are tied to the signed-in account in the current alpha. Public sharing is
-          not available yet.
-        </p>
+        <summary>
+          <span>Why not just open the HTML file with my browser?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            Modern browsers enforce strict security restrictions on <code>file://</code> URLs. They
+            block CORS requests, break relative asset fetching, prevent web workers from loading, and
+            restrict Canvas manipulation.
+          </p>
+          <p>
+            plansplease runs a minimal loopback daemon on <code>127.0.0.1</code> that serves your
+            files over genuine HTTP, eliminating all sandboxing errors with zero configuration.
+          </p>
+        </div>
       </details>
+
       <details class="faq-item">
-        <summary>Will there be a paid plan?</summary>
-        <p>
-          Maybe. The pricing page shows the current placeholder. We are considering storage,
-          retention, and bundled uploads as paid features, but no payment plan exists yet.
-        </p>
+        <summary>
+          <span>How does plansplease connect with Claude Code or Cursor?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            Run the CLI right in your agent's terminal — any harness that can write a file can
+            publish. MCP support is planned, so agent harnesses will be able to publish and
+            inspect pages without leaving their own tools.
+          </p>
+        </div>
       </details>
+
       <details class="faq-item">
-        <summary>Can I self-host it?</summary>
-        <p>
-          The source is public and self-hosting is part of the plan. The self-hosting path is not
-          documented as a supported deployment yet.
-        </p>
+        <summary>
+          <span>Is my data private and secure?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            Yes. The local CLI serves strictly over your machine's private loopback interface—none of
+            your local code or data is transmitted externally. In the cloud workspace, all uploads
+            are secured behind GitHub OAuth authentication and tied to your personal account.
+          </p>
+        </div>
+      </details>
+
+      <details class="faq-item">
+        <summary>
+          <span>Is plansplease open source?</span>
+          <span class="faq-toggle-icon" aria-hidden="true">+</span>
+        </summary>
+        <div class="faq-answer">
+          <p>
+            Yes! The entire core runtime, CLI, local daemon, and storage engine are 100% open source
+            under an permissive license on
+            <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
+          </p>
+        </div>
       </details>
     </div>
+
+    <p class="page-note">
+      Have a question that is not covered here? Open an issue on
+      <a href="https://github.com/abijith-suresh/planview">GitHub</a> or visit the
+      <a href="../docs/">documentation page</a>.
+    </p>
   </section>
 </SiteLayout>
 
 <style>
-  .faq-page {
-    max-width: 56rem;
+  .faq-content {
+    padding: 3.5rem 0 5rem;
   }
 
   .faq-list {
-    margin-top: 3rem;
-    border-top: 1px solid rgba(247, 240, 229, 0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 48rem;
   }
 
   .faq-item {
-    border-bottom: 1px solid rgba(247, 240, 229, 0.18);
+    border: 1px solid var(--night-border);
+    border-radius: var(--radius-lg);
+    background: var(--night-card);
+    overflow: hidden;
+    transition: border-color 160ms ease;
+  }
+
+  .faq-item:hover,
+  .faq-item[open] {
+    border-color: var(--night-border-hover);
   }
 
   .faq-item summary {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 1.3rem 0;
-    color: var(--text);
-    cursor: pointer;
-    font-family: var(--display);
-    font-size: clamp(1.35rem, 2.5vw, 2rem);
-    font-weight: 600;
-    letter-spacing: -0.05em;
     list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1.35rem 1.6rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.02rem;
+    font-weight: 550;
+    cursor: pointer;
+    user-select: none;
   }
 
   .faq-item summary::-webkit-details-marker {
     display: none;
   }
 
-  .faq-item summary::after {
-    content: "+";
-    flex: 0 0 auto;
-    color: var(--mint);
+  .faq-toggle-icon {
     font-family: var(--mono);
     font-size: 1.15rem;
     font-weight: 400;
+    color: var(--night-subtle);
+    transition: transform 180ms ease, color 180ms ease;
   }
 
-  .faq-item[open] summary::after {
-    content: "−";
-  }
-
-  .faq-item summary:hover,
-  .faq-item summary:focus-visible {
+  .faq-item[open] .faq-toggle-icon {
+    transform: rotate(45deg);
     color: var(--mint);
   }
 
-  .faq-item p {
-    max-width: 42rem;
-    margin: -0.35rem 0 1.5rem;
+  .faq-answer {
+    padding: 0 1.6rem 1.5rem;
     color: var(--night-muted);
+    font-size: 0.94rem;
+    line-height: 1.65;
+    border-top: 1px solid var(--night-border);
+    padding-top: 1.25rem;
+  }
+
+  .faq-answer p {
+    margin: 0 0 1rem;
+  }
+
+  .faq-answer p:last-child {
+    margin-bottom: 0;
   }
 </style>

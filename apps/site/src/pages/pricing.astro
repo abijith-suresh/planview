@@ -1,61 +1,64 @@
 ---
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
 import SiteLayout from "../layouts/SiteLayout.astro";
-// biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
-import { appSignInUrl } from "../lib/app-url";
 ---
 
 <SiteLayout
   title="Pricing | plansplease"
-  description="plansplease pricing is still being worked out. The alpha is free while the product takes shape."
+  description="Simple for now. Clear about later."
   activePath="pricing"
 >
-  <section class="page-heading" aria-labelledby="pricing-title">
+  <header class="page-heading">
     <div>
-      <h1 id="pricing-title">Simple for now. Clear about later.</h1>
-      <p>
-        The alpha is free while we learn what people actually need. There is no billing or paid
-        plan yet.
-      </p>
+      <h1>Pricing</h1>
+      <p>Simple for now. Clear about later.</p>
     </div>
-    <a class="page-action" href={appSignInUrl}>Try the alpha</a>
-  </section>
+  </header>
 
-  <section class="content-section" aria-labelledby="plans-title">
-    <h2 id="plans-title">A placeholder for the real choice.</h2>
-
+  <section class="content-section" aria-label="Plans">
     <div class="pricing-grid">
       <article class="pricing-card pricing-card-current">
-        <p class="pricing-label">Available now</p>
-        <h2>Alpha</h2>
-        <p class="pricing-price">$0 <span>while testing</span></p>
-        <p>Everything in the current staging workspace, with sensible limits while we test it.</p>
-        <ul>
-          <li>Local CLI previews</li>
-          <li>Private cloud uploads</li>
-          <li>One standalone HTML file at a time</li>
+        <div class="pricing-header">
+          <span class="pricing-label">Current / Alpha</span>
+          <h2>Free</h2>
+        </div>
+        <div class="pricing-price-box">
+          <span class="price-number">$0</span>
+          <span class="price-tenure">during alpha</span>
+        </div>
+        <p class="pricing-intro">Everything available today is free while we build out the service with the developer community.</p>
+        <ul class="pricing-features">
+          <li>Unlimited local previews with loopback daemon</li>
+          <li>Cloud copy of single-file HTML pages</li>
+          <li>Private encrypted workspace with GitHub sign-in</li>
+          <li>Full support for modern CSS, Tailwind CDN, and Canvas</li>
+          <li>Standard community support via GitHub</li>
         </ul>
       </article>
 
       <article class="pricing-card">
-        <p class="pricing-label">Planned</p>
-        <h2>Premium</h2>
-        <p class="pricing-price">$5 <span>per month, maybe</span></p>
-        <p>
-          The working idea is to charge for the things that cost more to keep around, not for basic
-          access.
-        </p>
-        <ul>
-          <li>More storage and longer retention</li>
-          <li>Bundled assets and page folders in the cloud</li>
-          <li>More control over hosted pages</li>
+        <div class="pricing-header">
+          <span class="pricing-label future">Future Roadmap</span>
+          <h2>Fair & Transparent</h2>
+        </div>
+        <div class="pricing-price-box">
+          <span class="price-number">Simple</span>
+          <span class="price-tenure">when limits arrive</span>
+        </div>
+        <p class="pricing-intro">We are committed to maintaining a generous free tier for individual developers and clear pricing for teams.</p>
+        <ul class="pricing-features">
+          <li>Always-free personal tier for individual developers</li>
+          <li>Team shared workspaces and collaborative access</li>
+          <li>Custom domains with automatic SSL</li>
+          <li>Higher persistent storage and asset bandwidth</li>
+          <li>Dedicated support and SLA</li>
         </ul>
       </article>
     </div>
 
     <p class="page-note">
-      The $5 figure is a placeholder, not a promise. We will publish actual limits and billing
-      details before taking payment.
+      Questions about plans or enterprise use cases? <a href="/faq/">Check the FAQ</a> or join the
+      discussion on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
     </p>
   </section>
 </SiteLayout>
@@ -64,95 +67,122 @@ import { appSignInUrl } from "../lib/app-url";
   .pricing-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 1px;
-    background: rgba(247, 240, 229, 0.18);
+    gap: 2rem;
   }
 
   .pricing-card {
-    min-height: 24rem;
-    padding: clamp(1.5rem, 4vw, 2.5rem);
-    background: var(--night-soft);
+    display: flex;
+    flex-direction: column;
+    padding: clamp(2.25rem, 4vw, 3rem);
+    border: 1px solid var(--night-border);
+    border-radius: var(--radius-lg);
+    background: var(--night-card);
+    transition: border-color 160ms ease;
   }
 
   .pricing-card-current {
-    background: var(--paper);
-    color: var(--ink);
+    border-color: var(--night-border-hover);
+    background: var(--night-card-elevated);
+  }
+
+  .pricing-card:not(.pricing-card-current):hover {
+    border-color: var(--night-border-hover);
+  }
+
+  .pricing-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
   }
 
   .pricing-label {
-    margin: 0 0 2rem;
-    color: var(--butter);
-    font-family: var(--mono);
-    font-size: 0.68rem;
-    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-self: flex-start;
+    padding: 0.3rem 0.75rem;
+    border-radius: 6px;
+    background: var(--mint-soft);
+    border: 1px solid var(--mint-border);
+    color: var(--mint);
+    font-size: 0.75rem;
+    font-weight: 600;
     text-transform: uppercase;
   }
 
-  .pricing-card-current .pricing-label {
-    color: #777047;
+  .pricing-label.future {
+    background: transparent;
+    border-color: var(--night-border-hover);
+    color: var(--night-muted);
   }
 
   .pricing-card h2 {
-    margin: 0 0 0.8rem;
-    font-family: var(--display);
-    font-size: clamp(2.5rem, 5vw, 4.5rem);
-    font-weight: 600;
-    letter-spacing: -0.075em;
-    line-height: 0.95;
-  }
-
-  .pricing-price {
-    margin: 0 0 1.25rem;
-    color: var(--mint);
-    font-family: var(--display);
-    font-size: clamp(2rem, 4vw, 3.2rem);
-    font-weight: 600;
-    letter-spacing: -0.07em;
-    line-height: 1;
-  }
-
-  .pricing-card-current .pricing-price {
-    color: #527b6d;
-  }
-
-  .pricing-price span {
-    display: block;
-    margin-top: 0.45rem;
-    color: var(--night-muted);
-    font-family: var(--mono);
-    font-size: 0.65rem;
-    font-weight: 400;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .pricing-card-current .pricing-price span,
-  .pricing-card-current > p:not(.pricing-label):not(.pricing-price) {
-    color: #686176;
-  }
-
-  .pricing-card > p:not(.pricing-label):not(.pricing-price) {
-    max-width: 28rem;
-    min-height: 3.5rem;
     margin: 0;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.7rem;
+    font-weight: 650;
+    letter-spacing: -0.028em;
+  }
+
+  .pricing-price-box {
+    display: flex;
+    align-items: baseline;
+    gap: 0.65rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .price-number {
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 2.8rem;
+    font-weight: 650;
+    line-height: 1;
+    letter-spacing: -0.035em;
+  }
+
+  .price-tenure {
     color: var(--night-muted);
+    font-size: 0.95rem;
+    font-weight: 500;
   }
 
-  .pricing-card ul {
+  .pricing-intro {
+    margin: 0 0 2rem;
+    color: var(--night-muted);
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+
+  .pricing-features {
+    margin: 0;
+    padding: 0;
+    list-style: none;
     display: grid;
-    gap: 0.55rem;
-    margin: 2rem 0 0;
-    padding: 1rem 0 0 1.2rem;
-    border-top: 1px solid rgba(247, 240, 229, 0.18);
+    gap: 1rem;
+    flex-grow: 1;
+  }
+
+  .pricing-features li {
+    position: relative;
+    padding-left: 1.75rem;
     color: var(--text);
+    font-size: 0.95rem;
+    line-height: 1.5;
   }
 
-  .pricing-card-current ul {
-    border-color: rgba(40, 38, 56, 0.18);
-    color: var(--ink);
+  .pricing-features li::before {
+    content: "✓";
+    position: absolute;
+    left: 0;
+    color: var(--mint);
+    font-weight: 600;
   }
 
-  @media (max-width: 620px) {
+  .pricing-card:not(.pricing-card-current) .pricing-features li::before {
+    color: var(--night-subtle);
+  }
+
+  @media (max-width: 860px) {
     .pricing-grid {
       grid-template-columns: 1fr;
     }

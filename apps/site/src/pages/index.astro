@@ -1,4 +1,10 @@
 ---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import ConceptSwitch from "../components/ConceptSwitch.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import CtaSection from "../components/CtaSection.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import SectionIntro from "../components/SectionIntro.astro";
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
 import SiteLayout from "../layouts/SiteLayout.astro";
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
@@ -7,494 +13,772 @@ import { appSignInUrl } from "../lib/app-url";
 
 <SiteLayout
   title="plansplease | Keep the pages your agent makes"
-  description="Run agent-made HTML locally, or keep a private cloud copy you can open again."
+  description="Agents write specs, prototypes, and tools as HTML. plansplease gives each file a URL — instant locally, private in the cloud."
 >
   <section class="hero" aria-labelledby="hero-title">
-    <div class="hero-copy">
+    <div class="hero-head">
       <h1 id="hero-title">
         Your agent made a page.
-        <span>Keep it somewhere useful.</span>
+        <span>Give it somewhere useful to live.</span>
       </h1>
-      <p class="hero-intro">
-        plansplease turns standalone HTML into a page you can open. Preview it on your machine with
-        the CLI, or keep a private copy in the cloud when you need to come back to it.
+
+      <p class="hero-lede">
+        Specs, dashboards, code reviews, tiny tools — your agent writes them as HTML. plansplease
+        turns every file into a URL: instant on your machine, private in the cloud, open from your
+        phone.
       </p>
-      <a class="primary-link" href={appSignInUrl}>Continue with GitHub</a>
-      <p class="cta-note">Private cloud workspace. Local CLI included.</p>
+
+      <div class="hero-actions">
+        <a class="btn-primary" href={appSignInUrl}>Continue with GitHub</a>
+        <a class="btn-ghost" href="/docs/">Read the docs</a>
+      </div>
     </div>
 
-    <div class="hero-demo" role="img" aria-label="An HTML file becoming a page you can open">
-      <div class="demo-header">
-        <span>html in</span>
-        <span>page out</span>
-      </div>
-
-      <div class="demo-source">
-        <div class="demo-source-row">
-          <span>file</span>
-          <code>morning-plan.html</code>
+    <div
+      class="demo"
+      id="demo"
+      role="img"
+      aria-label="Animation of an agent publishing a page: asked to keep a migration plan, the agent writes auth-migration-spec.html and runs planview publish, which serves it at a local URL and saves a private copy at plansplease.app/p/auth-migration-spec — the saved page then opens alongside."
+    >
+      <div class="term" aria-hidden="true">
+        <div class="term-bar">
+          <span></span><span></span><span></span>
         </div>
-        <div class="demo-source-row demo-source-result">
-          <span>local preview</span>
-          <code>localhost:4173 / morning-plan</code>
-        </div>
-      </div>
-
-      <div class="demo-page">
-        <div class="demo-page-meta">
-          <span>standalone HTML</span>
-          <span>ready to open</span>
-        </div>
-        <div class="demo-page-rule"></div>
-        <p class="demo-page-label">agent snapshot / 04 kb</p>
-        <h2>Morning plan</h2>
-        <p class="demo-page-copy">A useful page, saved before the chat moves on.</p>
-        <div class="demo-page-data">
-          <div><span>status</span><strong>ready</strong></div>
-          <div><span>format</span><strong>HTML</strong></div>
-          <div><span>where</span><strong>local or cloud</strong></div>
+        <div class="term-body">
+          <p class="tl is-prompt">
+            <span class="prompt-glyph">❯</span>
+            <span class="prompt-text">keep the migration plan somewhere I can open later</span>
+          </p>
+          <p class="tl is-step"><span class="step-bullet">●</span> Wrote auth-migration-spec.html</p>
+          <p class="tl is-step">
+            <span class="step-bullet">●</span> planview publish ./auth-migration-spec.html
+          </p>
+          <p class="tl">
+            <span class="check">✓</span> served at
+            <span class="url">http://localhost:4777/auth-migration-spec</span>
+          </p>
+          <p class="tl">
+            <span class="check">✓</span> saved to workspace
+            <span class="url is-cloud">plansplease.app/p/auth-migration-spec</span>
+          </p>
         </div>
       </div>
 
-      <div class="demo-destinations">
-        <div>
-          <span>local</span>
-          <strong>preview now</strong>
+      <div class="page" aria-hidden="true">
+        <div class="page-bar">
+          <span class="page-glyph"></span>
+          <span class="page-url">plansplease.app/p/auth-migration-spec</span>
+          <span class="page-sync"><span class="sync-dot"></span>Synced</span>
         </div>
-        <div>
-          <span>cloud</span>
-          <strong>keep it</strong>
+        <div class="page-body">
+          <h2 class="page-title">Auth migration — rollout plan</h2>
+          <div class="page-progress">
+            <div class="progress-copy">
+              <span>Migrated</span>
+              <span class="progress-count">3 / 5 services</span>
+            </div>
+            <div class="progress-track"><span class="progress-fill"></span></div>
+          </div>
+          <div class="page-tabs">
+            <span class="is-active">Overview</span>
+            <span>Rollout</span>
+            <span>Rollback</span>
+          </div>
+          <ul class="page-list">
+            <li class="is-done">Token schema v2 <span>done</span></li>
+            <li class="is-now">Gateway rollout <span>canary 20%</span></li>
+            <li>Legacy session keys <span>queued</span></li>
+          </ul>
         </div>
       </div>
     </div>
   </section>
 
-  <section class="pitch-line" aria-label="plansplease summary">
+  <section class="how" aria-labelledby="how-title">
+    <SectionIntro
+      id="how-title"
+      title="One command, two homes"
+      lede="The CLI is the fastest way in. Point it at any HTML file and it serves the page on your machine and saves a private copy to your workspace at the same time."
+    />
+
+    <ol class="steps">
+      <li class="step">
+        <span class="step-index" aria-hidden="true">01</span>
+        <h3>Publish the file</h3>
+        <p>Any agent can write it. One command hands it a URL.</p>
+        <code class="step-code">planview publish ./auth-migration-spec.html</code>
+      </li>
+
+      <li class="step">
+        <span class="step-index" aria-hidden="true">02</span>
+        <h3>Open it anywhere</h3>
+        <p>
+          A local address for the machine you're on. A private cloud link for your phone, your
+          team, and your future self.
+        </p>
+      </li>
+
+      <li class="step">
+        <span class="step-index" aria-hidden="true">03</span>
+        <h3>Keep it working</h3>
+        <p>
+          Pages outlive the chat. They stay in your workspace — searchable, deletable, yours —
+          until you decide otherwise.
+        </p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="makes" aria-labelledby="makes-title">
+    <SectionIntro
+      id="makes-title"
+      title="Built for what agents actually output"
+      lede="Not landing pages for your side project — the working documents an agent produces while doing real work with you."
+    />
+
+    <div class="makes-grid">
+      <div class="make">
+        <h3>Specs &amp; plans</h3>
+        <p>Diagrams, tabs, and trade-off tables instead of a 300-line Markdown file nobody opens.</p>
+      </div>
+      <div class="make">
+        <h3>Code reviews</h3>
+        <p>PR diffs with margin notes and severity tags, readable by the whole team.</p>
+      </div>
+      <div class="make">
+        <h3>Prototypes</h3>
+        <p>Working sliders, toggles, and states — feel the interaction before the feature exists.</p>
+      </div>
+      <div class="make">
+        <h3>Small tools</h3>
+        <p>Throwaway editors for tickets, configs, prompts. Export the result back to the agent.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="why" aria-labelledby="why-title">
+    <h2 id="why-title">Markdown caps out around a hundred lines. Your agent's work doesn't.</h2>
     <p>
-      For reports, prototypes, dashboards, and one-off pages your agent makes before they become a
-      project.
+      HTML carries diagrams, interaction, and structure in one file your browser already knows how
+      to run. plansplease just gives that file a home — works with Claude Code, Cursor, Codex, or
+      anything that writes HTML.
     </p>
-    <span>One HTML file to start.</span>
   </section>
 
-  <section class="home-values" aria-labelledby="home-values-title">
-    <h2 id="home-values-title">The useful parts stay small.</h2>
+  <CtaSection
+    id="cta-title"
+    title="Stop losing good work in chat scrollback."
+    lede="Sign in, publish your next agent-made page, and see how long it lasts."
+    note="Free during alpha · CLI today, MCP soon · Private by default"
+  />
 
-    <div class="home-value-list">
-      <article class="home-value-row">
-        <span class="home-value-number">01</span>
-        <div>
-          <h3>Preview locally</h3>
-          <p>Run an HTML file through the CLI and get a localhost URL right away.</p>
-        </div>
-      </article>
-
-      <article class="home-value-row">
-        <span class="home-value-number">02</span>
-        <div>
-          <h3>Keep a cloud copy</h3>
-          <p>Upload one standalone file to a private workspace and open it from anywhere.</p>
-        </div>
-      </article>
-
-      <article class="home-value-row">
-        <span class="home-value-number">03</span>
-        <div>
-          <h3>Make throwaway work useful</h3>
-          <p>Save the report, prototype, or dashboard that is too useful to lose in a chat.</p>
-        </div>
-      </article>
-
-      <article class="home-value-row">
-        <span class="home-value-number">04</span>
-        <div>
-          <h3>Start with one file</h3>
-          <p>There is no project setup to maintain before a page earns one.</p>
-        </div>
-      </article>
-    </div>
-  </section>
+  <ConceptSwitch current="a" />
 </SiteLayout>
 
+<script>
+  const demo = document.getElementById("demo");
+
+  if (
+    demo &&
+    !window.matchMedia("(prefers-reduced-motion: reduce)").matches &&
+    "IntersectionObserver" in window
+  ) {
+    const lines = Array.from(demo.querySelectorAll<HTMLElement>(".tl"));
+    const promptText = demo.querySelector<HTMLElement>(".prompt-text");
+    const page = demo.querySelector<HTMLElement>(".page");
+    const prompt = promptText?.textContent ?? "";
+    let timers: ReturnType<typeof setTimeout>[] = [];
+
+    const at = (delay: number, fn: () => void) => {
+      timers.push(setTimeout(fn, delay));
+    };
+
+    const reset = () => {
+      timers.forEach(clearTimeout);
+      timers = [];
+      demo.classList.remove("is-playing", "is-holding");
+      page?.classList.remove("is-in");
+      lines.forEach((line) => line.classList.remove("is-on"));
+      if (promptText) promptText.textContent = "";
+    };
+
+    const play = () => {
+      reset();
+      demo.classList.add("is-playing");
+      if (promptText) {
+        const promptLine = demo.querySelector<HTMLElement>(".is-prompt");
+        promptLine?.classList.add("is-on");
+        let i = 0;
+        const type = () => {
+          i += 1;
+          promptText.textContent = prompt.slice(0, i);
+          if (i < prompt.length) at(24 + Math.random() * 34, type);
+        };
+        at(250, type);
+      }
+      at(2600, () => lines[1]?.classList.add("is-on"));
+      at(3300, () => lines[2]?.classList.add("is-on"));
+      at(4000, () => lines[3]?.classList.add("is-on"));
+      at(4700, () => lines[4]?.classList.add("is-on"));
+      at(5450, () => page?.classList.add("is-in"));
+      at(12500, () => demo.classList.add("is-holding"));
+      at(13300, play);
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            play();
+            observer.disconnect();
+            break;
+          }
+        }
+      },
+      { threshold: 0.35 },
+    );
+    observer.observe(demo);
+  }
+</script>
+
 <style>
+  /* ---------- Hero ---------- */
+
   .hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(26rem, 0.9fr);
-    align-items: center;
-    gap: clamp(3rem, 7vw, 7rem);
-    padding: clamp(4.5rem, 10vh, 7.5rem) 0 5.5rem;
+    position: relative;
+    overflow: clip;
+    padding: clamp(5rem, 10vh, 7rem) 0 5.5rem;
+    text-align: center;
   }
 
-  h1,
-  h2,
-  p {
-    margin-top: 0;
+  .hero::before {
+    content: "";
+    position: absolute;
+    top: -16rem;
+    left: 50%;
+    width: 60rem;
+    height: 36rem;
+    background: radial-gradient(ellipse at center, rgba(229, 121, 90, 0.055), transparent 62%);
+    pointer-events: none;
   }
 
-  h1,
-  h2 {
-    text-wrap: balance;
+  .hero::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.032) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.032) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(82% 64% at 50% 34%, black 26%, transparent 76%);
+    -webkit-mask-image: radial-gradient(82% 64% at 50% 34%, black 26%, transparent 76%);
+    pointer-events: none;
+  }
+
+  .hero-head {
+    position: relative;
+    z-index: 1;
   }
 
   h1 {
-    max-width: 11ch;
-    margin-bottom: 1.8rem;
-    color: var(--text);
+    max-width: 26ch;
+    margin: 0 auto 1.6rem;
+    color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(3.5rem, 5.9vw, 6.2rem);
-    font-weight: 600;
-    letter-spacing: -0.075em;
-    line-height: 0.91;
+    font-size: clamp(2.8rem, 5.8vw, 4.5rem);
+    font-weight: 640;
+    letter-spacing: -0.046em;
+    line-height: 1.04;
+    text-wrap: balance;
   }
 
   h1 span {
     display: block;
-    color: var(--butter);
-  }
-
-  .hero-intro {
-    max-width: 34rem;
-    margin-bottom: 2rem;
     color: var(--night-muted);
-    font-size: clamp(1rem, 1.4vw, 1.15rem);
-    line-height: 1.6;
   }
 
-  .primary-link {
-    display: inline-block;
-    padding: 0.9rem 1.05rem;
-    border: 1px solid var(--mint);
-    border-radius: 0.35rem;
-    background: var(--mint);
-    color: var(--ink);
-    font-size: 0.95rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: background 180ms ease, border-color 180ms ease, color 180ms ease, transform 180ms ease;
-  }
-
-  .primary-link:hover,
-  .primary-link:focus-visible {
-    border-color: var(--text);
-    background: var(--text);
-    color: var(--ink);
-    transform: translateY(-2px);
-  }
-
-  .cta-note {
-    margin: 0.85rem 0 0;
+  .hero-lede {
+    max-width: 38rem;
+    margin: 0 auto 2.4rem;
     color: var(--night-muted);
-    font-size: 0.78rem;
+    font-size: 1.12rem;
+    line-height: 1.62;
   }
 
-  .hero-demo {
-    padding: 1.2rem;
-    background: var(--lavender);
-    border-radius: 1rem 1rem 3.5rem 1rem;
-    color: var(--ink);
-  }
-
-  .demo-header,
-  .demo-page-meta,
-  .demo-page-label,
-  .demo-source-row,
-  .demo-destinations span,
-  .demo-destinations strong {
-    font-family: var(--mono);
-    font-size: 0.65rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-
-  .demo-header {
+  .hero-actions {
     display: flex;
-    justify-content: space-between;
-    padding: 0 0.2rem 1rem;
-    color: var(--ink);
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.8rem;
   }
 
-  .demo-source {
+  /* Entry stagger */
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+  }
+
+  .hero-head > * {
+    animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+
+  .hero-head > .hero-lede {
+    animation-delay: 0.09s;
+  }
+
+  .hero-head > .hero-actions {
+    animation-delay: 0.18s;
+  }
+
+  .demo {
+    position: relative;
+    z-index: 1;
     display: grid;
-    gap: 0.4rem;
-    padding: 1rem;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+    gap: 1.4rem;
+    align-items: center;
+    max-width: 66rem;
+    margin: 4.25rem auto 0;
+    text-align: left;
+    animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) 0.3s both;
+  }
+
+  /* ---------- Terminal ---------- */
+
+  .term {
+    overflow: hidden;
+    border: 1px solid var(--night-border);
+    border-radius: 14px;
     background: var(--night-soft);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 28px 64px -24px rgba(0, 0, 0, 0.6);
+  }
+
+  .term-bar {
+    display: flex;
+    gap: 0.45rem;
+    align-items: center;
+    padding: 0.8rem 1.1rem;
+    border-bottom: 1px solid var(--night-border);
+  }
+
+  .term-bar span {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .term-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    padding: 1.4rem 1.5rem 1.6rem;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1.5;
+  }
+
+  .tl {
+    margin: 0;
+    color: var(--night-muted);
+    overflow-wrap: break-word;
+  }
+
+  .prompt-glyph {
+    margin-right: 0.55rem;
+    color: var(--mint);
+  }
+
+  .is-prompt {
+    color: var(--text-white);
+  }
+
+  .is-playing .prompt-text::after {
+    content: "";
+    display: inline-block;
+    width: 0.52em;
+    height: 1.05em;
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    background: var(--mint);
+    animation: caret 1.05s steps(2, jump-none) infinite;
+  }
+
+  @keyframes caret {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  .step-bullet {
+    margin-right: 0.5rem;
+    color: var(--mint);
+    opacity: 0.75;
+  }
+
+  .is-step {
     color: var(--text);
   }
 
-  .demo-source-row {
-    display: grid;
-    grid-template-columns: 7.5rem minmax(0, 1fr);
-    gap: 1rem;
-    align-items: baseline;
+  .check {
+    margin-right: 0.35rem;
+    color: var(--mint);
   }
 
-  .demo-source-row > span {
+  .url {
     color: var(--night-muted);
   }
 
-  .demo-source code {
-    overflow: hidden;
+  .url.is-cloud {
     color: var(--mint);
+  }
+
+  /* ---------- Page card ---------- */
+
+  .page {
+    border: 1px solid var(--night-border);
+    border-radius: 14px;
+    background: var(--night-card);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 32px 72px -28px rgba(0, 0, 0, 0.65);
+  }
+
+  .page-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--night-border);
+    background: rgba(255, 255, 255, 0.015);
+  }
+
+  .page-glyph {
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border: 1.5px solid var(--night-subtle);
+    border-radius: 2px;
+  }
+
+  .page-url {
+    flex: 1;
+    overflow: hidden;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.72rem;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .demo-source-result code {
-    color: var(--butter);
-  }
-
-  .demo-page {
-    margin: 0 1.2rem;
-    padding: clamp(1.35rem, 3vw, 2rem);
-    background: var(--paper);
-    box-shadow: 0 1.5rem 2.5rem rgba(29, 29, 45, 0.16);
-  }
-
-  .demo-page-meta {
-    display: flex;
-    justify-content: space-between;
-    color: var(--night-soft);
-  }
-
-  .demo-page-rule {
-    height: 1px;
-    margin: 1.25rem 0 2rem;
-    background: rgba(40, 38, 56, 0.2);
-  }
-
-  .demo-page-label {
-    margin-bottom: 0.6rem;
-    color: var(--night-soft);
-  }
-
-  .demo-page h2 {
-    margin-bottom: 0.55rem;
-    color: var(--ink);
-    font-family: var(--display);
-    font-size: clamp(2.2rem, 4vw, 3.8rem);
-    font-weight: 600;
-    letter-spacing: -0.075em;
-    line-height: 0.95;
-  }
-
-  .demo-page-copy {
-    margin-bottom: 2rem;
-    color: #686176;
-    font-size: 0.9rem;
-  }
-
-  .demo-page-data {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    border-top: 1px solid rgba(40, 38, 56, 0.2);
-  }
-
-  .demo-page-data div {
-    display: grid;
+  .page-sync {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
     gap: 0.4rem;
-    padding: 1rem 0.8rem 0 0;
+    color: var(--night-subtle);
+    font-size: 0.7rem;
   }
 
-  .demo-page-data div + div {
-    padding-left: 0.8rem;
-    border-left: 1px solid rgba(40, 38, 56, 0.2);
-  }
-
-  .demo-page-data span {
-    color: #686176;
-    font-family: var(--mono);
-    font-size: 0.6rem;
-    text-transform: uppercase;
-  }
-
-  .demo-page-data strong {
-    color: var(--ink);
-    font-size: 0.77rem;
-    font-weight: 600;
-  }
-
-  .demo-destinations {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.6rem;
-    margin-top: 1rem;
-  }
-
-  .demo-destinations > div {
-    display: grid;
-    gap: 0.35rem;
-    padding: 0.85rem;
-  }
-
-  .demo-destinations > div:first-child {
+  .sync-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
     background: var(--mint);
   }
 
-  .demo-destinations > div:last-child {
-    background: var(--coral);
+  .page-body {
+    padding: 1.5rem 1.6rem 1.6rem;
   }
 
-  .demo-destinations span,
-  .demo-destinations strong {
-    color: var(--ink);
+  .page-title {
+    margin: 0 0 1.3rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.2rem;
+    font-weight: 640;
+    letter-spacing: -0.022em;
   }
 
-  .demo-destinations strong {
-    font-size: 0.74rem;
+  .page-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1.3rem;
+  }
+
+  .progress-copy {
+    display: flex;
+    justify-content: space-between;
+    color: var(--night-muted);
+    font-size: 0.8rem;
+  }
+
+  .progress-count {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+  }
+
+  .progress-track {
+    height: 5px;
+    overflow: hidden;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  .progress-fill {
+    display: block;
+    width: 60%;
+    height: 100%;
+    border-radius: 3px;
+    background: var(--mint);
+  }
+
+  .page-tabs {
+    display: flex;
+    gap: 1.3rem;
+    margin-bottom: 1.2rem;
+    border-bottom: 1px solid var(--night-border);
+  }
+
+  .page-tabs span {
+    padding-bottom: 0.6rem;
+    color: var(--night-subtle);
+    font-size: 0.82rem;
     font-weight: 500;
   }
 
-  .pitch-line {
+  .page-tabs .is-active {
+    border-bottom: 1px solid var(--mint);
+    color: var(--text-white);
+  }
+
+  .page-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .page-list li {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
-    gap: 2rem;
-    padding: 1.5rem 0 5rem;
-    border-top: 1px solid rgba(247, 240, 229, 0.18);
+    gap: 1rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--night-border);
     color: var(--night-muted);
+    font-size: 0.83rem;
   }
 
-  .pitch-line p {
-    max-width: 38rem;
-    margin: 0;
-    font-size: 0.95rem;
+  .page-list li:last-child {
+    border-bottom: 0;
   }
 
-  .pitch-line span {
-    flex: 0 0 auto;
-    color: var(--butter);
+  .page-list li span {
+    flex-shrink: 0;
+    color: var(--night-subtle);
     font-family: var(--mono);
     font-size: 0.68rem;
-    text-transform: uppercase;
   }
 
-  .home-values {
-    padding: 0 0 6rem;
-  }
-
-  .home-values h2 {
-    max-width: 12ch;
-    margin: 0 0 2rem;
+  .page-list li.is-done {
     color: var(--text);
-    font-family: var(--display);
-    font-size: clamp(2.4rem, 4.5vw, 4.8rem);
-    font-weight: 600;
-    letter-spacing: -0.075em;
-    line-height: 0.94;
   }
 
-  .home-value-list {
-    border-top: 1px solid rgba(247, 240, 229, 0.18);
+  .page-list li.is-done span {
+    color: var(--mint);
   }
 
-  .home-value-row {
+  .page-list li.is-now {
+    color: var(--text-white);
+  }
+
+  /* ---------- Animation states ----------
+     Base styles render the finished scene. While .is-playing is set,
+     elements stay hidden until the script reveals each in turn. */
+
+  .is-playing .tl {
+    opacity: 0;
+  }
+
+  .is-playing .tl.is-on {
+    opacity: 1;
+    transition: opacity 0.32s ease;
+  }
+
+  .is-playing .page {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+  }
+
+  .is-playing .page.is-in {
+    opacity: 1;
+    transform: none;
+    transition:
+      opacity 0.55s cubic-bezier(0.2, 0.7, 0.2, 1),
+      transform 0.55s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+
+  .is-playing.is-holding .term-body,
+  .is-playing.is-holding .page {
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hero-head > *,
+    .demo {
+      animation: none;
+    }
+  }
+
+  /* ---------- How it works ---------- */
+
+  .how {
+    padding: 6rem 0;
+    border-top: 1px solid var(--night-border);
+  }
+
+  .steps {
+    margin: 0;
+    padding: 0;
+    list-style: none;
     display: grid;
-    grid-template-columns: 4rem minmax(0, 1fr);
-    gap: 2rem;
-    padding: 1.65rem 0;
-    border-bottom: 1px solid rgba(247, 240, 229, 0.18);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 3rem;
   }
 
-  .home-value-number {
-    padding-top: 0.3rem;
-    color: var(--butter);
+  .step-index {
+    display: block;
+    margin-bottom: 1.1rem;
+    color: var(--mint);
     font-family: var(--mono);
-    font-size: 0.68rem;
-    letter-spacing: 0.04em;
+    font-size: 0.78rem;
   }
 
-  .home-value-row h3 {
-    margin: 0 0 0.35rem;
-    color: var(--text);
+  .step h3 {
+    margin: 0 0 0.6rem;
+    color: var(--text-white);
     font-family: var(--display);
-    font-size: clamp(1.65rem, 3vw, 2.5rem);
-    font-weight: 600;
-    letter-spacing: -0.06em;
-    line-height: 1;
+    font-size: 1.12rem;
+    font-weight: 640;
+    letter-spacing: -0.02em;
   }
 
-  .home-value-row p {
-    max-width: 38rem;
+  .step p {
     margin: 0;
     color: var(--night-muted);
+    font-size: 0.92rem;
+    line-height: 1.62;
   }
 
-  @media (max-width: 900px) {
-    .hero {
+  .step-code {
+    display: block;
+    margin-top: 1.05rem;
+    padding: 0.65rem 0.9rem;
+    border: 1px solid var(--night-border);
+    border-radius: 8px;
+    background: var(--night-soft);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  /* ---------- What agents make ---------- */
+
+  .makes {
+    padding: 6rem 0;
+    border-top: 1px solid var(--night-border);
+  }
+
+  .makes-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2.6rem 3.4rem;
+  }
+
+  .make {
+    padding-top: 1.4rem;
+    border-top: 1px solid var(--night-border);
+  }
+
+  .make h3 {
+    margin: 0 0 0.5rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.05rem;
+    font-weight: 640;
+    letter-spacing: -0.015em;
+  }
+
+  .make p {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 0.94rem;
+    line-height: 1.6;
+  }
+
+  /* ---------- Why HTML ---------- */
+
+  .why {
+    padding: 7rem 0;
+    border-top: 1px solid var(--night-border);
+  }
+
+  .why h2 {
+    max-width: 30ch;
+    margin: 0 0 1.4rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(2rem, 3.6vw, 2.9rem);
+    font-weight: 640;
+    letter-spacing: -0.036em;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+
+  .why p {
+    max-width: 40rem;
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 1.08rem;
+    line-height: 1.65;
+  }
+
+
+  @media (max-width: 960px) {
+    .demo {
       grid-template-columns: 1fr;
-      gap: 4rem;
+      gap: 1.2rem;
+      max-width: 40rem;
     }
 
-    .hero-copy,
-    .hero-demo {
-      max-width: 42rem;
+    .steps {
+      grid-template-columns: 1fr;
+      gap: 2.4rem;
+    }
+
+    .makes-grid {
+      grid-template-columns: 1fr;
+      gap: 1.8rem;
     }
   }
 
-  @media (max-width: 620px) {
-    .hero {
-      gap: 3rem;
-      padding: 4.5rem 0 3.5rem;
+  @media (max-width: 560px) {
+    .term-body {
+      font-size: 0.72rem;
+      padding: 1.2rem 1.1rem 1.3rem;
     }
 
-    h1 {
-      max-width: 10ch;
-      font-size: clamp(3.35rem, 15vw, 5rem);
+    .page-body {
+      padding: 1.3rem 1.2rem 1.4rem;
     }
 
-    .hero-demo {
-      padding: 0.8rem;
-      border-radius: 0.75rem 0.75rem 2.5rem 0.75rem;
-    }
-
-    .demo-source-row {
-      grid-template-columns: 1fr;
-      gap: 0.25rem;
-    }
-
-    .demo-source-row + .demo-source-row {
-      margin-top: 0.55rem;
-    }
-
-    .demo-page {
-      margin: 0 0.7rem;
-      padding: 1.1rem;
-    }
-
-    .demo-page h2 {
-      font-size: 2.35rem;
-    }
-
-    .demo-page-data {
-      grid-template-columns: 1fr;
-    }
-
-    .demo-page-data div,
-    .demo-page-data div + div {
-      grid-template-columns: 5rem 1fr;
-      align-items: baseline;
-      padding: 0.7rem 0;
-      border-left: 0;
-      border-bottom: 1px solid rgba(40, 38, 56, 0.2);
-    }
-
-    .demo-page-data div:last-child {
-      border-bottom: 0;
-    }
-
-    .pitch-line {
-      display: grid;
-      gap: 1rem;
-      padding-bottom: 3.5rem;
-    }
-
-    .home-values {
-      padding-bottom: 4rem;
-    }
-
-    .home-value-row {
-      grid-template-columns: 2.5rem minmax(0, 1fr);
-      gap: 0.75rem;
+    .page-sync {
+      display: none;
     }
   }
 </style>

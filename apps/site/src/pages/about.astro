@@ -8,43 +8,135 @@ import SiteLayout from "../layouts/SiteLayout.astro";
   description="plansplease gives the useful pages made by coding agents a place to land."
   activePath="about"
 >
-  <section class="prose-page" aria-labelledby="about-title">
-    <h1 id="about-title">A place for the useful things agents make.</h1>
-    <p>
-      plansplease is a small open-source project for turning agent-made HTML into something you can
-      open again.
-    </p>
+  <section class="page-heading" aria-labelledby="about-title">
+    <div>
+      <h1 id="about-title">A place for the useful things agents make.</h1>
+      <p>
+        plansplease solves a simple problem: AI agents like Claude Code create HTML because Markdown
+        is too limited, but viewing and sharing those HTML files has too much friction.
+      </p>
+    </div>
+  </section>
 
-    <ul class="prose-list">
-      <li>
-        <h2>It starts on your machine</h2>
+  <section class="about-content">
+    <div class="about-narrative">
+      <h2>The Shift from Markdown to HTML</h2>
+      <p>
+        For years, Markdown was the default format for LLM outputs. But as coding agents like
+        Claude Code take on deeper architectural planning, Markdown breaks down. A 500-line Markdown
+        spec is painful to navigate, lacks visual hierarchy, and cannot represent interactive
+        explorations.
+      </p>
+      <p>
+        HTML solves this. An agent can generate interactive architectural specs with SVG diagrams,
+        PR reviews with inline annotations, UI prototypes with live sliders, and throwaway data editors
+        with JSON export buttons.
+      </p>
+      <p>
+        The friction is how to view them. Opening an HTML file directly from disk triggers browser
+        CORS security blocks and breaks relative assets. Spinning up an ad-hoc HTTP server or
+        deploying a repository takes longer than prompting the tool itself.
+      </p>
+      <p>
+        plansplease eliminates that friction:
+      </p>
+    </div>
+
+    <div class="values-grid">
+      <article class="value-card">
+        <h3>Instant local previews</h3>
         <p>
-          The CLI gives a standalone HTML file or page folder a local URL. Use it while the agent is
-          still working and keep your project setup untouched.
+          The CLI daemon runs on your machine with zero configuration. It serves files over loopback,
+          binds a private port, and automatically opens your default browser.
         </p>
-      </li>
-      <li>
-        <h2>The cloud keeps the useful copy</h2>
+      </article>
+
+      <article class="value-card">
+        <h3>A cloud copy that stays</h3>
         <p>
-          The managed workspace accepts one standalone HTML file at a time. It is private to your
-          account in the current alpha.
+          Save a private copy to your workspace alongside the local URL. Revisit your agent's
+          interactive specs and tools long after the chat session has ended.
         </p>
-      </li>
-      <li>
-        <h2>Small is a product decision</h2>
+      </article>
+
+      <article class="value-card">
+        <h3>Pure web standards</h3>
         <p>
-          A page does not need a full application, a deployment pipeline, or a new project before it
-          can be useful. Start with the artifact in front of you.
+          No proprietary bundler lock-in. Full support for standard HTML5, SVG diagrams, Canvas,
+          inline Tailwind, and multi-file asset folders.
         </p>
-      </li>
-      <li>
-        <h2>Built in the open</h2>
+      </article>
+
+      <article class="value-card">
+        <h3>Open source foundation</h3>
         <p>
-          The source is available on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
-          Self-hosting and richer uploads are part of the work ahead, not promises of the current
-          alpha.
+          The core daemon, CLI, and storage engine are 100% open source on
+          <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
         </p>
-      </li>
-    </ul>
+      </article>
+    </div>
   </section>
 </SiteLayout>
+
+<style>
+  .about-content {
+    padding: 3.5rem 0 5rem;
+  }
+
+  .about-narrative {
+    max-width: 44rem;
+    margin-bottom: 3.5rem;
+  }
+
+  .about-narrative h2 {
+    margin: 0 0 1.25rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.5rem;
+    font-weight: 650;
+    letter-spacing: -0.022em;
+  }
+
+  .about-narrative p {
+    margin: 0 0 1.25rem;
+    color: var(--night-muted);
+    font-size: 1.02rem;
+    line-height: 1.65;
+  }
+
+
+  .values-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.75rem;
+  }
+
+  .value-card {
+    padding: 2rem;
+    border: 1px solid var(--night-border);
+    border-radius: var(--radius-lg);
+    background: var(--night-card);
+  }
+
+  .value-card h3 {
+    margin: 0 0 0.75rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+
+  .value-card p {
+    margin: 0;
+    color: var(--night-muted);
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+
+  @media (max-width: 800px) {
+    .values-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

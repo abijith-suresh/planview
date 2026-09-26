@@ -14,96 +14,219 @@ import { appSignInUrl } from "../lib/app-url";
     <div>
       <h1 id="features-title">A short path from agent output to a page.</h1>
       <p>
-        Use the local CLI when you are still working. Save a standalone HTML file to the cloud when
-        you want to open it again later.
+        Use the local CLI when you are actively prompting and iterating. Save a standalone HTML
+        file to your secure cloud workspace when you want to reopen it, share it, or keep it forever.
       </p>
     </div>
     <a class="page-action" href={appSignInUrl}>Sign in with GitHub</a>
   </section>
 
+  <!-- Core Pillars Grid -->
   <section class="content-section" aria-labelledby="features-list-title">
     <h2 id="features-list-title">Use the smallest path that fits.</h2>
 
-    <div class="feature-list">
-      <article class="feature-row">
-        <span class="feature-number">01</span>
-        <div>
-          <h2>Preview locally</h2>
-          <p>
-            The CLI serves an HTML file through a loopback URL on your machine. No deployment is
-            needed to open the page your agent just made.
-          </p>
+    <div class="features-grid">
+      <article class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+            <line x1="8" y1="21" x2="16" y2="21"></line>
+            <line x1="12" y1="17" x2="12" y2="21"></line>
+          </svg>
         </div>
-        <code class="feature-command">planview publish --open ./page.html</code>
+        <h3>Preview locally</h3>
+        <p>
+          The CLI serves an HTML file through a loopback URL on your machine. No deployment or
+          bundler setup is needed to open the interactive page your agent just made.
+        </p>
+        <div class="feature-tags">
+          <span>Zero port collisions</span>
+          <span>Instant browser open</span>
+          <span>Offline capable</span>
+        </div>
       </article>
 
-      <article class="feature-row">
-        <span class="feature-number">02</span>
-        <div>
-          <h2>Keep one in the cloud</h2>
-          <p>
-            Sign in and upload one standalone HTML file to your workspace. Open it from the
-            dashboard after the original agent session is gone.
-          </p>
+      <article class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+          </svg>
         </div>
-        <span class="feature-command">one file / private workspace</span>
+        <h3>Keep one in the cloud</h3>
+        <p>
+          Sign in and upload standalone HTML files to your private workspace. Reopen your tools,
+          calculators, and dashboards from your browser whenever you need them.
+        </p>
+        <div class="feature-tags">
+          <span>GitHub authentication</span>
+          <span>Permanent URLs</span>
+          <span>Personal dashboard</span>
+        </div>
       </article>
 
-      <article class="feature-row">
-        <span class="feature-number">03</span>
-        <div>
-          <h2>Keep it private</h2>
-          <p>
-            Cloud uploads belong to your signed-in account. The current alpha does not create
-            public share links.
-          </p>
+      <article class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
         </div>
-        <span class="feature-command">account only</span>
+        <h3>Keep it private</h3>
+        <p>
+          Cloud uploads belong strictly to your authenticated account. Your files, proprietary
+          prompts, and internal data remain encrypted and private to you.
+        </p>
+        <div class="feature-tags">
+          <span>Account-isolated</span>
+          <span>No tracking</span>
+          <span>Zero telemetry on code</span>
+        </div>
       </article>
 
-      <article class="feature-row">
-        <span class="feature-number">04</span>
-        <div>
-          <h2>Start with one file</h2>
-          <p>
-            Upload a standalone HTML file first. Bundled assets and larger page projects can come
-            after the small workflow is useful on its own.
-          </p>
+      <article class="feature-card">
+        <div class="feature-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
         </div>
-        <span class="feature-command">HTML in / page out</span>
+        <h3>Start with one file</h3>
+        <p>
+          Upload a standalone HTML file first. No project scaffold, package.json, or build pipeline
+          is required before an interactive page earns the right to exist.
+        </p>
+        <div class="feature-tags">
+          <span>Pure Web Standards</span>
+          <span>No bundlers</span>
+          <span>Instant iteration</span>
+        </div>
       </article>
     </div>
 
     <p class="page-note">
-      The current alpha is intentionally small. Read the <a href="../cli/">CLI guide</a> or see
-      the <a href="../privacy/">privacy page</a> for the current behavior.
+      Explore the full <a href="../cli/">CLI command reference</a> or learn more about our data
+      principles on the <a href="../privacy/">privacy page</a>.
     </p>
   </section>
 
+  <!-- Grounding Section -->
   <section class="content-section feature-reason" aria-labelledby="reason-title">
-    <h2 id="reason-title">The chat is not a home for the page.</h2>
-    <p>
-      Coding agents are good at making useful artifacts quickly. Those artifacts often disappear
-      when the session ends. plansplease keeps the HTML separate from the chat so you can reopen it,
-      inspect it, or decide what deserves more work.
-    </p>
+    <div class="feature-reason-box">
+      <h2 id="reason-title">The chat is not a home for the page.</h2>
+      <p>
+        AI agents like Claude Code are remarkably skilled at generating rich HTML artifacts:
+        architectural specs with diagrams, PR reviews, throwaway data triage tools, and interactive
+        prototypes. These artifacts represent working software.
+      </p>
+      <p>
+        plansplease decouples the software artifact from the conversation thread. You get a clean,
+        distraction-free runtime to inspect the code, interact with the UI, and keep the useful
+        pages permanently accessible.
+      </p>
+    </div>
   </section>
 </SiteLayout>
 
 <style>
-  .feature-reason {
-    max-width: 48rem;
-    padding-top: 0;
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.75rem;
   }
 
-  .feature-reason h2 {
-    max-width: 12ch;
+  .feature-card {
+    padding: 2.25rem;
+    border: 1px solid var(--night-border);
+    border-radius: var(--radius-lg);
+    background: var(--night-card);
+    transition: all 160ms ease;
   }
 
-  .feature-reason p {
-    max-width: 38rem;
-    margin: 0;
+  .feature-card:hover {
+    border-color: var(--night-border-hover);
+  }
+
+  .feature-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    margin-bottom: 1.25rem;
+    border-radius: 8px;
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    color: var(--mint);
+  }
+
+  .feature-card h3 {
+    margin: 0 0 0.85rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.3rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .feature-card p {
+    margin: 0 0 1.5rem;
     color: var(--night-muted);
-    font-size: 1.1rem;
+    font-size: 0.95rem;
+    line-height: 1.6;
+  }
+
+  .feature-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .feature-tags span {
+    padding: 0.25rem 0.6rem;
+    border-radius: 6px;
+    background: var(--night-soft);
+    border: 1px solid var(--night-border);
+    color: var(--night-muted);
+    font-size: 0.78rem;
+    font-weight: 500;
+  }
+
+
+  .feature-reason {
+    padding-top: 1rem;
+  }
+
+  .feature-reason-box {
+    padding: 2.75rem;
+    border: 1px solid var(--night-border);
+    border-radius: var(--radius-lg);
+    background: var(--night-card);
+  }
+
+  .feature-reason-box h2 {
+    margin: 0 0 1.25rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: 1.6rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+  }
+
+  .feature-reason-box p {
+    max-width: 44rem;
+    margin: 0 0 1.25rem;
+    color: var(--night-muted);
+    font-size: 1.02rem;
+    line-height: 1.65;
+  }
+
+  .feature-reason-box p:last-child {
+    margin-bottom: 0;
+  }
+
+  @media (max-width: 800px) {
+    .features-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>
