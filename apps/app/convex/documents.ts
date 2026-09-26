@@ -155,9 +155,13 @@ export const requestDeletion = mutation({
       return "accepted" as const;
     }
 
-    if (document.storageProvider && document.storageKey) {
-      if (document.storageProvider !== "uploadthing") {
-        throw new Error("Unsupported document storage provider");
+    if (document.storageProvider !== undefined || document.storageKey !== undefined) {
+      if (
+        document.storageProvider !== "uploadthing" ||
+        !document.storageKey ||
+        document.storageId
+      ) {
+        throw new Error("External document storage metadata is incomplete");
       }
       const now = Date.now();
       await ctx.db.patch(args.id, { deletionRequestedAt: now });
@@ -174,7 +178,6 @@ export const requestDeletion = mutation({
     if (!document.storageId || document.storageProvider || document.storageKey) {
       throw new Error("External documents require storage cleanup before metadata removal");
     }
-
     await ctx.storage.delete(document.storageId);
 
     await ctx.db.delete(args.id);
