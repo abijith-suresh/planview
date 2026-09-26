@@ -276,7 +276,10 @@ test("cloud login callback and upload preserve the local protocol", async () => 
       );
 
       responseMode = "expired";
-      await assert.rejects(uploadCloudDocument(sourcePath, "cloud-test"), /login expired/);
+      await assert.rejects(
+        uploadCloudDocument(sourcePath, "cloud-test"),
+        /credential was rejected/
+      );
       responseMode = "failure";
       await assert.rejects(
         uploadCloudDocument(sourcePath, "cloud-test"),
@@ -312,6 +315,57 @@ test("logout retains a credential when server revocation fails", async () => {
       await saveTestCredentials("logout-retry", cloudUrl);
       await assert.rejects(removeCloudCredentials("logout-retry"), /could not revoke/);
       assert.equal(existsSync(cloudCredentialsPath("logout-retry")), true);
+    } finally {
+      server.closeAllConnections();
+      await close(server);
+    }
+  });
+});
+
+test("login and logout can repair a private but invalid credentials file", async () => {
+  await withIsolatedAppData(async () => {
+    const profile = "invalid-credentials";
+    await saveTestCredentials(profile);
+    const path = cloudCredentialsPath(profile);
+
+    writeFileSync(path, "{invalid json");
+    await assert.rejects(uploadCloudDocument("unused.html", profile), /credentials are invalid/);
+    await saveTestCredentials(profile, "https://cloud.example.test", "replacement-token");
+    assert.match(readFileSync(path, "utf8"), /planview_cli_replacement-token/);
+
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, cloudUrl: "not a URL", token: "planview_cli_bad" })
+    );
+    await removeCloudCredentials(profile);
+    assert.equal(existsSync(path), false);
+  });
+});
+
+test("login refuses to replace a credentials file shared with other users", {
+  skip: process.platform === "win32",
+}, async () => {
+  await withIsolatedAppData(async () => {
+    const revokedTokens: string[] = [];
+    const server = createServer((request, response) => {
+      revokedTokens.push(request.headers.authorization ?? "");
+      response.writeHead(204);
+      response.end();
+    });
+    const cloudUrl = await listen(server);
+
+    try {
+      const profile = "unsafe-credentials";
+      await saveTestCredentials(profile, cloudUrl, "previous");
+      const path = cloudCredentialsPath(profile);
+      chmodSync(path, 0o644);
+
+      await assert.rejects(
+        saveTestCredentials(profile, cloudUrl, "replacement"),
+        /not private to the current user/
+      );
+      assert.match(readFileSync(path, "utf8"), /planview_cli_previous/);
+      assert.deepEqual(revokedTokens, ["Bearer planview_cli_replacement"]);
     } finally {
       server.closeAllConnections();
       await close(server);

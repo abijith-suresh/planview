@@ -137,7 +137,10 @@ const saveCredentials = async (profile: string | undefined, credentials: Credent
   }
 };
 
-const loadCredentials = async (profile?: string): Promise<Credentials | undefined> => {
+const loadCredentials = async (
+  profile?: string,
+  options: { allowInvalid?: boolean } = {}
+): Promise<Credentials | undefined> => {
   const path = credentialPath(profile);
   let file: FileHandle;
 
@@ -153,7 +156,17 @@ const loadCredentials = async (profile?: string): Promise<Credentials | undefine
   try {
     const stats = await file.stat();
     assertCurrentUserFile(stats, "the cloud credentials file");
-    const parsed: unknown = JSON.parse(await file.readFile({ encoding: "utf8" }));
+    const invalidCredentials = () => {
+      if (options.allowInvalid) return undefined;
+      throw new Error("The saved cloud credentials are invalid. Run `planview login` again.");
+    };
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await file.readFile({ encoding: "utf8" }));
+    } catch (cause) {
+      if (!(cause instanceof SyntaxError)) throw cause;
+      return invalidCredentials();
+    }
 
     if (
       !isCloudObject(parsed) ||
@@ -163,12 +176,19 @@ const loadCredentials = async (profile?: string): Promise<Credentials | undefine
       !parsed.token.startsWith(CLI_CREDENTIAL_PREFIX) ||
       parsed.token.length === CLI_CREDENTIAL_PREFIX.length
     ) {
-      throw new Error("The saved cloud credentials are invalid. Run `planview login` again.");
+      return invalidCredentials();
+    }
+
+    let cloudUrl: string;
+    try {
+      cloudUrl = normalizedCloudUrl(parsed.cloudUrl);
+    } catch {
+      return invalidCredentials();
     }
 
     return {
       version: 1,
-      cloudUrl: normalizedCloudUrl(parsed.cloudUrl),
+      cloudUrl,
       token: parsed.token,
     };
   } finally {
@@ -196,7 +216,7 @@ export const removeCloudCredentials = async (profile?: string) => {
 
   if (stats) {
     assertCurrentUserFile(stats, "the cloud credentials file");
-    const credentials = await loadCredentials(profile);
+    const credentials = await loadCredentials(profile, { allowInvalid: true });
     if (credentials) await revokeCloudCredential(credentials);
     await unlink(path);
   }
@@ -366,7 +386,7 @@ export const loginToCloud = async (options: {
       token: `${CLI_CREDENTIAL_PREFIX}${token}`,
     };
     try {
-      const previous = await loadCredentials(options.profile);
+      const previous = await loadCredentials(options.profile, { allowInvalid: true });
       if (previous?.cloudUrl === credentials.cloudUrl && previous.token === credentials.token) {
         return { cloudUrl };
       }
@@ -494,7 +514,9 @@ export const uploadCloudDocument = async (
     });
 
     if (response.status === 401) {
-      throw new Error("Your cloud login expired. Run `planview login` and retry the upload.");
+      throw new Error(
+        "Your cloud credential was rejected. Run `planview login` and retry the upload."
+      );
     }
     if (!response.ok) {
       throw new Error(await readResponseMessage(response, controller.signal));
