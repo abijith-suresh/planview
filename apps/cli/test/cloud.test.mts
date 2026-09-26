@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   chmodSync,
+  existsSync,
   lstatSync,
   mkdtempSync,
   readFileSync,
@@ -16,7 +17,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { resolveAppDataPaths } from "@planview/local";
 import { MAX_HTML_SIZE_BYTES, readBoundedCloudFile } from "../dist/cloud-file.js";
-import { loginToCloud, uploadCloudDocument } from "../dist/cloud.js";
+import { loginToCloud, removeCloudCredentials, uploadCloudDocument } from "../dist/cloud.js";
 
 const collectRequest = async (request: IncomingMessage) => {
   const chunks: Buffer[] = [];
@@ -115,7 +116,11 @@ const fakeReader = (options: {
   return reader as unknown as Pick<FileHandle, "read" | "stat">;
 };
 
-const saveTestCredentials = async (profile: string, cloudUrl = "https://cloud.example.test") => {
+const saveTestCredentials = async (
+  profile: string,
+  cloudUrl = "https://cloud.example.test",
+  token = "security-test-token"
+) => {
   await loginToCloud({
     profile,
     cloudUrl,
@@ -134,7 +139,7 @@ const saveTestCredentials = async (profile: string, cloudUrl = "https://cloud.ex
       const response = await fetch(callback, {
         method: "POST",
         headers: { Origin: callback.origin, "Content-Type": "application/json" },
-        body: JSON.stringify({ state, token: "security-test-token" }),
+        body: JSON.stringify({ state, token }),
       });
       assert.equal(response.status, 200);
       await response.text();
@@ -149,7 +154,14 @@ test("cloud login callback and upload preserve the local protocol", async () => 
   await withIsolatedAppData(async (root) => {
     let responseMode: "success" | "expired" | "failure" = "success";
     const uploadRequests: Array<{ headers: IncomingMessage["headers"]; body: string }> = [];
+    const revokedTokens: string[] = [];
     const server = createServer(async (request, response) => {
+      if (request.method === "DELETE" && request.url === "/api/cli/session") {
+        revokedTokens.push(request.headers.authorization ?? "");
+        response.writeHead(204);
+        response.end();
+        return;
+      }
       if (request.method !== "POST" || request.url !== "/api/documents/upload") {
         sendJson(response, 404, { error: "Not found" });
         return;
@@ -264,7 +276,10 @@ test("cloud login callback and upload preserve the local protocol", async () => 
       );
 
       responseMode = "expired";
-      await assert.rejects(uploadCloudDocument(sourcePath, "cloud-test"), /login expired/);
+      await assert.rejects(
+        uploadCloudDocument(sourcePath, "cloud-test"),
+        /credential was rejected/
+      );
       responseMode = "failure";
       await assert.rejects(
         uploadCloudDocument(sourcePath, "cloud-test"),
@@ -282,6 +297,116 @@ test("cloud login callback and upload preserve the local protocol", async () => 
         "cloud-credentials.json"
       );
       assert.ok(readFileSync(credentialsPath, "utf8").includes("planview_cli_test-token"));
+      await removeCloudCredentials("cloud-test");
+      assert.deepEqual(revokedTokens, ["Bearer planview_cli_test-token"]);
+      assert.equal(existsSync(credentialsPath), false);
+    } finally {
+      server.closeAllConnections();
+      await close(server);
+    }
+  });
+});
+
+test("logout retains a credential when server revocation fails", async () => {
+  await withIsolatedAppData(async () => {
+    const server = createServer((_request, response) => sendJson(response, 503, { error: "down" }));
+    const cloudUrl = await listen(server);
+    try {
+      await saveTestCredentials("logout-retry", cloudUrl);
+      await assert.rejects(removeCloudCredentials("logout-retry"), /could not revoke/);
+      assert.equal(existsSync(cloudCredentialsPath("logout-retry")), true);
+    } finally {
+      server.closeAllConnections();
+      await close(server);
+    }
+  });
+});
+
+test("login and logout can repair a private but invalid credentials file", async () => {
+  await withIsolatedAppData(async () => {
+    const profile = "invalid-credentials";
+    await saveTestCredentials(profile);
+    const path = cloudCredentialsPath(profile);
+
+    writeFileSync(path, "{invalid json");
+    await assert.rejects(uploadCloudDocument("unused.html", profile), /credentials are invalid/);
+    await saveTestCredentials(profile, "https://cloud.example.test", "replacement-token");
+    assert.match(readFileSync(path, "utf8"), /planview_cli_replacement-token/);
+
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, cloudUrl: "not a URL", token: "planview_cli_bad" })
+    );
+    await removeCloudCredentials(profile);
+    assert.equal(existsSync(path), false);
+  });
+});
+
+test("login refuses to replace a credentials file shared with other users", {
+  skip: process.platform === "win32",
+}, async () => {
+  await withIsolatedAppData(async () => {
+    const revokedTokens: string[] = [];
+    const server = createServer((request, response) => {
+      revokedTokens.push(request.headers.authorization ?? "");
+      response.writeHead(204);
+      response.end();
+    });
+    const cloudUrl = await listen(server);
+
+    try {
+      const profile = "unsafe-credentials";
+      await saveTestCredentials(profile, cloudUrl, "previous");
+      const path = cloudCredentialsPath(profile);
+      chmodSync(path, 0o644);
+
+      await assert.rejects(
+        saveTestCredentials(profile, cloudUrl, "replacement"),
+        /not private to the current user/
+      );
+      assert.match(readFileSync(path, "utf8"), /planview_cli_previous/);
+      assert.deepEqual(revokedTokens, ["Bearer planview_cli_replacement"]);
+    } finally {
+      server.closeAllConnections();
+      await close(server);
+    }
+  });
+});
+
+test("signing in again revokes the old credential and retains it when rotation fails", async () => {
+  await withIsolatedAppData(async () => {
+    const revokedTokens: string[] = [];
+    let failSecondRevocation = false;
+    const server = createServer((request, response) => {
+      if (request.method !== "DELETE" || request.url !== "/api/cli/session") {
+        sendJson(response, 404, { error: "Not found" });
+        return;
+      }
+      const authorization = request.headers.authorization ?? "";
+      revokedTokens.push(authorization);
+      if (failSecondRevocation && authorization === "Bearer planview_cli_second") {
+        sendJson(response, 503, { error: "unavailable" });
+        return;
+      }
+      response.writeHead(204);
+      response.end();
+    });
+    const cloudUrl = await listen(server);
+
+    try {
+      await saveTestCredentials("rotation", cloudUrl, "first");
+      await saveTestCredentials("rotation", cloudUrl, "second");
+      assert.deepEqual(revokedTokens, ["Bearer planview_cli_first"]);
+      assert.match(readFileSync(cloudCredentialsPath("rotation"), "utf8"), /planview_cli_second/);
+
+      failSecondRevocation = true;
+      await assert.rejects(saveTestCredentials("rotation", cloudUrl, "third"), /could not revoke/);
+      assert.deepEqual(revokedTokens, [
+        "Bearer planview_cli_first",
+        "Bearer planview_cli_second",
+        "Bearer planview_cli_third",
+      ]);
+      assert.match(readFileSync(cloudCredentialsPath("rotation"), "utf8"), /planview_cli_second/);
     } finally {
       server.closeAllConnections();
       await close(server);
