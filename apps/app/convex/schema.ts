@@ -26,4 +26,12 @@ export default defineSchema({
     nextAttemptAt: v.number(),
     attempts: v.number(),
   }).index("by_nextAttemptAt", ["nextAttemptAt"]),
+  cliCredentials: defineTable({
+    ownerId: v.string(),
+    tokenHash: v.string(),
+    createdAt: v.number(),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_owner", ["ownerId"]),
 });

@@ -8,9 +8,23 @@ export const convexSiteUrl = process.env["CONVEX_SITE_URL"] ?? process.env["VITE
 
 export { api };
 
-export async function getAuthedConvexClient(request: Request) {
+const requireConvexConfiguration = () => {
   if (!convexUrl || !convexSiteUrl) {
     throw new Error("Convex is not configured");
+  }
+  return { convexUrl, convexSiteUrl };
+};
+
+export const getUnauthedConvexClient = () =>
+  new ConvexHttpClient(requireConvexConfiguration().convexUrl);
+
+export async function getAuthedConvexClient(request: Request) {
+  const { convexSiteUrl } = requireConvexConfiguration();
+
+  // CLI credentials are accepted only by the upload route. They must never
+  // become a Better Auth session or a Convex JWT on other app routes.
+  if (/^Bearer\s+planview_cli_/i.test(request.headers.get("authorization") ?? "")) {
+    return { client: getUnauthedConvexClient(), token: null };
   }
 
   const headers = new Headers(request.headers);
@@ -18,20 +32,8 @@ export async function getAuthedConvexClient(request: Request) {
   headers.delete("transfer-encoding");
   headers.set("accept-encoding", "identity");
 
-  const authorization = request.headers.get("authorization");
-  const cliSessionToken = authorization?.match(/^Bearer\s+planview_cli_(.+)$/i)?.[1];
-
-  if (cliSessionToken) {
-    headers.delete("authorization");
-    const encodedSessionToken = encodeURIComponent(cliSessionToken);
-    headers.set(
-      "cookie",
-      `better-auth.session_token=${encodedSessionToken}; __Secure-better-auth.session_token=${encodedSessionToken}`
-    );
-  }
-
   const { token } = await getToken(convexSiteUrl, headers);
-  const client = new ConvexHttpClient(convexUrl);
+  const client = getUnauthedConvexClient();
 
   if (token) {
     client.setAuth(token);
