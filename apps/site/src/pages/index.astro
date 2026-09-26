@@ -1,4 +1,10 @@
 ---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import ConceptSwitch from "../components/ConceptSwitch.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import CtaSection from "../components/CtaSection.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import SectionIntro from "../components/SectionIntro.astro";
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
 import SiteLayout from "../layouts/SiteLayout.astro";
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
@@ -47,11 +53,11 @@ import { appSignInUrl } from "../lib/app-url";
           <p class="tl is-step">
             <span class="step-bullet">●</span> planview publish ./auth-migration-spec.html
           </p>
-          <p class="tl is-out">
+          <p class="tl">
             <span class="check">✓</span> served at
             <span class="url">http://localhost:4777/auth-migration-spec</span>
           </p>
-          <p class="tl is-out">
+          <p class="tl">
             <span class="check">✓</span> saved to workspace
             <span class="url is-cloud">plansplease.app/p/auth-migration-spec</span>
           </p>
@@ -89,52 +95,46 @@ import { appSignInUrl } from "../lib/app-url";
   </section>
 
   <section class="how" aria-labelledby="how-title">
-    <div class="how-header">
-      <h2 id="how-title">One command, two homes</h2>
-      <p>
-        The CLI is the fastest way in. Point it at any HTML file and it serves the page on your
-        machine and saves a private copy to your workspace at the same time.
-      </p>
-    </div>
+    <SectionIntro
+      id="how-title"
+      title="One command, two homes"
+      lede="The CLI is the fastest way in. Point it at any HTML file and it serves the page on your machine and saves a private copy to your workspace at the same time."
+    />
 
     <ol class="steps">
       <li class="step">
         <span class="step-index" aria-hidden="true">01</span>
-        <div class="step-body">
-          <h3>Publish the file</h3>
-          <p>Any agent can write it. One command hands it a URL.</p>
-          <code class="step-code">planview publish ./auth-migration-spec.html</code>
-        </div>
+        <h3>Publish the file</h3>
+        <p>Any agent can write it. One command hands it a URL.</p>
+        <code class="step-code">planview publish ./auth-migration-spec.html</code>
       </li>
 
       <li class="step">
         <span class="step-index" aria-hidden="true">02</span>
-        <div class="step-body">
-          <h3>Open it anywhere</h3>
-          <p>A local address for the machine you're on. A private cloud link for your phone, your
-          team, and your future self.</p>
-        </div>
+        <h3>Open it anywhere</h3>
+        <p>
+          A local address for the machine you're on. A private cloud link for your phone, your
+          team, and your future self.
+        </p>
       </li>
 
       <li class="step">
         <span class="step-index" aria-hidden="true">03</span>
-        <div class="step-body">
-          <h3>Keep it working</h3>
-          <p>Pages outlive the chat. They stay in your workspace — searchable, deletable, yours —
-          until you decide otherwise.</p>
-        </div>
+        <h3>Keep it working</h3>
+        <p>
+          Pages outlive the chat. They stay in your workspace — searchable, deletable, yours —
+          until you decide otherwise.
+        </p>
       </li>
     </ol>
   </section>
 
   <section class="makes" aria-labelledby="makes-title">
-    <div class="makes-header">
-      <h2 id="makes-title">Built for what agents actually output</h2>
-      <p>
-        Not landing pages for your side project — the working documents an agent produces while
-        doing real work with you.
-      </p>
-    </div>
+    <SectionIntro
+      id="makes-title"
+      title="Built for what agents actually output"
+      lede="Not landing pages for your side project — the working documents an agent produces while doing real work with you."
+    />
 
     <div class="makes-grid">
       <div class="make">
@@ -165,23 +165,14 @@ import { appSignInUrl } from "../lib/app-url";
     </p>
   </section>
 
-  <section class="cta" aria-labelledby="cta-title">
-    <h2 id="cta-title">Stop losing good work in chat scrollback.</h2>
-    <p class="cta-lede">Sign in, publish your next agent-made page, and see how long it lasts.</p>
-    <div class="cta-actions">
-      <a class="btn-primary" href={appSignInUrl}>Continue with GitHub</a>
-      <a class="btn-ghost" href="/features/">Explore features</a>
-    </div>
-    <p class="cta-note">Free during alpha · CLI today, MCP soon · Private by default</p>
-  </section>
+  <CtaSection
+    id="cta-title"
+    title="Stop losing good work in chat scrollback."
+    lede="Sign in, publish your next agent-made page, and see how long it lasts."
+    note="Free during alpha · CLI today, MCP soon · Private by default"
+  />
 
-  <nav class="concept-switch" aria-label="Landing page design concepts">
-    <span aria-hidden="true">concept</span>
-    <a href="/" aria-current="page">A</a>
-    <a href="/1/">B</a>
-    <a href="/2/">C</a>
-    <a href="/3/">D</a>
-  </nav>
+  <ConceptSwitch current="a" />
 </SiteLayout>
 
 <script>
@@ -319,45 +310,6 @@ import { appSignInUrl } from "../lib/app-url";
     flex-wrap: wrap;
     justify-content: center;
     gap: 0.8rem;
-  }
-
-  .btn-primary {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.72rem 1.4rem;
-    border-radius: 10px;
-    background: var(--text-white);
-    color: var(--ink);
-    font-size: 0.92rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    text-decoration: none;
-    transition: background-color 140ms ease, transform 140ms ease;
-  }
-
-  .btn-primary:hover,
-  .btn-primary:focus-visible {
-    background: #e6e5e2;
-    transform: translateY(-1px);
-  }
-
-  .btn-ghost {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.72rem 1.3rem;
-    border: 1px solid var(--night-border-hover);
-    border-radius: 10px;
-    color: var(--text-white);
-    font-size: 0.92rem;
-    font-weight: 500;
-    text-decoration: none;
-    transition: border-color 140ms ease, background-color 140ms ease;
-  }
-
-  .btn-ghost:hover,
-  .btn-ghost:focus-visible {
-    border-color: rgba(255, 255, 255, 0.24);
-    background: rgba(255, 255, 255, 0.04);
   }
 
   /* Entry stagger */
@@ -688,29 +640,6 @@ import { appSignInUrl } from "../lib/app-url";
     border-top: 1px solid var(--night-border);
   }
 
-  .how-header {
-    max-width: 42rem;
-    margin-bottom: 3.5rem;
-  }
-
-  .how-header h2 {
-    margin: 0 0 1rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: clamp(1.8rem, 3.2vw, 2.5rem);
-    font-weight: 640;
-    letter-spacing: -0.034em;
-    line-height: 1.12;
-    text-wrap: balance;
-  }
-
-  .how-header p {
-    margin: 0;
-    color: var(--night-muted);
-    font-size: 1.05rem;
-    line-height: 1.62;
-  }
-
   .steps {
     margin: 0;
     padding: 0;
@@ -763,29 +692,6 @@ import { appSignInUrl } from "../lib/app-url";
   .makes {
     padding: 6rem 0;
     border-top: 1px solid var(--night-border);
-  }
-
-  .makes-header {
-    max-width: 42rem;
-    margin-bottom: 3.5rem;
-  }
-
-  .makes-header h2 {
-    margin: 0 0 1rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: clamp(1.8rem, 3.2vw, 2.5rem);
-    font-weight: 640;
-    letter-spacing: -0.034em;
-    line-height: 1.12;
-    text-wrap: balance;
-  }
-
-  .makes-header p {
-    margin: 0;
-    color: var(--night-muted);
-    font-size: 1.05rem;
-    line-height: 1.62;
   }
 
   .makes-grid {
@@ -842,89 +748,6 @@ import { appSignInUrl } from "../lib/app-url";
     line-height: 1.65;
   }
 
-  /* ---------- CTA ---------- */
-
-  .cta {
-    padding: 7rem 0 7.5rem;
-    border-top: 1px solid var(--night-border);
-    text-align: center;
-  }
-
-  .cta h2 {
-    max-width: 26ch;
-    margin: 0 auto 1rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: clamp(2rem, 3.6vw, 2.8rem);
-    font-weight: 640;
-    letter-spacing: -0.036em;
-    line-height: 1.1;
-    text-wrap: balance;
-  }
-
-  .cta-lede {
-    max-width: 32rem;
-    margin: 0 auto 2.1rem;
-    color: var(--night-muted);
-    font-size: 1.02rem;
-    line-height: 1.6;
-  }
-
-  .cta-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.8rem;
-    margin-bottom: 1.6rem;
-  }
-
-  .cta-note {
-    margin: 0;
-    color: var(--night-subtle);
-    font-family: var(--mono);
-    font-size: 0.74rem;
-  }
-
-  /* ---------- Concept switcher (temporary, for design review) ---------- */
-
-  .concept-switch {
-    position: fixed;
-    right: 1.1rem;
-    bottom: 1.1rem;
-    z-index: 90;
-    display: inline-flex;
-    align-items: center;
-    padding: 0.3rem 0.45rem;
-    border: 1px solid var(--night-border-hover);
-    border-radius: 999px;
-    background: rgba(18, 18, 20, 0.92);
-    backdrop-filter: blur(8px);
-    font-family: var(--mono);
-    font-size: 0.66rem;
-  }
-
-  .concept-switch span {
-    margin-right: 0.4rem;
-    color: var(--night-subtle);
-    letter-spacing: 0.06em;
-  }
-
-  .concept-switch a {
-    padding: 0.2rem 0.45rem;
-    border-radius: 999px;
-    color: var(--night-subtle);
-    text-decoration: none;
-  }
-
-  .concept-switch a:hover,
-  .concept-switch a:focus-visible {
-    color: var(--text-white);
-  }
-
-  .concept-switch a[aria-current="page"] {
-    background: var(--night-card-elevated);
-    color: var(--mint);
-  }
 
   @media (max-width: 960px) {
     .demo {

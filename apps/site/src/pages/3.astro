@@ -1,4 +1,8 @@
 ---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import ConceptSwitch from "../components/ConceptSwitch.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import CtaSection from "../components/CtaSection.astro";
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
 import SiteLayout from "../layouts/SiteLayout.astro";
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
@@ -19,8 +23,8 @@ import { appSignInUrl } from "../lib/app-url";
       local URL the second you run the command, a private cloud link that outlives the chat.
     </p>
     <div class="hero-actions">
-      <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
-      <a class="btn-line" href="/docs/">Read the docs</a>
+      <a class="btn-primary" href={appSignInUrl}>Continue with GitHub</a>
+      <a class="btn-ghost" href="/docs/">Read the docs</a>
     </div>
 
     <div class="url-line" role="img" aria-label="A published page address">
@@ -79,22 +83,14 @@ import { appSignInUrl } from "../lib/app-url";
     </div>
   </section>
 
-  <section class="cta" aria-labelledby="cta-title">
-    <h2 id="cta-title">Your agent's next file deserves an address.</h2>
-    <div class="cta-actions">
-      <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
-      <a class="btn-line" href="/features/">Explore features</a>
-    </div>
-    <p class="cta-note">Free during alpha · Private by default</p>
-  </section>
+  <CtaSection
+    id="cta-title"
+    title="Your agent's next file deserves an address."
+    note="Free during alpha · Private by default"
+    align="start"
+  />
 
-  <nav class="concept-switch" aria-label="Landing page design concepts">
-    <span aria-hidden="true">concept</span>
-    <a href="/">A</a>
-    <a href="/1/">B</a>
-    <a href="/2/">C</a>
-    <a href="/3/" aria-current="page">D</a>
-  </nav>
+  <ConceptSwitch current="d" />
 </SiteLayout>
 
 <style>
@@ -102,14 +98,6 @@ import { appSignInUrl } from "../lib/app-url";
     background: #101012;
   }
 
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
 
   /* ---------- Hero ---------- */
 
@@ -150,43 +138,7 @@ import { appSignInUrl } from "../lib/app-url";
     gap: 0.8rem;
   }
 
-  .btn-solid {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.72rem 1.4rem;
-    border-radius: 10px;
-    background: var(--text-white);
-    color: var(--ink);
-    font-size: 0.92rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    text-decoration: none;
-    transition: background-color 140ms ease;
-  }
 
-  .btn-solid:hover,
-  .btn-solid:focus-visible {
-    background: #ded9d0;
-  }
-
-  .btn-line {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.72rem 1.3rem;
-    border: 1px solid var(--night-border-hover);
-    border-radius: 10px;
-    color: var(--text-white);
-    font-size: 0.92rem;
-    font-weight: 500;
-    text-decoration: none;
-    transition: border-color 140ms ease, background-color 140ms ease;
-  }
-
-  .btn-line:hover,
-  .btn-line:focus-visible {
-    border-color: #3a3833;
-    background: #141416;
-  }
 
   .url-line {
     position: relative;
@@ -363,38 +315,6 @@ import { appSignInUrl } from "../lib/app-url";
     white-space: nowrap;
   }
 
-  /* ---------- CTA ---------- */
-
-  .cta {
-    padding: 6rem 0 6.5rem;
-    border-top: 1px solid var(--night-border);
-  }
-
-  .cta h2 {
-    max-width: 22ch;
-    margin: 0 0 2rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: clamp(1.9rem, 3.4vw, 2.7rem);
-    font-weight: 640;
-    letter-spacing: -0.036em;
-    line-height: 1.12;
-    text-wrap: balance;
-  }
-
-  .cta-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.8rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .cta-note {
-    margin: 0;
-    color: var(--night-subtle);
-    font-family: var(--mono);
-    font-size: 0.74rem;
-  }
 
   @media (max-width: 960px) {
     .pieces {
@@ -412,44 +332,4 @@ import { appSignInUrl } from "../lib/app-url";
     }
   }
 
-  /* ---------- Concept switcher (temporary, for design review) ---------- */
-
-  .concept-switch {
-    position: fixed;
-    right: 1.1rem;
-    bottom: 1.1rem;
-    z-index: 60;
-    display: inline-flex;
-    align-items: center;
-    padding: 0.3rem 0.45rem;
-    border: 1px solid var(--night-border-hover);
-    border-radius: 999px;
-    background: rgba(18, 18, 20, 0.92);
-    backdrop-filter: blur(8px);
-    font-family: var(--mono);
-    font-size: 0.66rem;
-  }
-
-  .concept-switch span {
-    margin-right: 0.4rem;
-    color: var(--night-subtle);
-    letter-spacing: 0.06em;
-  }
-
-  .concept-switch a {
-    padding: 0.2rem 0.45rem;
-    border-radius: 999px;
-    color: var(--night-subtle);
-    text-decoration: none;
-  }
-
-  .concept-switch a:hover,
-  .concept-switch a:focus-visible {
-    color: var(--text-white);
-  }
-
-  .concept-switch a[aria-current="page"] {
-    background: var(--night-card-elevated);
-    color: var(--mint);
-  }
 </style>

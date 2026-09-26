@@ -1,0 +1,81 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
+import { appSignInUrl } from "../lib/app-url";
+
+interface Props {
+  id: string;
+  title: string;
+  lede?: string;
+  note: string;
+  align?: "center" | "start";
+}
+
+// biome-ignore lint/correctness/noUnusedVariables: Astro uses these props in the template below.
+const { id, title, lede, note, align = "center" } = Astro.props;
+---
+
+<section class:list={["cta", { "is-start": align === "start" }]} aria-labelledby={id}>
+  <h2 id={id}>{title}</h2>
+  {lede ? <p class="cta-lede">{lede}</p> : null}
+  <div class="cta-actions">
+    <a class="btn-primary" href={appSignInUrl}>Continue with GitHub</a>
+    <a class="btn-ghost" href="/features/">Explore features</a>
+  </div>
+  <p class="cta-note">{note}</p>
+</section>
+
+<style>
+  .cta {
+    padding: 7rem 0 7.5rem;
+    border-top: 1px solid var(--night-border);
+    text-align: center;
+  }
+
+  .cta h2 {
+    max-width: 26ch;
+    margin: 0 auto 1rem;
+    color: var(--text-white);
+    font-family: var(--display);
+    font-size: clamp(2rem, 3.6vw, 2.8rem);
+    font-weight: 640;
+    letter-spacing: -0.036em;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+
+  .cta-lede {
+    max-width: 32rem;
+    margin: 0 auto 2.1rem;
+    color: var(--night-muted);
+    font-size: 1.02rem;
+    line-height: 1.6;
+  }
+
+  .cta-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.8rem;
+    margin-bottom: 1.6rem;
+  }
+
+  .cta-note {
+    margin: 0;
+    color: var(--night-subtle);
+    font-family: var(--mono);
+    font-size: 0.74rem;
+  }
+
+  .cta.is-start {
+    text-align: start;
+  }
+
+  .cta.is-start h2 {
+    margin: 0 0 2rem;
+  }
+
+  .cta.is-start .cta-actions {
+    justify-content: flex-start;
+    margin-bottom: 1.5rem;
+  }
+</style>

@@ -12,8 +12,8 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     <div>
       <h1 id="faq-title">Questions we expect to hear.</h1>
       <p>
-        Clear, direct answers about how plansplease handles local loopback serving, private cloud
-        vaults, and agent integrations.
+        Clear, direct answers about how plansplease serves pages locally, keeps a private cloud
+        copy, and fits agent workflows.
       </p>
     </div>
   </section>
@@ -82,9 +82,9 @@ import SiteLayout from "../layouts/SiteLayout.astro";
         </summary>
         <div class="faq-answer">
           <p>
-            You can use the plansplease CLI directly inside your agent's terminal shell, or configure
-            plansplease as an MCP (Model Context Protocol) tool. This allows your agent to publish
-            and inspect live interactive artifacts autonomously during its planning and coding loop.
+            Run the CLI right in your agent's terminal — any harness that can write a file can
+            publish. MCP support is planned, so agent harnesses will be able to publish and
+            inspect pages without leaving their own tools.
           </p>
         </div>
       </details>
@@ -198,22 +198,5 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
   .faq-answer p:last-child {
     margin-bottom: 0;
-  }
-
-  .faq-answer code {
-    padding: 0.15rem 0.35rem;
-    border-radius: 4px;
-    background: var(--night-soft);
-    border: 1px solid var(--night-border);
-    color: var(--mint);
-    font-family: var(--mono);
-    font-size: 0.85rem;
-  }
-
-  .faq-answer a,
-  .page-note a {
-    color: var(--mint);
-    text-decoration: underline;
-    text-underline-offset: 3px;
   }
 </style>

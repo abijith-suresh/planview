@@ -1,4 +1,8 @@
 ---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import ConceptSwitch from "../components/ConceptSwitch.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this component below.
+import CtaSection from "../components/CtaSection.astro";
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
 import SiteLayout from "../layouts/SiteLayout.astro";
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
@@ -17,14 +21,14 @@ import { appSignInUrl } from "../lib/app-url";
       and find again long after the chat is gone.
     </p>
     <div class="hero-actions">
-      <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
-      <a class="btn-line" href="/docs/">Read the docs</a>
+      <a class="btn-primary" href={appSignInUrl}>Continue with GitHub</a>
+      <a class="btn-ghost" href="/docs/">Read the docs</a>
     </div>
   </section>
 
   <section class="strip" aria-label="Examples of agent-made pages">
     <div class="strip-rail">
-      <div class="thumb t-spec">
+      <div class="thumb">
         <p class="t-title">auth-plan.html</p>
         <span class="t-line w60"></span>
         <span class="t-line w90"></span>
@@ -32,7 +36,7 @@ import { appSignInUrl } from "../lib/app-url";
         <span class="t-boxes"><span></span><span></span><span></span></span>
       </div>
 
-      <div class="thumb t-review">
+      <div class="thumb">
         <p class="t-title">pr-482-review.html</p>
         <span class="t-diff is-add">+ retry with backoff</span>
         <span class="t-diff is-del">- sleep(1000)</span>
@@ -40,20 +44,20 @@ import { appSignInUrl } from "../lib/app-url";
         <span class="t-note">blocking · backpressure</span>
       </div>
 
-      <div class="thumb t-dash">
+      <div class="thumb">
         <p class="t-title">latency-report.html</p>
         <span class="t-bars"><span></span><span></span><span></span><span></span><span></span><span></span></span>
         <span class="t-line w40"></span>
       </div>
 
-      <div class="thumb t-editor">
+      <div class="thumb">
         <p class="t-title">flags-editor.html</p>
         <span class="t-field"></span>
         <span class="t-field w70"></span>
         <span class="t-toggle"><span class="is-on"></span><span></span></span>
       </div>
 
-      <div class="thumb t-explain">
+      <div class="thumb">
         <p class="t-title">rate-limits.html</p>
         <span class="t-num">1</span><span class="t-line w80"></span>
         <span class="t-num">2</span><span class="t-line w65"></span>
@@ -159,23 +163,14 @@ import { appSignInUrl } from "../lib/app-url";
     </div>
   </section>
 
-  <section class="cta" aria-labelledby="cta-title">
-    <h2 id="cta-title">Give the next file a URL.</h2>
-    <p>Sign in and publish your first agent-made page in under a minute.</p>
-    <div class="cta-actions">
-      <a class="btn-solid" href={appSignInUrl}>Continue with GitHub</a>
-      <a class="btn-line" href="/features/">Explore features</a>
-    </div>
-    <p class="cta-note">Free during alpha · Private by default</p>
-  </section>
+  <CtaSection
+    id="cta-title"
+    title="Give the next file a URL."
+    lede="Sign in and publish your first agent-made page in under a minute."
+    note="Free during alpha · Private by default"
+  />
 
-  <nav class="concept-switch" aria-label="Landing page design concepts">
-    <span aria-hidden="true">concept</span>
-    <a href="/">A</a>
-    <a href="/1/" aria-current="page">B</a>
-    <a href="/2/">C</a>
-    <a href="/3/">D</a>
-  </nav>
+  <ConceptSwitch current="b" />
 </SiteLayout>
 
 <style>
@@ -216,52 +211,8 @@ import { appSignInUrl } from "../lib/app-url";
     gap: 0.8rem;
   }
 
-  .btn-solid {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.72rem 1.4rem;
-    border-radius: 10px;
-    background: var(--text-white);
-    color: var(--ink);
-    font-size: 0.92rem;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-    text-decoration: none;
-    transition: background-color 140ms ease;
-  }
 
-  .btn-solid:hover,
-  .btn-solid:focus-visible {
-    background: #dfe4ec;
-  }
 
-  .btn-line {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.72rem 1.3rem;
-    border: 1px solid rgba(151, 177, 208, 0.18);
-    border-radius: 10px;
-    color: var(--text-white);
-    font-size: 0.92rem;
-    font-weight: 500;
-    text-decoration: none;
-    transition: border-color 140ms ease, background-color 140ms ease;
-  }
-
-  .btn-line:hover,
-  .btn-line:focus-visible {
-    border-color: rgba(151, 177, 208, 0.32);
-    background: #12161a;
-  }
-
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
 
   /* ---------- Filmstrip ---------- */
 
@@ -721,44 +672,6 @@ import { appSignInUrl } from "../lib/app-url";
     color: #7fa8f0;
   }
 
-  /* ---------- CTA ---------- */
-
-  .cta {
-    padding: 5.5rem 0 6.5rem;
-    border-top: 1px solid rgba(151, 177, 208, 0.09);
-    text-align: center;
-  }
-
-  .cta h2 {
-    margin: 0 auto 1rem;
-    color: var(--text-white);
-    font-family: var(--display);
-    font-size: clamp(1.9rem, 3.4vw, 2.6rem);
-    font-weight: 640;
-    letter-spacing: -0.035em;
-    text-wrap: balance;
-  }
-
-  .cta > p {
-    margin: 0 auto 2.1rem;
-    color: #97a3b4;
-    font-size: 1rem;
-  }
-
-  .cta-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.8rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .cta-note {
-    margin: 0;
-    color: #5f6b7a;
-    font-family: var(--mono);
-    font-size: 0.74rem;
-  }
 
   .row.is-flipped {
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
@@ -791,44 +704,4 @@ import { appSignInUrl } from "../lib/app-url";
     }
   }
 
-  /* ---------- Concept switcher (temporary, for design review) ---------- */
-
-  .concept-switch {
-    position: fixed;
-    right: 1.1rem;
-    bottom: 1.1rem;
-    z-index: 60;
-    display: inline-flex;
-    align-items: center;
-    padding: 0.3rem 0.45rem;
-    border: 1px solid rgba(151, 177, 208, 0.2);
-    border-radius: 999px;
-    background: rgba(18, 22, 26, 0.92);
-    backdrop-filter: blur(8px);
-    font-family: var(--mono);
-    font-size: 0.66rem;
-  }
-
-  .concept-switch span {
-    margin-right: 0.4rem;
-    color: #5f6b7a;
-    letter-spacing: 0.06em;
-  }
-
-  .concept-switch a {
-    padding: 0.2rem 0.45rem;
-    border-radius: 999px;
-    color: #5f6b7a;
-    text-decoration: none;
-  }
-
-  .concept-switch a:hover,
-  .concept-switch a:focus-visible {
-    color: var(--text-white);
-  }
-
-  .concept-switch a[aria-current="page"] {
-    background: #1a2027;
-    color: #7fa8f0;
-  }
 </style>
