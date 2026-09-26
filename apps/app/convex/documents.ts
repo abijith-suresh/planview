@@ -33,6 +33,13 @@ export const list = query({
 export const listPage = query({
   args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, { paginationOpts }) => {
+    if (
+      !Number.isSafeInteger(paginationOpts.numItems) ||
+      paginationOpts.numItems < 1 ||
+      paginationOpts.numItems > 100
+    ) {
+      throw new Error("Page size must be between 1 and 100");
+    }
     const ownerId = await requireOwnerId(ctx);
 
     return await ctx.db
