@@ -187,11 +187,7 @@ export const requestDeletionForOwner = async (
   }
 
   if (document.storageProvider !== undefined || document.storageKey !== undefined) {
-    if (
-      document.storageProvider !== "uploadthing" ||
-      !document.storageKey ||
-      document.storageId
-    ) {
+    if (document.storageProvider !== "uploadthing" || !document.storageKey || document.storageId) {
       throw new Error("External document storage metadata is incomplete");
     }
     const now = Date.now();
