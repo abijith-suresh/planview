@@ -2,6 +2,12 @@ import { createEffect } from "solid-js";
 
 import { authClient } from "~/lib/auth";
 
+const signOutDestination = () => {
+  const { VITE_PUBLIC_SITE_URL: siteUrl } = import.meta.env;
+
+  return typeof siteUrl === "string" && siteUrl ? `${siteUrl.replace(/\/+$/, "")}/` : "/";
+};
+
 export function useWorkspaceAuth() {
   const session = authClient.useSession();
   let authRedirectStarted = false;
@@ -27,7 +33,7 @@ export function useWorkspaceAuth() {
 
     try {
       await authClient.signOut();
-      window.location.assign("/signed-out");
+      window.location.assign(signOutDestination());
     } catch (error) {
       isSigningOut = false;
       throw error;
