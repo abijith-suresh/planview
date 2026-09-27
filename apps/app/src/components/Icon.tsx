@@ -1,14 +1,20 @@
 import { Match, Switch } from "solid-js";
 
 export type IconName =
+  | "book"
+  | "clock"
   | "copy"
   | "external"
   | "file"
+  | "github"
   | "grid"
   | "lock"
   | "log-out"
   | "plus"
-  | "trash";
+  | "terminal"
+  | "trash"
+  | "upload"
+  | "x";
 
 type IconProps = {
   name: IconName;
@@ -136,6 +142,74 @@ export default function Icon(props: IconProps) {
           />
           <path
             d="M11 8l4 4-4 4M15 12H5"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "github"}>
+          <path
+            d="M9 19c-4.3 1.5-4.3-2.5-6-3m12 6v-3.7c0-1 .1-1.4-.5-2 2.7-.3 5.5-1.3 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.1s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.1A4.6 4.6 0 0 0 4 9.3c0 4.6 2.8 5.7 5.5 6-.6.6-.6 1.2-.5 2V21.5"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "x"}>
+          <path
+            d="M18 6L6 18M6 6l12 12"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "upload"}>
+          <path
+            d="M12 15.5v-11m0 0L7.5 9M12 4.5L16.5 9"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+          <path
+            d="M4 16.5v2A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-2"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "terminal"}>
+          <path
+            d="M5 8l4 4-4 4"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+          <path d="M12 17.5h7" stroke="currentColor" stroke-linecap="round" stroke-width="1.7" />
+        </Match>
+        <Match when={props.name === "book"}>
+          <path
+            d="M3 19.5A2.5 2.5 0 0 1 5.5 17H20V3H5.5A2.5 2.5 0 0 0 3 5.5v14Zm0 0A2.5 2.5 0 0 0 5.5 22H20v-4.5"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+          <path
+            d="M8 7.5h7M8 11h5"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "clock"}>
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" />
+          <path
+            d="M12 7v5l3.5 2"
             stroke="currentColor"
             stroke-linecap="round"
             stroke-linejoin="round"

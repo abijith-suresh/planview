@@ -1,18 +1,21 @@
 import { Meta, Title } from "@solidjs/meta";
 
+import Icon from "~/components/Icon";
+
 export default function SignedOut() {
   return (
-    <>
+    <main class="panel-page">
       <Title>Signed out | plansplease</Title>
       <Meta name="description" content="You have signed out of your plansplease workspace." />
-      <main class="signed-out-page">
-        <span class="wordmark">plansplease</span>
-        <h1>You're signed out.</h1>
-        <p>Return to your private workspace whenever you are ready.</p>
-        <a class="dashboard-link" href="/auth/github">
-          Sign in with GitHub <span aria-hidden="true">→</span>
+      <p class="eyebrow">plansplease</p>
+      <h1>You're signed out.</h1>
+      <p class="panel-lede">Return to your private workspace whenever you are ready.</p>
+      <div class="panel-actions">
+        <a class="button-primary" href="/auth/github">
+          <Icon name="github" size={16} />
+          <span>Sign in with GitHub</span>
         </a>
-      </main>
-    </>
+      </div>
+    </main>
   );
 }

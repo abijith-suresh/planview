@@ -21,6 +21,7 @@ export default function Documents() {
   const [documentError, setDocumentError] = createSignal("");
   const [selectedFile, setSelectedFile] = createSignal<File>();
   const [deletingId, setDeletingId] = createSignal("");
+  const [pendingDeleteId, setPendingDeleteId] = createSignal("");
   const [actionMessage, setActionMessage] = createSignal("");
   let fileInput: HTMLInputElement | undefined;
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
@@ -31,6 +32,9 @@ export default function Documents() {
       setUploadError(error.message);
     },
   });
+
+  const pageCountLabel = (count: number) =>
+    count === 1 ? "1 HTML page in this workspace." : `${count} HTML pages in this workspace.`;
 
   const showActionMessage = (message: string) => {
     setActionMessage(message);
@@ -150,8 +154,6 @@ export default function Documents() {
   };
 
   const removeDocument = async (document: DocumentRecord) => {
-    if (typeof window !== "undefined" && !window.confirm(`Delete “${document.title}”?`)) return;
-
     setDocumentError("");
     setDeletingId(document._id);
 
@@ -173,6 +175,7 @@ export default function Documents() {
       );
     } finally {
       setDeletingId("");
+      setPendingDeleteId("");
     }
   };
 
@@ -181,13 +184,16 @@ export default function Documents() {
       when={!session().isPending && session().data}
       fallback={
         <main class="auth-loading" aria-live="polite">
-          <span class="status-dot" aria-hidden="true" />
+          <span class="signal-dot" aria-hidden="true" />
           Opening your workspace…
         </main>
       }
     >
       <Title>Documents | plansplease</Title>
-      <Meta name="description" content="Manage the HTML pages in your plansplease workspace." />
+      <Meta
+        name="description"
+        content="Open, copy a link, or delete the HTML pages saved in your plansplease workspace."
+      />
       <AppShell
         active="documents"
         onSignOut={signOut}
@@ -195,13 +201,13 @@ export default function Documents() {
         userName={userName}
       >
         <div class="page-content">
-          <header class="page-header documents-header">
+          <header class="page-header">
             <div>
               <h1>Documents</h1>
-              <p>{documents().length} HTML pages in this workspace.</p>
+              <p class="page-lede">{pageCountLabel(documents().length)}</p>
             </div>
             <form class="upload-form" onSubmit={uploadDocument}>
-              <label class="button button-secondary" for="html-file">
+              <label class="button-secondary" for="html-file">
                 <Icon name="plus" />
                 <span>Choose HTML</span>
               </label>
@@ -222,11 +228,15 @@ export default function Documents() {
                   {selectedFile()?.name}
                 </span>
               </Show>
-              <button class="button button-primary" type="submit" disabled={isUploading()}>
+              <button class="button-primary" type="submit" disabled={isUploading()}>
                 {isUploading() ? "Uploading…" : "Upload"}
               </button>
             </form>
           </header>
+
+          <p class="upload-hint">
+            One standalone <code>.html</code> file, up to 8 MiB. The title comes from the filename.
+          </p>
 
           <Show when={uploadError()}>
             <p class="error-message" role="alert">
@@ -242,15 +252,34 @@ export default function Documents() {
           <section class="documents-list" aria-labelledby="documents-list-title">
             <div class="list-header">
               <h2 id="documents-list-title">All documents</h2>
-              <span>{documents().length}</span>
+              <span class="list-count">{documents().length}</span>
             </div>
             <Show
               when={!isLoading() && documents().length > 0}
               fallback={
                 <div class="empty-state">
-                  <Icon name="file" size={20} />
-                  <h3>{isLoading() ? "Loading documents…" : "No documents yet"}</h3>
-                  <p>Choose an HTML file above to add the first page.</p>
+                  <Show
+                    when={isLoading()}
+                    fallback={
+                      <>
+                        <span class="empty-icon" aria-hidden="true">
+                          <Icon name="file" size={24} />
+                        </span>
+                        <h2>No pages yet.</h2>
+                        <p>
+                          Upload a standalone HTML page to give it a workspace link. Pages stay in
+                          this workspace until you delete them.
+                        </p>
+                        <div class="empty-actions">
+                          <label class="button-primary" for="html-file">
+                            Choose HTML
+                          </label>
+                        </div>
+                      </>
+                    }
+                  >
+                    <p>Loading documents…</p>
+                  </Show>
                 </div>
               }
             >
@@ -267,35 +296,77 @@ export default function Documents() {
                       </small>
                     </div>
                     <div class="document-actions">
-                      <a
-                        class="icon-button"
-                        href={documentHref(document._id)}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={`Open ${document.title}`}
-                        title="Open"
+                      <Show
+                        when={pendingDeleteId() === document._id}
+                        fallback={
+                          <>
+                            <a
+                              class="icon-button"
+                              href={documentHref(document._id)}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label={`Open ${document.title}`}
+                              title="Open"
+                            >
+                              <Icon name="external" />
+                            </a>
+                            <button
+                              class="icon-button"
+                              type="button"
+                              aria-label={`Copy link for ${document.title}`}
+                              title="Copy link"
+                              onClick={() => void copyDocumentLink(document)}
+                            >
+                              <Icon name="copy" />
+                            </button>
+                            <button
+                              class="icon-button icon-button-danger"
+                              type="button"
+                              aria-label={`Delete ${document.title}`}
+                              title="Delete"
+                              disabled={deletingId() === document._id}
+                              onClick={() => setPendingDeleteId(document._id)}
+                            >
+                              <Icon name="trash" />
+                            </button>
+                          </>
+                        }
                       >
-                        <Icon name="external" />
-                      </a>
-                      <button
-                        class="icon-button"
-                        type="button"
-                        aria-label={`Copy link for ${document.title}`}
-                        title="Copy link"
-                        onClick={() => void copyDocumentLink(document)}
-                      >
-                        <Icon name="copy" />
-                      </button>
-                      <button
-                        class="icon-button icon-button-danger"
-                        type="button"
-                        aria-label={`Delete ${document.title}`}
-                        title="Delete"
-                        disabled={deletingId() === document._id}
-                        onClick={() => void removeDocument(document)}
-                      >
-                        <Icon name="trash" />
-                      </button>
+                        <span class="delete-confirm" role="alert">
+                          <span class="confirm-label">Delete "{document.title}"?</span>
+                          <button
+                            class="button-danger"
+                            type="button"
+                            disabled={deletingId() === document._id}
+                            onClick={() => void removeDocument(document)}
+                          >
+                            Delete
+                          </button>
+                          <button
+                            class="icon-button"
+                            type="button"
+                            aria-label="Cancel"
+                            title="Cancel"
+                            onClick={() => setPendingDeleteId("")}
+                          >
+                            <svg
+                              aria-hidden="true"
+                              fill="none"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              width="16"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path
+                                d="M18 6 6 18M6 6l12 12"
+                                stroke="currentColor"
+                                stroke-linecap="round"
+                                stroke-width="1.7"
+                              />
+                            </svg>
+                          </button>
+                        </span>
+                      </Show>
                     </div>
                   </article>
                 )}
@@ -303,12 +374,8 @@ export default function Documents() {
             </Show>
           </section>
 
-          <div class="page-note" aria-live="polite">
-            <Icon name="lock" size={15} />
-            <span>Storage is public during testing; workspace routes still require sign-in.</span>
-            <Show when={actionMessage()}>
-              <span class="action-message">{actionMessage()}</span>
-            </Show>
+          <div class="action-message" role="status" aria-live="polite">
+            {actionMessage()}
           </div>
         </div>
       </AppShell>

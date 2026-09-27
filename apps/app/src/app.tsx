@@ -10,7 +10,7 @@ export default function App() {
       root={(props) => (
         <MetaProvider>
           <Title>plansplease workspace</Title>
-          <Meta name="theme-color" content="#faf9f6" />
+          <Meta name="theme-color" content="#0c0c0e" />
           <Suspense>{props.children}</Suspense>
         </MetaProvider>
       )}
