@@ -1,60 +1,37 @@
 import { Meta, Title } from "@solidjs/meta";
 import { A } from "@solidjs/router";
-import { Show, createEffect, createSignal } from "solid-js";
+import { Show, createEffect } from "solid-js";
 
 import AppShell from "~/components/AppShell";
 import Icon from "~/components/Icon";
-import { formatBytes, type DocumentRecord, getErrorMessage } from "~/lib/documents";
+import { formatBytes } from "~/lib/documents";
+import { documentsStore, ensureDocumentsSubscription } from "~/lib/documents-live";
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
 export default function Dashboard() {
-  const { session, redirectToSignIn, signOut, userInitial, userName } = useWorkspaceAuth();
-  const [documents, setDocuments] = createSignal<DocumentRecord[]>([]);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [documentError, setDocumentError] = createSignal("");
-
-  const loadDocuments = async () => {
-    setIsLoading(true);
-    setDocumentError("");
-
-    try {
-      const response = await fetch("/api/documents", {
-        headers: { Accept: "application/json" },
-      });
-
-      if (response.status === 401) {
-        redirectToSignIn();
-        return;
-      }
-
-      if (!response.ok) throw new Error(await getErrorMessage(response));
-
-      setDocuments((await response.json()) as DocumentRecord[]);
-    } catch (error) {
-      setDocumentError(error instanceof Error ? error.message : "Documents could not be loaded.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const { session, signOut, userInitial, userName } = useWorkspaceAuth();
+  const documents = () => documentsStore.documents;
+  const status = () => documentsStore.status;
 
   createEffect(() => {
     const currentSession = session();
 
-    if (!currentSession.isPending && currentSession.data) void loadDocuments();
+    if (!currentSession.isPending && currentSession.data) ensureDocumentsSubscription();
   });
 
+  const isReady = () => status() === "ready";
   const storedTotal = () => documents().reduce((total, document) => total + document.sizeBytes, 0);
 
-  const documentsValue = () => (isLoading() ? "…" : String(documents().length));
+  const documentsValue = () => (isReady() ? String(documents().length) : "…");
   const documentsMeta = () => {
-    if (isLoading()) return "Checking workspace…";
+    if (!isReady()) return "Checking workspace…";
     if (documents().length === 0) return "No HTML pages saved yet.";
     return documents().length === 1
       ? "1 HTML page saved in your workspace."
       : `${documents().length} HTML pages saved in your workspace.`;
   };
 
-  const storedValue = () => (isLoading() ? "…" : formatBytes(storedTotal()));
+  const storedValue = () => (isReady() ? formatBytes(storedTotal()) : "…");
 
   return (
     <Show
@@ -86,9 +63,9 @@ export default function Dashboard() {
             </A>
           </header>
 
-          <Show when={documentError()}>
+          <Show when={status() === "error"}>
             <p class="error-message" role="alert">
-              {documentError()} Try refreshing the page.
+              {documentsStore.error}
             </p>
           </Show>
 
@@ -105,7 +82,7 @@ export default function Dashboard() {
             </article>
           </div>
 
-          <Show when={!isLoading() && documents().length === 0 && !documentError()}>
+          <Show when={isReady() && documents().length === 0}>
             <section class="card" aria-labelledby="empty-overview-title">
               <div class="empty-state">
                 <span class="empty-icon" aria-hidden="true">
@@ -114,11 +91,11 @@ export default function Dashboard() {
                 <h2 id="empty-overview-title">Nothing here yet.</h2>
                 <p>
                   Your first saved page will appear here with its size, date, and its own private
-                  link. Add one from the Documents tab.
+                  link.
                 </p>
                 <div class="empty-actions">
                   <A class="text-link" href="/documents">
-                    Add a document <span aria-hidden="true">→</span>
+                    View documents
                   </A>
                 </div>
               </div>
@@ -139,9 +116,9 @@ export default function Dashboard() {
                   <span class="step-index" aria-hidden="true">
                     02
                   </span>
-                  <h3>Open it anywhere</h3>
-                  <p>The same command keeps a private copy in this workspace.</p>
-                  <code class="step-code">{"http://localhost:4777/<id>"}</code>
+                  <h3>Save a cloud copy</h3>
+                  <p>Sign in once, then upload the page to this workspace.</p>
+                  <code class="step-code">planview login && planview upload ./report.html</code>
                 </li>
                 <li class="step">
                   <span class="step-index" aria-hidden="true">
