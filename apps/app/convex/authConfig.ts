@@ -73,6 +73,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
         consentPage: "/mcp/consent",
         resource,
         scopes: ["openid", "profile", "email", "offline_access", "cloud:documents"],
+        grantTypes: ["authorization_code", "refresh_token"],
         allowDynamicClientRegistration: allowLegacyClients,
         allowUnauthenticatedClientRegistration: allowLegacyClients,
       }) as unknown as NonNullable<BetterAuthOptions["plugins"]>[number],

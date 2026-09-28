@@ -97,11 +97,15 @@ proxy OAuth endpoints and authorization server metadata. Configure
 described above. Set these variables on the Convex deployment before deploying
 the app, then deploy the app with the same `SITE_URL`.
 
-OpenCode 1.x requires Dynamic Client Registration and the older MCP transport.
-For a staging compatibility test, set `MCP_ALLOW_LEGACY_CLIENTS=true` on both
-the app and Convex before deploying. This enables unauthenticated client
-registration and stateless support for older MCP requests. Leave it unset to
-serve only MCP 2026-07-28 with CIMD.
+OpenCode 1.x uses the older MCP transport. For a staging compatibility test,
+set `MCP_ALLOW_LEGACY_CLIENTS=true` on both the app and Convex before deploying.
+This enables stateless support for older MCP requests and Dynamic Client
+Registration. OpenCode 1.18 does not mark its HTTP loopback callback as a native
+client during registration, so register a native public client with the
+`http://127.0.0.1:19876/mcp/oauth/callback` redirect URI and set its `clientId`
+in OpenCode's MCP OAuth config. Leave the flag unset to serve only MCP
+2026-07-28 with CIMD. MCP access tokens require a user authorization code;
+client credentials cannot access cloud documents.
 
 The current Convex Better Auth adapter is still published against Better Auth
 1.6 and imports a provider removed in 1.7. The repository's postinstall and
