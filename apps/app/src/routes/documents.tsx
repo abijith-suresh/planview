@@ -1,11 +1,11 @@
 import { Meta, Title } from "@solidjs/meta";
-import { For, Show, createEffect, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
 
 import AppShell from "~/components/AppShell";
 import Icon from "~/components/Icon";
 import {
   formatBytes,
-  formatDocumentDate,
+  formatRelativeDate,
   type DocumentRecord,
   getErrorMessage,
 } from "~/lib/documents";
@@ -13,13 +13,14 @@ import { documentsStore, ensureDocumentsSubscription } from "~/lib/documents-liv
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
 export default function Documents() {
-  const { session, redirectToSignIn, signOut, userInitial, userName } = useWorkspaceAuth();
+  const { session, redirectToSignIn, userInitial, userName } = useWorkspaceAuth();
   const documents = () => documentsStore.documents;
   const status = () => documentsStore.status;
   const [deletingId, setDeletingId] = createSignal("");
   const [pendingDeleteId, setPendingDeleteId] = createSignal("");
   const [deleteError, setDeleteError] = createSignal("");
   const [actionMessage, setActionMessage] = createSignal("");
+  const [query, setQuery] = createSignal("");
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
 
   createEffect(() => {
@@ -30,6 +31,13 @@ export default function Documents() {
 
   const isReady = () => status() === "ready";
 
+  const normalizedQuery = () => query().trim().toLowerCase();
+  const filteredDocuments = createMemo(() => {
+    const needle = normalizedQuery();
+    if (!needle) return documents();
+    return documents().filter((document) => document.title.toLowerCase().includes(needle));
+  });
+
   const pageCountLabel = (count: number) =>
     count === 1 ? "1 HTML page in this workspace." : `${count} HTML pages in this workspace.`;
 
@@ -39,7 +47,11 @@ export default function Documents() {
     return pageCountLabel(documents().length);
   };
 
-  const listCount = () => (!isReady() && documents().length === 0 ? "…" : documents().length);
+  const isFiltering = () => normalizedQuery().length > 0;
+  const listCount = () => {
+    if (isFiltering()) return `${filteredDocuments().length} of ${documents().length}`;
+    return !isReady() && documents().length === 0 ? "…" : documents().length;
+  };
 
   const showActionMessage = (message: string) => {
     setActionMessage(message);
@@ -103,18 +115,21 @@ export default function Documents() {
         name="description"
         content="Open, copy a link, or delete the HTML pages saved in your plansplease workspace."
       />
-      <AppShell
-        active="documents"
-        onSignOut={signOut}
-        userInitial={userInitial}
-        userName={userName}
-      >
+      <AppShell active="documents" userInitial={userInitial} userName={userName}>
         <div class="page-content">
           <header class="page-header">
             <div>
               <h1>Documents</h1>
               <p class="page-lede">{pageLede()}</p>
             </div>
+            <input
+              class="search-input"
+              type="search"
+              placeholder="Filter by title…"
+              aria-label="Filter documents by title"
+              value={query()}
+              onInput={(event) => setQuery(event.currentTarget.value)}
+            />
           </header>
 
           <section class="documents-list" aria-labelledby="documents-list-title">
@@ -147,96 +162,108 @@ export default function Documents() {
                   </div>
                 }
               >
-                <For each={documents()}>
-                  {(document) => (
-                    <article class="document-row">
-                      <span class="document-file-icon" aria-hidden="true">
-                        <Icon name="file" size={17} />
-                      </span>
-                      <div class="document-details">
-                        <strong title={document.title}>{document.title}</strong>
-                        <small>
-                          {formatBytes(document.sizeBytes)} ·{" "}
-                          {formatDocumentDate(document.createdAt)}
-                        </small>
-                      </div>
-                      <div class="document-actions">
-                        <Show
-                          when={pendingDeleteId() === document._id}
-                          fallback={
-                            <>
-                              <a
-                                class="icon-button"
-                                href={documentHref(document._id)}
-                                target="_blank"
-                                rel="noreferrer"
-                                aria-label={`Open ${document.title}`}
-                                title="Open"
-                              >
-                                <Icon name="external" />
-                              </a>
+                <Show
+                  when={filteredDocuments().length > 0}
+                  fallback={
+                    <div class="empty-state">
+                      <p>
+                        No pages match "{normalizedQuery()}". Try a different word or clear the
+                        filter.
+                      </p>
+                    </div>
+                  }
+                >
+                  <For each={filteredDocuments()}>
+                    {(document) => (
+                      <article class="document-row">
+                        <span class="document-file-icon" aria-hidden="true">
+                          <Icon name="file" size={17} />
+                        </span>
+                        <div class="document-details">
+                          <strong title={document.title}>{document.title}</strong>
+                          <small>
+                            {formatRelativeDate(document.createdAt)} ·{" "}
+                            {formatBytes(document.sizeBytes)}
+                          </small>
+                        </div>
+                        <div class="document-actions">
+                          <Show
+                            when={pendingDeleteId() === document._id}
+                            fallback={
+                              <>
+                                <a
+                                  class="icon-button"
+                                  href={documentHref(document._id)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  aria-label={`Open ${document.title}`}
+                                  title="Open"
+                                >
+                                  <Icon name="external" />
+                                </a>
+                                <button
+                                  class="icon-button"
+                                  type="button"
+                                  aria-label={`Copy link for ${document.title}`}
+                                  title="Copy link"
+                                  onClick={() => void copyDocumentLink(document)}
+                                >
+                                  <Icon name="copy" />
+                                </button>
+                                <button
+                                  class="icon-button icon-button-danger"
+                                  type="button"
+                                  aria-label={`Delete ${document.title}`}
+                                  title="Delete"
+                                  disabled={deletingId() === document._id}
+                                  onClick={() => setPendingDeleteId(document._id)}
+                                >
+                                  <Icon name="trash" />
+                                </button>
+                              </>
+                            }
+                          >
+                            <span class="delete-confirm" role="alert">
+                              <span class="confirm-label">Delete "{document.title}"?</span>
                               <button
-                                class="icon-button"
+                                class="button-danger"
                                 type="button"
-                                aria-label={`Copy link for ${document.title}`}
-                                title="Copy link"
-                                onClick={() => void copyDocumentLink(document)}
-                              >
-                                <Icon name="copy" />
-                              </button>
-                              <button
-                                class="icon-button icon-button-danger"
-                                type="button"
-                                aria-label={`Delete ${document.title}`}
-                                title="Delete"
                                 disabled={deletingId() === document._id}
-                                onClick={() => setPendingDeleteId(document._id)}
+                                onClick={() => void removeDocument(document)}
                               >
-                                <Icon name="trash" />
+                                Delete
                               </button>
-                            </>
-                          }
-                        >
-                          <span class="delete-confirm" role="alert">
-                            <span class="confirm-label">Delete "{document.title}"?</span>
-                            <button
-                              class="button-danger"
-                              type="button"
-                              disabled={deletingId() === document._id}
-                              onClick={() => void removeDocument(document)}
-                            >
-                              Delete
-                            </button>
-                            <button
-                              class="icon-button"
-                              type="button"
-                              aria-label="Cancel"
-                              title="Cancel"
-                              disabled={deletingId() === document._id}
-                              onClick={() => setPendingDeleteId("")}
-                            >
-                              <svg
-                                aria-hidden="true"
-                                fill="none"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                width="16"
-                                xmlns="http://www.w3.org/2000/svg"
+                              <button
+                                class="icon-button"
+                                type="button"
+                                aria-label="Cancel"
+                                title="Cancel"
+                                disabled={deletingId() === document._id}
+                                onClick={() => setPendingDeleteId("")}
                               >
-                                <path
-                                  d="M18 6 6 18M6 6l12 12"
-                                  stroke="currentColor"
-                                  stroke-linecap="round"
-                                  stroke-width="1.7"
-                                />
-                              </svg>
-                            </button>
-                          </span>
-                        </Show>
-                      </div>
-                    </article>
-                  )}
-                </For>
+                                <svg
+                                  aria-hidden="true"
+                                  fill="none"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  width="16"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                >
+                                  <path
+                                    d="M18 6 6 18M6 6l12 12"
+                                    stroke="currentColor"
+                                    stroke-linecap="round"
+                                    stroke-width="1.7"
+                                  />
+                                </svg>
+                              </button>
+                            </span>
+                          </Show>
+                        </div>
+                      </article>
+                    )}
+                  </For>
+                </Show>
               </Show>
             </Show>
           </section>

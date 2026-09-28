@@ -379,34 +379,6 @@ body::after {
   white-space: nowrap;
 }
 
-.sidebar-signout {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  width: 100%;
-  margin-top: 0.25rem;
-  padding: 0.45rem 0;
-  border: 0;
-  background: transparent;
-  color: var(--night-subtle);
-  cursor: pointer;
-  font-size: 0.8rem;
-  text-align: left;
-  transition: color 140ms ease;
-}
-
-.sidebar-signout:hover,
-.sidebar-signout:focus-visible {
-  color: var(--mint);
-}
-
-.sidebar-error {
-  margin: 0;
-  color: var(--mint);
-  font-size: 0.7rem;
-  line-height: 1.4;
-}
-
 .app-main {
   min-width: 0;
   display: flex;
@@ -542,11 +514,83 @@ body::after {
   margin: 2.75rem 0 0;
 }
 
-.dashboard-content > * + * {
+.dashboard-content > * + *,
+.settings-content > * + * {
   margin-top: 2.5rem;
 }
 
 :where(.dashboard-content > .error-message + .stat-grid) {
+  margin-top: 1.5rem;
+}
+
+.search-input {
+  width: 100%;
+  max-width: 20rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--night-border);
+  border-radius: 8px;
+  background: var(--night-soft);
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.search-input::placeholder {
+  color: var(--night-subtle);
+}
+
+.search-input:focus-visible {
+  border-color: var(--night-border-hover);
+  outline: none;
+}
+
+.settings-account {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.settings-account strong {
+  display: block;
+  color: var(--text-white);
+  font-size: 1.15rem;
+  font-weight: 640;
+  letter-spacing: -0.02em;
+}
+
+.settings-account .stat-meta {
+  display: block;
+}
+
+.profile-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 3.5rem;
+  height: 3.5rem;
+  overflow: hidden;
+  border: 1px solid var(--night-border);
+  border-radius: 50%;
+  background: var(--night-card);
+}
+
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-avatar span {
+  color: var(--mint);
+  font-family: var(--mono);
+  font-size: 1.1rem;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
   margin-top: 1.5rem;
 }
 
@@ -930,16 +974,8 @@ body::after {
     border-top: 0;
   }
 
-  .account-name,
-  .sidebar-signout :where(span),
-  .sidebar-error {
+  .account-name {
     display: none;
-  }
-
-  .sidebar-signout {
-    width: auto;
-    margin-top: 0;
-    padding: 0.45rem;
   }
 
   .page-content {
@@ -964,6 +1000,10 @@ body::after {
     flex-direction: column;
     align-items: flex-start;
     gap: 1.25rem;
+  }
+
+  .search-input {
+    max-width: none;
   }
 
   .document-row {

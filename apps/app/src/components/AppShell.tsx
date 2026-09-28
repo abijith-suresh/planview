@@ -1,29 +1,16 @@
 import { A } from "@solidjs/router";
-import { createSignal, type JSX, Show } from "solid-js";
+import type { JSX } from "solid-js";
 
 import Icon from "~/components/Icon";
 
 type AppShellProps = {
-  active: "dashboard" | "documents";
+  active: "dashboard" | "documents" | "settings";
   userInitial: () => string;
   userName: () => string;
-  onSignOut: () => Promise<void>;
   children: JSX.Element;
 };
 
 export default function AppShell(props: AppShellProps) {
-  const [signOutError, setSignOutError] = createSignal("");
-
-  const handleSignOut = async () => {
-    setSignOutError("");
-
-    try {
-      await props.onSignOut();
-    } catch {
-      setSignOutError("Sign out failed. Try again.");
-    }
-  };
-
   return (
     <div class="app-frame">
       <a class="skip-link" href="#main-content">
@@ -58,6 +45,15 @@ export default function AppShell(props: AppShellProps) {
             <Icon name="file" />
             <span>Documents</span>
           </A>
+          <A
+            class="sidebar-link"
+            classList={{ "sidebar-link-active": props.active === "settings" }}
+            href="/settings"
+            aria-current={props.active === "settings" ? "page" : undefined}
+          >
+            <Icon name="settings" />
+            <span>Settings</span>
+          </A>
         </nav>
 
         <div class="sidebar-footer">
@@ -67,15 +63,6 @@ export default function AppShell(props: AppShellProps) {
             </span>
             <span class="account-name">{props.userName()}</span>
           </div>
-          <Show when={signOutError()}>
-            <p class="sidebar-error" role="alert">
-              {signOutError()}
-            </p>
-          </Show>
-          <button class="sidebar-signout" type="button" onClick={() => void handleSignOut()}>
-            <Icon name="log-out" />
-            <span>Sign out</span>
-          </button>
         </div>
       </aside>
 

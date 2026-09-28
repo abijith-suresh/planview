@@ -40,8 +40,9 @@ export function useWorkspaceAuth() {
     }
   };
 
+  const user = () => session().data?.user;
   const userName = () => session().data?.user.name || session().data?.user.email || "Workspace";
   const userInitial = () => userName().slice(0, 1).toUpperCase();
 
-  return { session, redirectToSignIn, signOut, userName, userInitial };
+  return { session, redirectToSignIn, signOut, userName, userInitial, user };
 }
