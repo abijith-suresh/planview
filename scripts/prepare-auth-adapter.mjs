@@ -49,3 +49,31 @@ if (prepared !== source) {
   await writeFile(file, prepared);
   process.stdout.write("Applied Better Auth 1.7 compatibility patch to Convex auth adapter.\n");
 }
+
+// Better Auth 1.7 adds modelKey to adapter calls. The published Convex adapter
+// spreads that field into function arguments, but its 0.12.5 validators reject it.
+const clientEntry = appRequire.resolve("@convex-dev/better-auth");
+const adapterFile = join(dirname(clientEntry), "adapter.js");
+const adapterSource = await readFile(adapterFile, "utf8");
+const stripModelKey = `const stripUnsupportedModelKey = (value) => {
+    const { modelKey: _modelKey, ...rest } = value;
+    return rest;
+};
+`;
+const adapterMarker = "export const convexAdapter = (ctx, api, config = {}) => {";
+
+if (!adapterSource.includes(stripModelKey)) {
+  const dataSpreads = adapterSource.match(/\.\.\.data,/g)?.length ?? 0;
+  const queryDataSpreads = adapterSource.match(/\.\.\.queryData,/g)?.length ?? 0;
+  if (!adapterSource.includes(adapterMarker) || dataSpreads !== 7 || queryDataSpreads !== 1) {
+    throw new Error("The Convex auth adapter changed; review the modelKey compatibility patch.");
+  }
+  const patchedAdapter = adapterSource
+    .replace(adapterMarker, `${stripModelKey}${adapterMarker}`)
+    .replaceAll("...data,", "...stripUnsupportedModelKey(data),")
+    .replaceAll("...queryData,", "...stripUnsupportedModelKey(queryData),");
+  await writeFile(adapterFile, patchedAdapter);
+  process.stdout.write(
+    "Applied Better Auth 1.7 modelKey compatibility patch to Convex auth adapter.\n"
+  );
+}
