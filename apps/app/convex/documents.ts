@@ -9,7 +9,7 @@ import {
   query,
   type MutationCtx,
 } from "./_generated/server";
-import { verifyCreateDocumentProof, type DocumentMutationProof } from "./document-proof";
+import { verifyCreateDocumentProof, type DocumentMutationProof } from "./documentProof";
 
 const uploadThingLocatorPrefix = (ownerId: string) => `uploadthing-custom-id:${ownerId}:`;
 const maxHtmlSizeBytes = 8 * 1024 * 1024;

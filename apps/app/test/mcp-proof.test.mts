@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { signMcpDocumentProof, verifyMcpDocumentProof } from "../convex/mcp-proof.ts";
+import { signMcpDocumentProof, verifyMcpDocumentProof } from "../convex/mcpProof.ts";
 
 const secret = "a-32-byte-secret-for-mcp-proofs-and-tests";
 const input = { action: "delete" as const, ownerId: "user-one", arguments: ["document-one"] };

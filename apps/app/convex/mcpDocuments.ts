@@ -3,7 +3,7 @@ import { v } from "convex/values";
 
 import { mutation, query } from "./_generated/server";
 import { createForOwner, requestDeletionForOwner } from "./documents";
-import { verifyMcpDocumentProof, type McpDocumentAction } from "./mcp-proof";
+import { verifyMcpDocumentProof, type McpDocumentAction } from "./mcpProof";
 
 const proofValidator = v.object({ expiresAt: v.number(), signature: v.string() });
 const requireProof = async (

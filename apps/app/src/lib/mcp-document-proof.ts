@@ -1,4 +1,4 @@
-import { signMcpDocumentProof, type McpDocumentProofInput } from "../../convex/mcp-proof";
+import { signMcpDocumentProof, type McpDocumentProofInput } from "../../convex/mcpProof";
 
 import { requireMutationSecret } from "./document-mutation-proof";
 
