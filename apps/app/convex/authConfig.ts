@@ -16,6 +16,7 @@ const githubClientId = process.env["GITHUB_CLIENT_ID"];
 const githubClientSecret = process.env["GITHUB_CLIENT_SECRET"];
 const siteUrl = (process.env["SITE_URL"] ?? "http://localhost:3000").replace(/\/$/, "");
 const resource = `${siteUrl}/mcp`;
+const allowLegacyClients = process.env["MCP_ALLOW_LEGACY_CLIENTS"] === "true";
 
 const trustedOrigins = [siteUrl, "http://localhost:3000"];
 
@@ -72,6 +73,8 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
         consentPage: "/mcp/consent",
         resource,
         scopes: ["openid", "profile", "email", "offline_access", "cloud:documents"],
+        allowDynamicClientRegistration: allowLegacyClients,
+        allowUnauthenticatedClientRegistration: allowLegacyClients,
       }) as unknown as NonNullable<BetterAuthOptions["plugins"]>[number],
       cimd({ fetchClientMetadataResource, metadataProfile: "mcp-2026-07-28" }),
     ],

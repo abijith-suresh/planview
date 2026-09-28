@@ -6,6 +6,7 @@ import { createMcpDocumentService } from "./mcp-documents";
 
 const siteUrl = process.env["SITE_URL"]?.replace(/\/$/, "");
 const resource = siteUrl ? `${siteUrl}/mcp` : undefined;
+const allowLegacyClients = process.env["MCP_ALLOW_LEGACY_CLIENTS"] === "true";
 
 const result = (value: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(value) }],
@@ -70,7 +71,7 @@ const handler = createMcpHandler(
     return server;
   },
   // JSON escaping can expand an 8 MiB HTML string by up to six times.
-  { legacy: "reject", maxRequestBodySize: 50 * 1024 * 1024 }
+  { legacy: allowLegacyClients ? "stateless" : "reject", maxRequestBodySize: 50 * 1024 * 1024 }
 );
 
 const protectedHandler =

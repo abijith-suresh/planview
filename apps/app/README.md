@@ -97,6 +97,12 @@ proxy OAuth endpoints and authorization server metadata. Configure
 described above. Set these variables on the Convex deployment before deploying
 the app, then deploy the app with the same `SITE_URL`.
 
+OpenCode 1.x requires Dynamic Client Registration and the older MCP transport.
+For a staging compatibility test, set `MCP_ALLOW_LEGACY_CLIENTS=true` on both
+the app and Convex before deploying. This enables unauthenticated client
+registration and stateless support for older MCP requests. Leave it unset to
+serve only MCP 2026-07-28 with CIMD.
+
 The current Convex Better Auth adapter is still published against Better Auth
 1.6 and imports a provider removed in 1.7. The repository's postinstall and
 build hooks remove that obsolete adapter hook from the installed package; the
