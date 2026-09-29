@@ -22,9 +22,18 @@ test("turns the OAuth authorization instruction into a browser redirect", async 
   const response = await oauthNavigationRedirect(request, instructionResponse());
 
   assert.equal(response.status, 302);
-  assert.equal(response.headers.get("location"), `https://app.example${consentUrl}`);
+  assert.equal(response.headers.get("location"), consentUrl);
   assert.equal(response.headers.get("set-cookie"), "session=abc; HttpOnly; Secure");
   assert.equal(await response.text(), "");
+});
+
+test("keeps the public HTTPS origin when Railway forwards the request over HTTP", async () => {
+  const request = new Request("http://app.example/api/auth/oauth2/authorize", {
+    headers: { "sec-fetch-mode": "navigate", accept: "text/html" },
+  });
+  const response = await oauthNavigationRedirect(request, instructionResponse());
+
+  assert.equal(response.headers.get("location"), consentUrl);
 });
 
 test("keeps JSON for OAuth requests made with fetch", async () => {

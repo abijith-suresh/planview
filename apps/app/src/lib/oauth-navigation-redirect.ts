@@ -40,6 +40,6 @@ export async function oauthNavigationRedirect(request: Request, response: Respon
   headers.delete("content-length");
   headers.delete("content-encoding");
   headers.delete("transfer-encoding");
-  headers.set("location", location.toString());
+  headers.set("location", instruction.url);
   return new Response(null, { status: 302, headers });
 }
