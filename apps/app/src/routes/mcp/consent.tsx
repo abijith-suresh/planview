@@ -2,6 +2,7 @@ import { Meta, Title } from "@solidjs/meta";
 import { createEffect, createSignal, onMount } from "solid-js";
 
 import { authClient } from "~/lib/auth";
+import { consentRedirectUrl } from "~/lib/oauth-consent";
 
 export default function ConsentMcp() {
   const session = authClient.useSession();
@@ -26,11 +27,14 @@ export default function ConsentMcp() {
         body: JSON.stringify({ accept, oauth_query: query() }),
         credentials: "same-origin",
       });
-      const data = (await response.json()) as { redirect_uri?: unknown; message?: unknown };
-      if (!response.ok || typeof data.redirect_uri !== "string") {
-        throw new Error(typeof data.message === "string" ? data.message : "Consent failed");
+      const data = (await response.json()) as unknown;
+      const redirectUrl = consentRedirectUrl(data);
+      if (!response.ok || !redirectUrl) {
+        const message =
+          typeof data === "object" && data !== null && "message" in data ? data.message : undefined;
+        throw new Error(typeof message === "string" ? message : "Consent failed");
       }
-      window.location.assign(data.redirect_uri);
+      window.location.assign(redirectUrl);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Consent failed");
       setPending(false);
