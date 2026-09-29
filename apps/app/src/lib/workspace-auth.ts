@@ -9,7 +9,10 @@ export function useWorkspaceAuth() {
   let isSigningOut = false;
 
   const redirectToSignIn = () => {
-    if (typeof window !== "undefined") window.location.assign("/auth/github");
+    if (typeof window === "undefined") return;
+    window.location.assign(
+      hasAuthAttemptCookie(document.cookie) ? "/auth/problem" : "/auth/github"
+    );
   };
 
   createEffect(() => {
@@ -17,18 +20,11 @@ export function useWorkspaceAuth() {
 
     if (currentSession.isPending) return;
 
-    if (currentSession.data) {
-      if (typeof document !== "undefined") document.cookie = clearAuthAttemptCookie;
-      return;
-    }
+    if (currentSession.data) return;
 
     if (!isSigningOut && !authRedirectStarted) {
       authRedirectStarted = true;
-      if (typeof document !== "undefined" && hasAuthAttemptCookie(document.cookie)) {
-        window.location.replace("/auth/problem");
-      } else {
-        redirectToSignIn();
-      }
+      redirectToSignIn();
     }
   });
 
@@ -37,6 +33,7 @@ export function useWorkspaceAuth() {
 
     try {
       await authClient.signOut();
+      document.cookie = clearAuthAttemptCookie;
       window.location.assign("/signed-out");
     } catch (error) {
       isSigningOut = false;

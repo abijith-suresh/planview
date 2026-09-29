@@ -2,7 +2,7 @@ import { Meta, Title } from "@solidjs/meta";
 import { createEffect, createSignal, onMount } from "solid-js";
 
 import { authClient } from "~/lib/auth";
-import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
+import { hasAuthAttemptCookie } from "~/lib/auth-attempt";
 import { consentRedirectUrl } from "~/lib/oauth-consent";
 
 export default function ConsentMcp() {
@@ -15,10 +15,7 @@ export default function ConsentMcp() {
 
   createEffect(() => {
     if (!query() || session().isPending || typeof window === "undefined") return;
-    if (session().data) {
-      document.cookie = clearAuthAttemptCookie;
-      return;
-    }
+    if (session().data) return;
     if (hasAuthAttemptCookie(document.cookie)) {
       window.location.replace("/auth/problem?mcp=1");
     } else {

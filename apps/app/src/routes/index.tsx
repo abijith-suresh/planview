@@ -1,6 +1,7 @@
 import { Meta, Title } from "@solidjs/meta";
 import { createEffect } from "solid-js";
 import { authClient } from "~/lib/auth";
+import { hasAuthAttemptCookie } from "~/lib/auth-attempt";
 
 export default function Home() {
   const session = authClient.useSession();
@@ -10,7 +11,13 @@ export default function Home() {
 
     if (typeof window === "undefined" || currentSession.isPending) return;
 
-    window.location.replace(currentSession.data ? "/dashboard" : "/auth/github");
+    window.location.replace(
+      currentSession.data
+        ? "/dashboard"
+        : hasAuthAttemptCookie(document.cookie)
+          ? "/auth/problem"
+          : "/auth/github"
+    );
   });
 
   return (

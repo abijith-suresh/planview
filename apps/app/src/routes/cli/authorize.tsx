@@ -2,6 +2,7 @@ import { Meta, Title } from "@solidjs/meta";
 import { createEffect, createSignal, onMount } from "solid-js";
 
 import { authClient } from "~/lib/auth";
+import { hasAuthAttemptCookie } from "~/lib/auth-attempt";
 
 type SessionTokenResponse = { token?: unknown; error?: unknown };
 
@@ -48,6 +49,10 @@ export default function AuthorizeCli() {
     if (typeof window === "undefined" || !isValidRequest() || currentSession.isPending) return;
 
     if (!currentSession.data) {
+      if (hasAuthAttemptCookie(document.cookie)) {
+        window.location.replace("/auth/problem");
+        return;
+      }
       const returnTo = `${window.location.pathname}${window.location.search}`;
       window.location.replace(`/auth/github?returnTo=${encodeURIComponent(returnTo)}`);
     }
