@@ -1,4 +1,5 @@
 import { convexSiteUrl, proxyResponse } from "~/lib/convex-server";
+import { oauthNavigationRedirect } from "~/lib/oauth-navigation-redirect";
 
 type AuthEvent = { request: Request };
 
@@ -29,7 +30,10 @@ async function proxyAuthRequest({ request }: AuthEvent) {
   headers.set("x-forwarded-host", requestUrl.host);
   headers.set("x-forwarded-proto", requestUrl.protocol.replace(/:$/, ""));
   headers.set("x-better-auth-forwarded-host", requestUrl.host);
-  headers.set("x-better-auth-forwarded-proto", requestUrl.protocol.replace(/:$/, ""));
+  headers.set(
+    "x-better-auth-forwarded-proto",
+    requestUrl.protocol.replace(/:$/, "")
+  );
 
   const response = await fetch(upstreamUrl, {
     method: request.method,
@@ -40,7 +44,7 @@ async function proxyAuthRequest({ request }: AuthEvent) {
     duplex: "half",
   });
 
-  return proxyResponse(response);
+  return proxyResponse(await oauthNavigationRedirect(request, response));
 }
 
 export const GET = proxyAuthRequest;
