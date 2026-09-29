@@ -1,14 +1,10 @@
 type RedirectInstruction = { redirect?: unknown; url?: unknown };
 
-export async function oauthNavigationRedirect(
-  request: Request,
-  response: Response
-) {
+export async function oauthNavigationRedirect(request: Request, response: Response) {
   const requestUrl = new URL(request.url);
   const mode = request.headers.get("sec-fetch-mode");
   const isNavigation =
-    mode === "navigate" ||
-    (!mode && request.headers.get("accept")?.includes("text/html"));
+    mode === "navigate" || (!mode && request.headers.get("accept")?.includes("text/html"));
 
   if (
     request.method !== "GET" ||
@@ -37,8 +33,7 @@ export async function oauthNavigationRedirect(
   } catch {
     return response;
   }
-  if (location.protocol !== "https:" && location.protocol !== "http:")
-    return response;
+  if (location.protocol !== "https:" && location.protocol !== "http:") return response;
 
   const headers = new Headers(response.headers);
   headers.delete("content-type");

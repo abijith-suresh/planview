@@ -3,8 +3,7 @@ import { test } from "node:test";
 
 import { oauthNavigationRedirect } from "../src/lib/oauth-navigation-redirect.ts";
 
-const authorizeUrl =
-  "https://app.example/api/auth/oauth2/authorize?client_id=agent";
+const authorizeUrl = "https://app.example/api/auth/oauth2/authorize?client_id=agent";
 const consentUrl = "/mcp/consent?client_id=agent&sig=signed";
 
 function instructionResponse() {
@@ -20,20 +19,11 @@ test("turns the OAuth authorization instruction into a browser redirect", async 
   const request = new Request(authorizeUrl, {
     headers: { "sec-fetch-mode": "navigate", accept: "text/html" },
   });
-  const response = await oauthNavigationRedirect(
-    request,
-    instructionResponse()
-  );
+  const response = await oauthNavigationRedirect(request, instructionResponse());
 
   assert.equal(response.status, 302);
-  assert.equal(
-    response.headers.get("location"),
-    `https://app.example${consentUrl}`
-  );
-  assert.equal(
-    response.headers.get("set-cookie"),
-    "session=abc; HttpOnly; Secure"
-  );
+  assert.equal(response.headers.get("location"), `https://app.example${consentUrl}`);
+  assert.equal(response.headers.get("set-cookie"), "session=abc; HttpOnly; Secure");
   assert.equal(await response.text(), "");
 });
 
