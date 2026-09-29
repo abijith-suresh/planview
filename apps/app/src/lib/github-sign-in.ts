@@ -60,6 +60,7 @@ export const startGitHubSignIn = async (
   const appUrl = new URL(`${appProtocol}://${appHost}`);
   const upstreamUrl = `${convexSiteUrl}/api/auth/sign-in/social`;
   const requestedReturnTo = requestUrl.searchParams.get("returnTo");
+  const oauthQuery = requestUrl.searchParams.get("oauth_query");
   let callbackURL = "/dashboard";
 
   if (requestedReturnTo) {
@@ -73,6 +74,10 @@ export const startGitHubSignIn = async (
     }
 
     callbackURL = `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`;
+  } else if (oauthQuery) {
+    // Keep the original MCP request through GitHub's callback even if the
+    // OAuth provider's post-login hook does not replace the return URL.
+    callbackURL = `/mcp/consent?${oauthQuery}`;
   }
 
   const headers = new Headers({
@@ -96,9 +101,7 @@ export const startGitHubSignIn = async (
       body: JSON.stringify({
         provider: "github",
         callbackURL,
-        ...(requestUrl.searchParams.has("oauth_query")
-          ? { oauth_query: requestUrl.searchParams.get("oauth_query") }
-          : {}),
+        ...(oauthQuery ? { oauth_query: oauthQuery } : {}),
       }),
       redirect: "manual",
     });

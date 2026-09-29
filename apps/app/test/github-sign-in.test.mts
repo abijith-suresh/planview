@@ -86,7 +86,7 @@ test("passes a signed OAuth query to Better Auth when starting agent sign-in", a
   assert.ok(upstream);
   assert.deepEqual(JSON.parse(String(upstream.body)), {
     provider: "github",
-    callbackURL: "/dashboard",
+    callbackURL: "/mcp/consent?client_id=agent&sig=signature",
     oauth_query: "client_id=agent&sig=signature",
   });
 });
