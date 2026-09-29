@@ -1,3 +1,5 @@
+import { authAttemptCookie } from "./auth-attempt.ts";
+
 type SocialSignInResponse = {
   url?: string;
 };
@@ -138,6 +140,7 @@ export const startGitHubSignIn = async (
     for (const cookie of response.headers.getSetCookie()) {
       redirectHeaders.append("set-cookie", cookie);
     }
+    redirectHeaders.append("set-cookie", authAttemptCookie);
 
     return new Response(null, { status: 302, headers: redirectHeaders });
   } catch (error) {

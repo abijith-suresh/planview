@@ -1,6 +1,7 @@
 import { createEffect } from "solid-js";
 
 import { authClient } from "~/lib/auth";
+import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
 
 export function useWorkspaceAuth() {
   const session = authClient.useSession();
@@ -16,9 +17,18 @@ export function useWorkspaceAuth() {
 
     if (currentSession.isPending) return;
 
-    if (!currentSession.data && !isSigningOut && !authRedirectStarted) {
+    if (currentSession.data) {
+      if (typeof document !== "undefined") document.cookie = clearAuthAttemptCookie;
+      return;
+    }
+
+    if (!isSigningOut && !authRedirectStarted) {
       authRedirectStarted = true;
-      redirectToSignIn();
+      if (typeof document !== "undefined" && hasAuthAttemptCookie(document.cookie)) {
+        window.location.replace("/auth/problem");
+      } else {
+        redirectToSignIn();
+      }
     }
   });
 

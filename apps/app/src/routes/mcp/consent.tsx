@@ -2,6 +2,7 @@ import { Meta, Title } from "@solidjs/meta";
 import { createEffect, createSignal, onMount } from "solid-js";
 
 import { authClient } from "~/lib/auth";
+import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
 import { consentRedirectUrl } from "~/lib/oauth-consent";
 
 export default function ConsentMcp() {
@@ -13,8 +14,16 @@ export default function ConsentMcp() {
   onMount(() => setQuery(window.location.search.slice(1)));
 
   createEffect(() => {
-    if (!query() || session().isPending || session().data || typeof window === "undefined") return;
-    window.location.replace(`/auth/github?oauth_query=${encodeURIComponent(query())}`);
+    if (!query() || session().isPending || typeof window === "undefined") return;
+    if (session().data) {
+      document.cookie = clearAuthAttemptCookie;
+      return;
+    }
+    if (hasAuthAttemptCookie(document.cookie)) {
+      window.location.replace("/auth/problem?mcp=1");
+    } else {
+      window.location.replace(`/auth/github?oauth_query=${encodeURIComponent(query())}`);
+    }
   });
 
   const decide = async (accept: boolean) => {
