@@ -19,6 +19,7 @@ const runTool = async (name: string, operation: () => Promise<unknown>) => {
     console.error("mcp.tool_failed", {
       name,
       errorType: error instanceof Error ? error.name : "UnknownError",
+      at: error instanceof Error ? error.stack?.split("\n")[1]?.trim() : undefined,
     });
     throw error;
   }
@@ -87,7 +88,11 @@ const handler = createMcpHandler(
   {
     legacy: allowLegacyClients ? "stateless" : "reject",
     maxRequestBodySize: 50 * 1024 * 1024,
-    onerror: (error) => console.error("mcp.transport_failed", { errorType: error.name }),
+    onerror: (error) =>
+      console.error("mcp.transport_failed", {
+        errorType: error.name,
+        at: error.stack?.split("\n")[1]?.trim(),
+      }),
   }
 );
 
