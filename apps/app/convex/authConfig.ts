@@ -67,7 +67,9 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
     socialProviders,
     plugins: [
       convex({ authConfig }),
-      jwt(),
+      // Existing signing keys are RSA. Pin the algorithm so keys created
+      // before Better Auth stored `alg` remain readable and usable.
+      jwt({ jwks: { keyPairConfig: { alg: "RS256" } } }),
       mcp({
         loginPage: "/mcp/login",
         consentPage: "/mcp/consent",
