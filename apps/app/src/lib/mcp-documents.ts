@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Id } from "../../convex/_generated/dataModel";
 
 import { api, getUnauthedConvexClient } from "./convex-server";
+import { createDocumentReadCache } from "./document-read-cache";
 import { uploadHtmlFile } from "./document-file-upload";
 import { createDocumentProof } from "./document-mutation-proof";
 import { getDocumentStorage } from "./document-storage";
@@ -11,6 +12,9 @@ import { createMcpDocumentProof } from "./mcp-document-proof";
 
 const maxFileBytes = 8 * 1024 * 1024;
 const maxReadCharacters = 32_768;
+// Each MCP request creates a service, but sequential chunk reads can share one
+// bounded document in this process. Access is still checked by Convex first.
+const documentReadCache = createDocumentReadCache();
 
 export type McpDocument = {
   id: string;
@@ -99,12 +103,14 @@ export function createMcpDocumentService(ownerId: string) {
       });
       if (!result) return null;
       const { document, legacyReadUrl } = result;
-      const url =
-        document.storageProvider && document.storageKey
-          ? await getDocumentStorage(document.storageProvider).getReadUrl(document.storageKey)
-          : legacyReadUrl;
-      if (!url) throw new Error("Document content is unavailable");
-      const html = await readBoundedHtml(await fetch(url, { signal: AbortSignal.timeout(20_000) }));
+      const html = await documentReadCache.load(JSON.stringify([ownerId, id]), async () => {
+        const url =
+          document.storageProvider && document.storageKey
+            ? await getDocumentStorage(document.storageProvider).getReadUrl(document.storageKey)
+            : legacyReadUrl;
+        if (!url) throw new Error("Document content is unavailable");
+        return readBoundedHtml(await fetch(url, { signal: AbortSignal.timeout(20_000) }));
+      });
       return {
         ...present(document),
         offset,
@@ -167,11 +173,13 @@ export function createMcpDocumentService(ownerId: string) {
     },
 
     async delete(id: string) {
-      return client.mutation(api.mcpDocuments.requestDeletion, {
+      const result = await client.mutation(api.mcpDocuments.requestDeletion, {
         ownerId,
         id: id as Id<"documents">,
         proof: await createMcpDocumentProof({ action: "delete", ownerId, arguments: [id] }),
       });
+      documentReadCache.invalidate(JSON.stringify([ownerId, id]));
+      return result;
     },
   };
 }
