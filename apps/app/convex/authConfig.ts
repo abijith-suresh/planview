@@ -11,6 +11,7 @@ import { components } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import authConfig from "./auth.config";
 import schema from "./betterAuth/schema";
+import { preserveConvexEndpoints } from "./pluginEndpoints";
 
 const githubClientId = process.env["GITHUB_CLIENT_ID"];
 const githubClientSecret = process.env["GITHUB_CLIENT_SECRET"];
@@ -47,6 +48,8 @@ export const authComponent = createClient<DataModel, typeof schema>(components.b
   verbose: false,
 });
 
+const convexAuthPlugin = preserveConvexEndpoints(convex({ authConfig }));
+
 export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
   const socialProviders: BetterAuthOptions["socialProviders"] =
     githubClientId && githubClientSecret
@@ -66,7 +69,7 @@ export const createAuthOptions = (ctx: GenericCtx<DataModel>) => {
     database: authComponent.adapter(ctx),
     socialProviders,
     plugins: [
-      convex({ authConfig }),
+      convexAuthPlugin,
       // Existing signing keys are RSA. Pin the algorithm so keys created
       // before Better Auth stored `alg` remain readable and usable.
       jwt({ jwks: { keyPairConfig: { alg: "RS256" } } }),
