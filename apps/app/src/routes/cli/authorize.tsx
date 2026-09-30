@@ -2,7 +2,7 @@ import { Meta, Title } from "@solidjs/meta";
 import { createEffect, createSignal, onMount } from "solid-js";
 
 import { authClient } from "~/lib/auth";
-import { hasAuthAttemptCookie } from "~/lib/auth-attempt";
+import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
 
 type SessionTokenResponse = { token?: unknown; error?: unknown };
 
@@ -47,15 +47,19 @@ export default function AuthorizeCli() {
     const currentSession = session();
 
     if (typeof window === "undefined" || !isValidRequest() || currentSession.isPending) return;
+    if (currentSession.error) return;
 
-    if (!currentSession.data) {
-      if (hasAuthAttemptCookie(document.cookie)) {
-        window.location.replace("/auth/problem");
-        return;
-      }
-      const returnTo = `${window.location.pathname}${window.location.search}`;
-      window.location.replace(`/auth/github?returnTo=${encodeURIComponent(returnTo)}`);
+    if (currentSession.data) {
+      document.cookie = clearAuthAttemptCookie;
+      return;
     }
+
+    if (hasAuthAttemptCookie(document.cookie)) {
+      window.location.replace("/auth/problem");
+      return;
+    }
+    const returnTo = `${window.location.pathname}${window.location.search}`;
+    window.location.replace(`/auth/github?returnTo=${encodeURIComponent(returnTo)}`);
   });
 
   const authorize = async () => {
@@ -97,6 +101,9 @@ export default function AuthorizeCli() {
       <main class="signed-out-page">
         <p class="eyebrow">plansplease · local CLI</p>
         <h1>Authorize this computer</h1>
+        {session().error && (
+          <p role="alert">Could not check your session. Refresh this page to try again.</p>
+        )}
         <p>
           The Planview CLI on this computer is requesting permission to upload HTML pages to your
           workspace as {userName()}.

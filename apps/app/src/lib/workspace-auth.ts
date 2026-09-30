@@ -20,7 +20,12 @@ export function useWorkspaceAuth() {
 
     if (currentSession.isPending) return;
 
-    if (currentSession.data) return;
+    if (currentSession.data) {
+      document.cookie = clearAuthAttemptCookie;
+      return;
+    }
+
+    if (currentSession.error) return;
 
     if (!isSigningOut && !authRedirectStarted) {
       authRedirectStarted = true;

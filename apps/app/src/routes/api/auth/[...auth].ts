@@ -1,4 +1,5 @@
 import { convexSiteUrl, proxyResponse } from "~/lib/convex-server";
+import { logAuthResponse } from "~/lib/auth-diagnostics";
 import { oauthNavigationRedirect } from "~/lib/oauth-navigation-redirect";
 
 type AuthEvent = { request: Request };
@@ -41,7 +42,9 @@ async function proxyAuthRequest({ request }: AuthEvent) {
     duplex: "half",
   });
 
-  return proxyResponse(await oauthNavigationRedirect(request, response));
+  const result = await proxyResponse(await oauthNavigationRedirect(request, response));
+  await logAuthResponse(request, result);
+  return result;
 }
 
 export const GET = proxyAuthRequest;

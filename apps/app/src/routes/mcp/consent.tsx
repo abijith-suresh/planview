@@ -2,7 +2,7 @@ import { Meta, Title } from "@solidjs/meta";
 import { createEffect, createSignal, onMount } from "solid-js";
 
 import { authClient } from "~/lib/auth";
-import { hasAuthAttemptCookie } from "~/lib/auth-attempt";
+import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
 import { consentRedirectUrl } from "~/lib/oauth-consent";
 
 export default function ConsentMcp() {
@@ -15,7 +15,11 @@ export default function ConsentMcp() {
 
   createEffect(() => {
     if (!query() || session().isPending || typeof window === "undefined") return;
-    if (session().data) return;
+    if (session().error) return;
+    if (session().data) {
+      document.cookie = clearAuthAttemptCookie;
+      return;
+    }
     if (hasAuthAttemptCookie(document.cookie)) {
       window.location.replace("/auth/problem?mcp=1");
     } else {
@@ -55,6 +59,9 @@ export default function ConsentMcp() {
       <main class="signed-out-page">
         <p class="eyebrow">plansplease · cloud agents</p>
         <h1>Authorize cloud access</h1>
+        {session().error && (
+          <p role="alert">Could not check your session. Refresh this page to try again.</p>
+        )}
         {query() ? (
           <>
             <p>An agent is requesting access to your account. It may:</p>

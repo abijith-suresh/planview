@@ -12,6 +12,18 @@ const result = (value: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(value) }],
 });
 
+const runTool = async (name: string, operation: () => Promise<unknown>) => {
+  try {
+    return result(await operation());
+  } catch (error) {
+    console.error("mcp.tool_failed", {
+      name,
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    });
+    throw error;
+  }
+};
+
 const handler = createMcpHandler(
   ({ authInfo }) => {
     const ownerId = authInfo?.extra?.["userId"];
@@ -29,7 +41,8 @@ const handler = createMcpHandler(
         }),
         annotations: { readOnlyHint: true },
       },
-      async ({ cursor, limit }) => result(await documents.list(cursor ?? null, limit ?? 25))
+      async ({ cursor, limit }) =>
+        runTool("list_documents", () => documents.list(cursor ?? null, limit ?? 25))
     );
 
     server.registerTool(
@@ -44,7 +57,7 @@ const handler = createMcpHandler(
         annotations: { readOnlyHint: true },
       },
       async ({ id, offset, maxCharacters }) =>
-        result(await documents.read(id, offset, maxCharacters))
+        runTool("read_document", () => documents.read(id, offset, maxCharacters))
     );
 
     server.registerTool(
@@ -55,7 +68,7 @@ const handler = createMcpHandler(
         inputSchema: z.object({ title: z.string().min(1).max(200), html: z.string() }),
         annotations: { readOnlyHint: false },
       },
-      async ({ title, html }) => result(await documents.upload(title, html))
+      async ({ title, html }) => runTool("upload_document", () => documents.upload(title, html))
     );
 
     server.registerTool(
@@ -66,12 +79,16 @@ const handler = createMcpHandler(
         inputSchema: z.object({ id: z.string().min(1) }),
         annotations: { destructiveHint: true },
       },
-      async ({ id }) => result(await documents.delete(id))
+      async ({ id }) => runTool("delete_document", () => documents.delete(id))
     );
     return server;
   },
   // JSON escaping can expand an 8 MiB HTML string by up to six times.
-  { legacy: allowLegacyClients ? "stateless" : "reject", maxRequestBodySize: 50 * 1024 * 1024 }
+  {
+    legacy: allowLegacyClients ? "stateless" : "reject",
+    maxRequestBodySize: 50 * 1024 * 1024,
+    onerror: (error) => console.error("mcp.transport_failed", { errorType: error.name }),
+  }
 );
 
 const protectedHandler =
@@ -102,7 +119,7 @@ const protectedHandler =
       )
     : undefined;
 
-export const handleHostedMcp = (request: Request) => {
+export const handleHostedMcp = async (request: Request) => {
   if (!protectedHandler) {
     return Response.json({ error: "MCP is not configured" }, { status: 503 });
   }
@@ -110,5 +127,9 @@ export const handleHostedMcp = (request: Request) => {
   if (origin && origin !== new URL(resource!).origin) {
     return new Response(null, { status: 403 });
   }
-  return protectedHandler(request);
+  const response = await protectedHandler(request);
+  if (process.env["MCP_DIAGNOSTICS"] === "true") {
+    console.info("mcp.response", { method: request.method, status: response.status });
+  }
+  return response;
 };
