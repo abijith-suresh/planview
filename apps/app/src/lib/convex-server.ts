@@ -1,7 +1,8 @@
-import { getToken } from "@convex-dev/better-auth/utils";
 import { ConvexHttpClient } from "convex/browser";
 
 import { api } from "../../convex/_generated/api";
+
+import { ConvexTokenServiceError, fetchConvexToken } from "./convex-token";
 
 const convexUrl = process.env["CONVEX_URL"] ?? process.env["VITE_CONVEX_URL"];
 export const convexSiteUrl = process.env["CONVEX_SITE_URL"] ?? process.env["VITE_CONVEX_SITE_URL"];
@@ -32,7 +33,7 @@ export async function getAuthedConvexClient(request: Request) {
   headers.delete("transfer-encoding");
   headers.set("accept-encoding", "identity");
 
-  const { token } = await getToken(convexSiteUrl, headers);
+  const token = await fetchConvexToken(convexSiteUrl, headers);
   const client = getUnauthedConvexClient();
 
   if (token) {
@@ -69,6 +70,9 @@ export function missingServerConfigurationResponse() {
 }
 
 export function errorResponse(error: unknown) {
+  if (error instanceof ConvexTokenServiceError) {
+    return Response.json({ error: error.message }, { status: 502 });
+  }
   const message = error instanceof Error ? error.message : "Unexpected server error";
 
   return Response.json({ error: message }, { status: 500 });
