@@ -1,50 +1,87 @@
 ---
 name: planview
-description: Publish, retrieve, and inspect immutable local HTML snapshots with the Planview CLI.
+description: Preview immutable local HTML snapshots and save or retrieve cloud documents through Planview CLI and hosted MCP.
 metadata:
   author: planview
-  version: "0.1"
+  version: "0.2"
 ---
 
 # Planview
 
-Use Planview when an HTML artifact needs a stable URL on the local machine.
-A publication is an immutable snapshot: changing the source file never changes a URL
-that was already printed.
+Use Planview to give agent-generated HTML a local URL or save a standalone page to
+plansplease. Choose the workflow that matches where the page needs to live.
 
-## Workflow
+## Local preview
 
-1. Confirm the input is a complete `.html` or `.htm` file no larger than 10 MiB.
-2. Open it in a browser when you need to inspect the result:
+Publish a `.html` or `.htm` file, or a folder with a root `index.html` and its assets:
 
-   ```sh
-   planview publish --open ./report.html
-   ```
+```sh
+planview publish --open ./report.html
+planview publish --open ./site
+```
 
-   Use `publish` when you only need the URL:
+Omit `--open` when you only need the URL. Local source snapshots have a 10 MiB limit;
+bundles accept up to 512 files. Follow source-validation errors rather than stripping
+assets to force publication.
 
-   ```sh
-   planview publish ./report.html
-   ```
+Each URL is immutable. Changing the source does not change a published snapshot.
+Publish again after editing. Use the exact printed URL; the daemon prefers port 4777
+and selects another port when needed.
 
-3. Use the printed `http://localhost:4777/<id>` URL in a local browser or hand the
-   21-character id to another Planview command.
-4. Retrieve exact bytes when a pipeline needs the snapshot:
+```sh
+planview get <id-or-exact-local-url> > recovered.html
+planview publish --json ./report.html
+```
 
-   ```sh
-   planview get <id-or-exact-local-url> > recovered.html
-   ```
+`get` writes exact stored bytes. For a bundle, it returns the packed snapshot, not
+an extracted folder. The browser serves its `index.html` and asset paths.
 
-Planview starts its loopback-only daemon on demand. `start`, `status`, `stop`,
-`restart`, and `clean` manage it explicitly; `status` is read-only and does not
-start a daemon. `clean` applies the normal 30-day last-access retention policy.
+The daemon starts on demand. `start`, `status`, `stop`, `restart`, and `clean` manage
+it; `status` is read-only. Local snapshots expire after 30 days without access.
 
-## Safety rules
+## Cloud upload from the CLI
 
-- Treat every published URL as immutable; publish again after changing source.
-- Pass a real local HTML file, not a directory, symlink, URL, or generated shell
-  substitution whose bytes have not been checked.
-- Keep document ids and URLs exact. Do not append query strings or path segments.
-- Never expose the daemon beyond loopback or put secrets in HTML intended for a
-  shared screen.
-- Check command failures on stderr and preserve stdout for URLs or retrieved bytes.
+Sign in once in the browser, then upload one standalone `.html` file up to 8 MiB:
+
+```sh
+planview login
+planview upload --open ./report.html
+planview upload --json ./report.html
+```
+
+`upload` returns the document's workspace preview link. The preview requires the
+owning account to be signed in; it is not an anonymous share link. CLI credentials
+permit uploads only. `get` reads local snapshots, not cloud documents. To list or
+read cloud documents, use hosted MCP or the workspace. `planview logout` revokes the
+credential and requires a connection.
+
+Use `PLANVIEW_CLOUD_URL` or `planview login --cloud-url <origin>` for a different app.
+The selected cloud URL and credential are saved in the active CLI profile.
+
+## Hosted MCP
+
+When the plansplease MCP server is connected, use its tools directly. The endpoint
+is `<app-origin>/mcp`; connecting requires browser sign-in and explicit consent.
+Do not copy CLI credentials into MCP configuration.
+
+- `list_documents` lists cloud documents. Pass its `nextCursor` as `cursor` to
+  request the next page until `nextCursor` is `null`.
+- `read_document` retrieves HTML in chunks of up to 32,768 characters. Continue
+  with the same `id` and pass `nextOffset` as `offset` until it is `null`.
+- `upload_document` saves a new standalone HTML document. Pass `title` and `html`,
+  with a title of 1 to 200 characters and a maximum UTF-8 HTML size of 8 MiB.
+  Each upload creates a separate document.
+- `delete_document` takes an `id`, hides the document, and queues storage deletion. Confirm the
+  user's intent before deleting work they may want to keep.
+
+There is no revision or update tool yet. Keep the original document when creating
+a revised upload, and identify both documents clearly in your response.
+
+## Boundaries
+
+- Cloud file URLs are public during alpha. Do not describe uploads as private.
+- Keep the daemon on loopback. Local URLs do not work on another person's machine.
+- Pass real source paths and preserve exact document IDs. Do not pass symlink
+  sources or unvalidated shell substitutions.
+- Errors go to stderr; successful results go to stdout. Commands supporting
+  `--json` emit one JSON value. Check exit status before presenting success.
