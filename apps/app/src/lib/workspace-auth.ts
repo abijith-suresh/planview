@@ -2,6 +2,7 @@ import { createEffect } from "solid-js";
 
 import { authClient } from "~/lib/auth";
 import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
+import { completeSignOut, signOutDestination } from "~/lib/sign-out-navigation";
 
 export function useWorkspaceAuth() {
   const session = authClient.useSession();
@@ -37,9 +38,17 @@ export function useWorkspaceAuth() {
     isSigningOut = true;
 
     try {
-      await authClient.signOut();
-      document.cookie = clearAuthAttemptCookie;
-      window.location.assign("/signed-out");
+      await completeSignOut({
+        signOut: () => authClient.signOut(),
+        clearAuthAttempt: () => {
+          document.cookie = clearAuthAttemptCookie;
+        },
+        redirect: (destination) => window.location.assign(destination),
+        destination: signOutDestination(
+          window.location.origin,
+          import.meta.env.VITE_PUBLIC_SITE_URL
+        ),
+      });
     } catch (error) {
       isSigningOut = false;
       throw error;
