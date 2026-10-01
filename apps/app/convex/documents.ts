@@ -100,7 +100,7 @@ export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: Cr
     args.storageProvider !== "uploadthing" ||
     !args.storageKey.startsWith(uploadThingLocatorPrefix(ownerId)) ||
     args.storageKey.length <= uploadThingLocatorPrefix(ownerId).length ||
-    args.contentType !== "text/html" ||
+    (args.contentType !== "text/html" && args.contentType !== "application/vnd.planview.bundle") ||
     args.title.trim().length === 0 ||
     args.title.length > 200 ||
     !Number.isSafeInteger(args.sizeBytes) ||

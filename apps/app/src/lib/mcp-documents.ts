@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { cloudBundleContentType, packCloudBundle, parseCloudBundle, cloudBundleEntry } from "./cloud-bundle.ts";
+import { readBoundedBundle } from "./bundle-read-cache.ts";
 
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -67,6 +69,57 @@ export function createMcpDocumentService(ownerId: string) {
   if (!ownerId) throw new Error("MCP identity is missing");
   const client = getUnauthedConvexClient();
 
+  const upload = async (title: string, bytes: Uint8Array<ArrayBuffer>, contentType: "text/html" | typeof cloudBundleContentType) => {
+      const cleanTitle = title.trim();
+      if (cleanTitle.length < 1 || cleanTitle.length > 200) {
+        throw new Error("Title must be between 1 and 200 characters");
+      }
+      if (bytes.length > maxFileBytes) throw new Error("Document exceeds the 8 MiB limit");
+      const customId = `${ownerId}:${randomUUID()}`;
+      const storageKey = `uploadthing-custom-id:${customId}`;
+      await uploadHtmlFile({
+        file: new File([bytes], contentType === cloudBundleContentType ? "document.planview" : "document.html", { type: contentType }),
+        customId,
+      });
+      const input = {
+        title: cleanTitle,
+        storageProvider: "uploadthing" as const,
+        storageKey,
+        contentType,
+        sizeBytes: bytes.length,
+      };
+      try {
+        const id = await client.mutation(api.mcpDocuments.create, {
+          ownerId,
+          ...input,
+          proof: await createMcpDocumentProof({
+            action: "create",
+            ownerId,
+            arguments: [
+              input.title,
+              input.storageProvider,
+              input.storageKey,
+              input.contentType,
+              input.sizeBytes,
+            ],
+          }),
+          createProof: await createDocumentProof({ ownerId, ...input }),
+        });
+        return { id };
+      } catch (metadataCause) {
+        try {
+          await getDocumentStorage("uploadthing").delete(storageKey);
+        } catch (cleanupCause) {
+          await reportDocumentUploadCompensationFailure(undefined, {
+            objectKey: storageKey,
+            metadataCause,
+            cleanupCause,
+          });
+        }
+        throw metadataCause;
+      }
+  };
+
   return {
     async list(cursor: string | null = null, limit = 25) {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
@@ -109,7 +162,12 @@ export function createMcpDocumentService(ownerId: string) {
             ? await getDocumentStorage(document.storageProvider).getReadUrl(document.storageKey)
             : legacyReadUrl;
         if (!url) throw new Error("Document content is unavailable");
-        return readBoundedHtml(await fetch(url, { signal: AbortSignal.timeout(20_000) }));
+        const response = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+        if (document.contentType === cloudBundleContentType) {
+          const bundle = parseCloudBundle(await readBoundedBundle(response));
+          return new TextDecoder().decode(cloudBundleEntry(bundle, "index.html").bytes);
+        }
+        return readBoundedHtml(response);
       });
       return {
         ...present(document),
@@ -120,56 +178,12 @@ export function createMcpDocumentService(ownerId: string) {
       };
     },
 
-    async upload(title: string, html: string) {
-      const cleanTitle = title.trim();
-      const bytes = new TextEncoder().encode(html);
-      if (cleanTitle.length < 1 || cleanTitle.length > 200) {
-        throw new Error("Title must be between 1 and 200 characters");
-      }
-      if (bytes.length > maxFileBytes) throw new Error("HTML exceeds the 8 MiB limit");
-      const customId = `${ownerId}:${randomUUID()}`;
-      const storageKey = `uploadthing-custom-id:${customId}`;
-      await uploadHtmlFile({
-        file: new File([bytes], "document.html", { type: "text/html" }),
-        customId,
-      });
-      const input = {
-        title: cleanTitle,
-        storageProvider: "uploadthing" as const,
-        storageKey,
-        contentType: "text/html" as const,
-        sizeBytes: bytes.length,
-      };
-      try {
-        const id = await client.mutation(api.mcpDocuments.create, {
-          ownerId,
-          ...input,
-          proof: await createMcpDocumentProof({
-            action: "create",
-            ownerId,
-            arguments: [
-              input.title,
-              input.storageProvider,
-              input.storageKey,
-              input.contentType,
-              input.sizeBytes,
-            ],
-          }),
-          createProof: await createDocumentProof({ ownerId, ...input }),
-        });
-        return { id };
-      } catch (metadataCause) {
-        try {
-          await getDocumentStorage("uploadthing").delete(storageKey);
-        } catch (cleanupCause) {
-          await reportDocumentUploadCompensationFailure(undefined, {
-            objectKey: storageKey,
-            metadataCause,
-            cleanupCause,
-          });
-        }
-        throw metadataCause;
-      }
+    upload(title: string, html: string) {
+      return upload(title, new TextEncoder().encode(html), "text/html");
+    },
+
+    uploadBundle(title: string, files: readonly { path: string; content: string }[]) {
+      return upload(title, new Uint8Array(packCloudBundle(files)), cloudBundleContentType);
     },
 
     async delete(id: string) {

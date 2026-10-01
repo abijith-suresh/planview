@@ -7,6 +7,7 @@ import {
   createBundleHeader,
   encodeBundleManifest,
   V1_MAX_BUNDLE_FILES,
+  V1_MAX_HTML_SIZE_BYTES,
   validateBundlePath,
   validateSourceFileExtension,
   validateSourceFileSize,
@@ -63,14 +64,25 @@ const collectEntries = async (root: string, directory = root): Promise<SourceEnt
   return entries;
 };
 
-const readEntry = async (entry: SourceEntry) => {
+const readEntry = async (entry: SourceEntry, maxBytes: number) => {
   const before = await lstat(entry.absolutePath);
   if (!before.isFile() || before.isSymbolicLink()) {
     throw new Error(`Page folder entry is no longer a regular file: ${entry.path}.`);
   }
-  const file = await open(entry.absolutePath, constants.O_RDONLY | NO_FOLLOW);
+    if (before.size > maxBytes) throw new Error("Page folder exceeds its byte limit.");
+  const file = await open(entry.absolutePath, constants.O_RDONLY | NO_FOLLOW | (constants.O_NONBLOCK ?? 0));
   try {
-    const contents = await file.readFile();
+    const opened = await file.stat();
+    if (!sameSource(before, opened)) throw new Error(`Page folder entry changed while it was being opened: ${entry.path}.`);
+    const buffer = Buffer.alloc(before.size + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await file.read(buffer, length, buffer.length - length, length);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    if (length > before.size) throw new Error(`Page folder entry grew while it was being read: ${entry.path}.`);
+    const contents = Buffer.from(buffer.subarray(0, length));
     const after = await lstat(entry.absolutePath);
     if (!sameSource(before, after)) {
       throw new Error(`Page folder entry changed while it was being read: ${entry.path}.`);
@@ -81,17 +93,21 @@ const readEntry = async (entry: SourceEntry) => {
   }
 };
 
-const prepareBundle = async (root: string): Promise<PreparedPublishSource> => {
+const prepareBundle = async (root: string, maxBytes: number): Promise<PreparedPublishSource> => {
   const entries = await collectEntries(root);
   if (!entries.some((entry) => entry.path === "index.html")) {
     throw new Error("Page folders must contain a root index.html file.");
   }
   const sourceBytes = entries.reduce((total, entry) => total + entry.size, 0);
   validateSourceFileSize(sourceBytes);
+  if (sourceBytes > maxBytes) throw new Error("Page folder exceeds its byte limit.");
 
+  let collectedBytes = 0;
   const files: Array<SourceEntry & { readonly contents: Buffer }> = [];
   for (const entry of entries.sort((left, right) => left.path.localeCompare(right.path))) {
-    files.push({ ...entry, contents: await readEntry(entry) });
+    const contents = await readEntry(entry, maxBytes - collectedBytes);
+    collectedBytes += contents.byteLength;
+    files.push({ ...entry, contents });
   }
   let offset = 0;
   const manifestEntries = files.map((file) => {
@@ -103,6 +119,7 @@ const prepareBundle = async (root: string): Promise<PreparedPublishSource> => {
   const header = createBundleHeader(manifest);
   const totalSize = BUNDLE_HEADER_BYTES + manifest.byteLength + offset;
   validateSourceFileSize(totalSize);
+  if (totalSize > maxBytes) throw new Error("Page folder exceeds its byte limit including its manifest.");
 
   const bundle = Buffer.alloc(totalSize);
   Buffer.from(header).copy(bundle, 0);
@@ -128,14 +145,16 @@ const prepareBundle = async (root: string): Promise<PreparedPublishSource> => {
   };
 };
 
-export const preparePublishSource = async (inputPath: string): Promise<PreparedPublishSource> => {
+export const preparePublishSource = async (inputPath: string, options: { maxBytes?: number } = {}): Promise<PreparedPublishSource> => {
+  const maxBytes = options.maxBytes ?? V1_MAX_HTML_SIZE_BYTES;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > V1_MAX_HTML_SIZE_BYTES) throw new Error("Invalid page folder byte limit.");
   const absolutePath = resolve(inputPath);
   const stats = await lstat(absolutePath);
   if (stats.isSymbolicLink()) {
     throw new Error(`The source must not be a symbolic link: ${inputPath}.`);
   }
   if (stats.isDirectory()) {
-    return prepareBundle(absolutePath);
+    return prepareBundle(absolutePath, maxBytes);
   }
   if (!stats.isFile()) {
     throw new Error(`The source must be a regular HTML file or a page folder: ${inputPath}.`);

@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { chmod, type FileHandle, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { basename, join } from "node:path";
-import { resolveAppDataPaths } from "@planview/local";
+import { preparePublishSource, resolveAppDataPaths } from "@planview/local";
 import { MAX_HTML_SIZE_BYTES, readBoundedCloudFile } from "./cloud-file.js";
 
 const DEFAULT_CLOUD_URL = "https://plansplease-app-staging.up.railway.app";
@@ -435,10 +435,19 @@ const requireCloudCredentials = async (profile?: string) => {
 export const uploadCloudDocument = async (
   sourcePath: string,
   profile?: string,
-  options: { timeoutMs?: number } = {}
-) => {
+  options: { timeoutMs?: number; bundle?: boolean; title?: string } = {}
+): Promise<CloudDocument> => {
   const credentials = await requireCloudCredentials(profile);
   const fileStats = await lstat(sourcePath);
+
+  if (fileStats.isDirectory() && !fileStats.isSymbolicLink()) {
+    const prepared = await preparePublishSource(sourcePath, { maxBytes: MAX_HTML_SIZE_BYTES });
+    try {
+      return await uploadCloudDocument(prepared.sourcePath, profile, {
+        ...options, bundle: true, title: basename(sourcePath) || "Artifact",
+      });
+    } finally { await prepared.cleanup(); }
+  }
 
   if (!fileStats.isFile() || fileStats.isSymbolicLink()) {
     throw new Error("Choose a regular .html file to upload.");
@@ -483,15 +492,12 @@ export const uploadCloudDocument = async (
     await source.close();
   }
 
-  const file = new File([bytes], basename(sourcePath), {
-    type: "text/html",
+  const file = new File([bytes], options.bundle ? "artifact.planview" : basename(sourcePath), {
+    type: options.bundle ? "application/vnd.planview.bundle" : "text/html",
     lastModified: openedStats.mtimeMs,
   });
-  const title =
-    basename(sourcePath)
-      .replace(/\.html$/i, "")
-      .trim()
-      .slice(0, 200) || "Untitled HTML";
+  const title = (options.title ?? basename(sourcePath).replace(/\.html$/i, ""))
+    .trim().slice(0, 200) || "Untitled HTML";
   const formData = new FormData();
   formData.set("file", file);
   formData.set("title", title);

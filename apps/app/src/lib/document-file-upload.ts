@@ -6,7 +6,7 @@ export const uploadHtmlFile = async ({ file, customId }: { file: File; customId:
 
   const result = await new UTApi({ token }).uploadFiles(
     new UTFile([new Uint8Array(await file.arrayBuffer())], file.name, {
-      type: "text/html",
+      type: file.type,
       customId,
     }),
     { acl: "public-read", contentDisposition: "inline" }

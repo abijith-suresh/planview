@@ -7,6 +7,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./bundle-format": {
+      "types": "./dist/bundle-format.d.ts",
+      "import": "./dist/bundle-format.js"
     }
   },
   "scripts": {

@@ -1,3 +1,5 @@
+import { cloudBundleContentType, parseCloudBundle } from "./cloud-bundle.ts";
+
 import {
   reportDocumentUploadCompensationFailure,
   type DocumentUploadCompensationReporter,
@@ -7,7 +9,7 @@ export type DocumentUploadMetadata = {
   title: string;
   storageProvider: "uploadthing";
   storageKey: string;
-  contentType: "text/html";
+  contentType: "text/html" | typeof cloudBundleContentType;
   sizeBytes: number;
 };
 
@@ -120,12 +122,12 @@ export function createDocumentUploadHandler<Client>(
       const titleField = formData.get("title");
       const title = typeof titleField === "string" ? titleField.trim() : "";
 
+      const bundle = file instanceof File && file.type === cloudBundleContentType && file.name.toLowerCase().endsWith(".planview");
       if (
         files.length !== 1 ||
         typeof File === "undefined" ||
         !(file instanceof File) ||
-        !file.name.toLowerCase().endsWith(".html") ||
-        file.type !== "text/html" ||
+        (!bundle && (!file.name.toLowerCase().endsWith(".html") || file.type !== "text/html")) ||
         file.size > MAX_FILE_SIZE_BYTES ||
         title.length === 0 ||
         title.length > 200
@@ -136,6 +138,10 @@ export function createDocumentUploadHandler<Client>(
         );
       }
 
+      if (bundle) {
+        try { parseCloudBundle(new Uint8Array(await file.arrayBuffer())); }
+        catch { return Response.json({ error: "Invalid HTML/CSS/JS bundle" }, { status: 400 }); }
+      }
       const customId = `${identity.subject}:${dependencies.createUploadId()}`;
       const storageKey = `${STORAGE_KEY_PREFIX}${customId}`;
       await dependencies.uploadFile({ file, customId });
@@ -148,7 +154,7 @@ export function createDocumentUploadHandler<Client>(
             title,
             storageProvider: "uploadthing",
             storageKey,
-            contentType: "text/html",
+            contentType: bundle ? cloudBundleContentType : "text/html",
             sizeBytes: file.size,
           },
           identity.subject,

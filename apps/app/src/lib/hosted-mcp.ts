@@ -78,6 +78,22 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      "upload_bundle",
+      {
+        description: "Upload an HTML/CSS/JavaScript artifact as one document. Requires root index.html. File paths are relative and URL-safe. Files contain UTF-8 text; at most 512 files and 8 MiB including the manifest. get_document reads its index.html. Each upload creates a new document.",
+        inputSchema: z.object({
+          title: z.string().min(1).max(200),
+          files: z.array(z.object({ path: z.string().min(1).max(1024), content: z.string() })).min(1).max(512),
+        }),
+        annotations: { readOnlyHint: false, idempotentHint: false },
+      },
+      async ({ title, files }) => runTool("upload_bundle", async () => {
+        const result = await documents.uploadBundle(title, files);
+        return { ...result, url: `${siteUrl}/api/documents/${encodeURIComponent(result.id)}` };
+      })
+    );
+
+    server.registerTool(
       "delete_document",
       {
         description:
