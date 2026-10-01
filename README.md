@@ -71,7 +71,7 @@ The marketing site is currently branded as plansplease and runs in the staging e
 Railway. It is available at
 [`plansplease-site-staging.up.railway.app`](https://plansplease-site-staging.up.railway.app)
 in the `planview-cloud` project. The staging app is available at
-[`app-staging-a39a.up.railway.app`](https://app-staging-a39a.up.railway.app).
+[`plansplease-app-staging.up.railway.app`](https://plansplease-app-staging.up.railway.app).
 There is no production marketing service or custom domain yet.
 
 The marketing staging service uses this configuration:

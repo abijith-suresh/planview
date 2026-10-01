@@ -26,12 +26,17 @@ planview publish --open ./site
 # Sign in to the cloud app, then upload a standalone HTML page
 planview login
 planview upload ./report.html
-# https://app-staging-a39a.up.railway.app/api/documents/<id>
+# https://plansplease-app-staging.up.railway.app/api/documents/<id>
 
 # Keep a feature build separate from the default installation
 planview --profile feature publish ./site
 
 ```
+
+The current staging app is `https://plansplease-app-staging.up.railway.app`.
+The CLI recognizes its previous Railway hostname and uses the replacement origin
+for saved staging credentials, including upload and logout. This does not change
+credentials for custom cloud origins or send them to an environment override.
 
 Get help for the whole CLI or for one command:
 
