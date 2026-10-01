@@ -56,12 +56,10 @@ The new app health check and both MCP/OAuth discovery endpoints return `200` and
 advertise the new host. GitHub sign-in initiation returns `302` with the new
 callback. The staging site health check returns `200`, and its dashboard link
 uses the new app host with no old hostname remaining in the rendered page.
-These checks do not establish that a complete GitHub login works.
-
-The owner still needs to set the GitHub OAuth app's authorization callback to
-`https://plansplease-app-staging.up.railway.app/api/auth/callback/github`.
-Sign-in and new MCP authorization are not ready for testing until that setting
-is updated and a complete browser login succeeds. A separate tested CLI
+The owner subsequently updated the GitHub callback to
+`https://plansplease-app-staging.up.railway.app/api/auth/callback/github` and
+personally confirmed that sign-in reached the dashboard. Complete new-client MCP
+authorization has not been reverified after that manual change. A separate tested CLI
 compatibility release is proposed to update the default and normalize the old
 staging origin to the new one for saved-credential recovery. Existing installs
 and credentials must not be assumed to use the new host until that release is
@@ -297,8 +295,8 @@ that implementation and the migration checks pass.
 
 ## Decisions to settle
 
-- The staging app label is chosen and active. The owner must finish the GitHub
-  OAuth callback update before sign-in can be verified.
+- The staging app label is chosen and active, and the owner confirmed GitHub
+  sign-in reaches the dashboard after updating the callback.
 - Is an owned plansplease domain already available, or should generated Railway
   domains remain the testing URLs?
 - Keep public UploadThing storage for this test, or prioritize a private Convex
