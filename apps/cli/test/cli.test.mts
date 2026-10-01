@@ -404,7 +404,7 @@ test("cloud commands explain their required input without starting network work"
 
   const uploadHelp = execute("help", "upload");
   assert.equal(uploadHelp.status, 0, uploadHelp.stderr);
-  assert.match(uploadHelp.stdout, /Upload one standalone HTML file/);
+  assert.match(uploadHelp.stdout, /Upload an HTML file or artifact folder/);
 });
 
 test("publish --open is recognized and preview is not a command", () => {

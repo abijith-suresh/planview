@@ -78,3 +78,38 @@ export const verifyCreateDocumentProof = (
   proof: DocumentMutationProof,
   now = Date.now()
 ) => verify(secret, proof, createMessage(input, proof.expiresAt), now);
+
+export type AbandonDocumentProofInput = CreateDocumentProofInput & { uploadConfirmed: boolean };
+const abandonMessage = (input: AbandonDocumentProofInput, expiresAt: number) =>
+  JSON.stringify([
+    "abandon-upload",
+    input.ownerId,
+    input.title,
+    input.storageProvider,
+    input.storageKey,
+    input.contentType,
+    input.sizeBytes,
+    input.uploadConfirmed,
+    expiresAt,
+  ]);
+
+export const signAbandonDocumentProof = async (
+  secret: string,
+  input: AbandonDocumentProofInput
+) => {
+  const expiresAt = Date.now() + PROOF_LIFETIME_MS;
+  const signature = new Uint8Array(
+    await crypto.subtle.sign(
+      "HMAC",
+      await importKey(secret),
+      encoder.encode(abandonMessage(input, expiresAt))
+    )
+  );
+  return { expiresAt, signature: toHex(signature) };
+};
+export const verifyAbandonDocumentProof = (
+  secret: string,
+  input: AbandonDocumentProofInput,
+  proof: DocumentMutationProof,
+  now = Date.now()
+) => verify(secret, proof, abandonMessage(input, proof.expiresAt), now);

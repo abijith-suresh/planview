@@ -44,7 +44,9 @@ value must be set on the Railway app service and its Convex deployment:
 Convex uses it to delete UploadThing files in the background. Deploy the
 Convex variable before enabling this deletion flow.
 
-The server upload endpoint is limited to one standalone HTML file up to 8 MB.
+The server upload endpoint accepts standalone HTML or one artifact bundle up to 8 MiB.
+See [cloud artifacts](./CLOUD_BUNDLES.md) for folder uploads, supported assets,
+preview capabilities, and delivery costs.
 The testing tier uses public-read objects, so anyone who
 obtains an UploadThing object URL may fetch it. The plansplease preview route
 still requires the signed-in workspace session. A future provider such as S3
@@ -82,7 +84,9 @@ with Client ID Metadata Documents (CIMD), account sign-in, explicit consent,
 and a `cloud:documents` scope. Agents can list, read, upload, and delete only
 the signed-in account's cloud documents. `read_document` returns at most 32,768
 characters per call; repeat with `nextOffset` to read the rest. Uploads accept
-one HTML document up to 8 MiB. `upload_document` returns `{ id, url }`, where
+one HTML document or artifact bundle up to 8 MiB. `upload_bundle` accepts UTF-8
+assets, and `list_bundle_files` lists their paths. `read_document` accepts an
+optional asset `path`. `upload_document` returns `{ id, url }`, where
 `url` is the account workspace preview and requires the owning account to be
 signed in. It is not an anonymous share link or a direct storage URL.
 There is no document count quota during
@@ -154,7 +158,7 @@ The current staging service is configured with that contract. It needs
   `continueCursor`. Pass `cursor=<continueCursor>` to read the next page. The
   limit must be between 1 and 100. Requests without pagination parameters
   retain the original array response for existing clients.
-- `POST /api/documents/upload` uploads an HTML file and records its metadata
+- `POST /api/documents/upload` uploads HTML or a validated bundle and records its metadata
   in one server request. It accepts either a web session or a CLI upload-only
   credential; CLI credentials cannot list, view, or delete documents.
 - `POST /api/cli/session` issues a revocable upload-only credential after the
@@ -174,3 +178,58 @@ own scripts without giving it access to the app session or same-origin
 application APIs. Existing Convex-backed records remain readable while the
 new provider boundary is rolled out. Bundles and private storage are later
 slices.
+
+## Account storage quota
+
+Cloud accounts have a default storage quota of 500 MB, or 500,000,000 bytes.
+Set `ACCOUNT_STORAGE_QUOTA_BYTES` to a positive integer in the Convex deployment
+if a different limit is needed. The app and CLI do not set this value.
+
+Browser, CLI, and MCP uploads reserve capacity in one backend transaction before
+sending any file bytes. Existing documents, documents waiting for storage deletion,
+and pending or failed uploads all count toward the limit. Lowering the limit does
+not delete existing documents; it prevents uploads until enough capacity is free.
+The single-object limit is 8 MiB, including a bundle manifest and all its assets. The account limit uses decimal MB;
+the file limit uses binary MiB.
+
+A reservation allows five minutes for uploading. UploadThing requests use that
+absolute deadline. Provider-confirmed uploads whose metadata failed wait another ten minutes before
+storage cleanup. Cleanup retries durably, and capacity is released only after the
+provider confirms deletion or that the object is absent. Uploads with unknown
+provider outcomes, including process crashes and network timeouts, stay charged
+for manual reconciliation. A deadline or an absence check cannot prove a remote
+ingest has stopped, so these reservations are never automatically released.
+An ambiguous metadata response is checked transactionally before cleanup, so a
+successful upload is preserved even if its first response was lost. If reservation
+cancellation cannot reach Convex, the scheduled worker still reconciles it.
+
+Quota admission uses one materialized counter per account after a one-time seed
+from existing document and reservation metadata. Reserving increments it;
+committing exchanges a reservation for a document without changing the total.
+Successful storage cleanup or deletion decrements it in the same transaction
+that removes metadata. Pending deletions and unknown upload outcomes stay charged.
+The first seed may hit Convex transaction read limits for a very large legacy
+account; admission then fails closed. Such accounts need a paged administrator
+backfill during maintenance before accepting uploads. This alpha implementation
+has no billing or paid storage tiers.
+
+### Deployment order
+
+This change requires a short upload maintenance window. Do not roll the new
+backend underneath an old app that still uploads before creating metadata.
+
+1. Stop the app service accepting new uploads and let existing upload requests
+   finish. Wait for the existing provider requests to settle before proceeding.
+2. Deploy the Convex schema and functions, including the account counters,
+   reservations, and cleanup worker. Existing read and deletion endpoints remain
+   available in Convex. New metadata creation now requires a reservation.
+3. Deploy the matching app release, then resume the service. Check a small upload
+   through CLI or MCP, confirm its reservation was exchanged for a document, and
+   check the counter matches retained bytes.
+
+Keep the app and backend on this reservation flow together. App rollback to a
+pre-quota release requires another maintenance window and backend rollback;
+otherwise old uploads can store bytes and then fail reservation validation.
+If a pre-quota backend ever resumes accepting writes, rebuild usage counters from
+retained documents and reservations during maintenance before reenabling quotas.
+No deployment, backfill, or cleanup is performed by this code change.

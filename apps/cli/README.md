@@ -2,7 +2,7 @@
 
 The public `@abijith-suresh/planview` command-line package. It publishes immutable,
 30-day-last-access-retained HTML snapshots through the private localhost daemon and
-can upload standalone HTML files to the alpha cloud workspace:
+can upload HTML files or artifact folders to the alpha cloud workspace:
 
 Install it once:
 
@@ -23,9 +23,10 @@ planview publish ./site
 # Publish and open the URL in the default browser
 planview publish --open ./site
 
-# Sign in to the cloud app, then upload a standalone HTML page
+# Sign in, then upload an HTML page or a folder containing index.html
 planview login
 planview upload ./report.html
+planview upload ./artifact/
 # https://plansplease-app-staging.up.railway.app/api/documents/<id>
 
 # Keep a feature build separate from the default installation
@@ -173,3 +174,12 @@ The private daemon workspace is bundled into the CLI's `dist` artifact during
 build and pack. The published package includes the Agent Skills under `skills/`
 and therefore has no manifest or TypeScript-declaration dependency on a private
 `@planview/*` workspace.
+
+Cloud artifact folders require `index.html`. HTML, CSS, JavaScript, modules, JSON,
+text, SVG, common images, fonts, and MP4/WebM assets are supported. Paths use ASCII
+letters, digits, dots, underscores, hyphens, and `/` folders. Symlinks and changing
+folders are rejected. One encoded bundle, including its manifest, must fit within
+8 MiB and 512 files. The whole object counts against the account storage limit.
+Relative CSS, classic scripts, and module imports resolve within the artifact.
+The returned workspace URL requires owner sign-in; its preview issues a five-minute
+read capability. Reopen the workspace URL when that capability expires.

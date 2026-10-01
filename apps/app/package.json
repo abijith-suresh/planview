@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "npm run build --workspace @planview/core && node ../../scripts/prepare-auth-adapter.mjs",
     "prebuild": "npm run build --workspace @planview/core && node ../../scripts/prepare-auth-adapter.mjs",
     "pretest": "npm run build --workspace @planview/core && node ../../scripts/prepare-auth-adapter.mjs",
     "pretypecheck": "npm run build --workspace @planview/core && node ../../scripts/prepare-auth-adapter.mjs",

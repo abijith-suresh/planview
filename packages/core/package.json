@@ -11,6 +11,10 @@
     "./bundle-format": {
       "types": "./dist/bundle-format.d.ts",
       "import": "./dist/bundle-format.js"
+    },
+    "./cloud-bundle": {
+      "types": "./dist/cloud-bundle.d.ts",
+      "import": "./dist/cloud-bundle.js"
     }
   },
   "scripts": {

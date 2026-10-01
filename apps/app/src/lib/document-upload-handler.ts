@@ -1,30 +1,38 @@
 import { cloudBundleContentType, parseCloudBundle } from "./cloud-bundle.ts";
 
 import {
-  reportDocumentUploadCompensationFailure,
-  type DocumentUploadCompensationReporter,
-} from "./document-upload-compensation.ts";
+  uploadReservedDocument,
+  storageQuotaErrorResponse,
+  type DocumentUploadMetadata,
+} from "./reserved-document-upload.ts";
+import type { DocumentUploadCompensationReporter } from "./document-upload-compensation.ts";
 
-export type DocumentUploadMetadata = {
-  title: string;
-  storageProvider: "uploadthing";
-  storageKey: string;
-  contentType: "text/html" | typeof cloudBundleContentType;
-  sizeBytes: number;
-};
+export type { DocumentUploadMetadata } from "./reserved-document-upload.ts";
 
 export type DocumentUploadHandlerDependencies<Client> = {
   getAuthedClient(request: Request): Promise<{ client: Client; token: string | null | undefined }>;
   getCurrentUser(client: Client, request: Request): Promise<{ subject: string } | null | undefined>;
   isStorageConfigured(): boolean;
-  uploadFile(input: { file: File; customId: string }): Promise<void>;
+  uploadFile(input: { file: File; customId: string; deadlineAt: number }): Promise<void>;
+  reserveMetadata(
+    client: Client,
+    input: DocumentUploadMetadata,
+    ownerId: string,
+    request: Request
+  ): Promise<{ id: string | null; uploadDeadlineAt: number }>;
+  abandonMetadata(
+    client: Client,
+    input: DocumentUploadMetadata,
+    ownerId: string,
+    request: Request,
+    uploadConfirmed: boolean
+  ): Promise<string | null>;
   createMetadata(
     client: Client,
     input: DocumentUploadMetadata,
     ownerId: string,
     request: Request
   ): Promise<string>;
-  deleteStorageObject(key: string): Promise<void>;
   reportCompensationFailure?: DocumentUploadCompensationReporter;
   createUploadId(): string;
   missingServerConfigurationResponse(): Response;
@@ -122,7 +130,10 @@ export function createDocumentUploadHandler<Client>(
       const titleField = formData.get("title");
       const title = typeof titleField === "string" ? titleField.trim() : "";
 
-      const bundle = file instanceof File && file.type === cloudBundleContentType && file.name.toLowerCase().endsWith(".planview");
+      const bundle =
+        file instanceof File &&
+        file.type === cloudBundleContentType &&
+        file.name.toLowerCase().endsWith(".planview");
       if (
         files.length !== 1 ||
         typeof File === "undefined" ||
@@ -139,39 +150,40 @@ export function createDocumentUploadHandler<Client>(
       }
 
       if (bundle) {
-        try { parseCloudBundle(new Uint8Array(await file.arrayBuffer())); }
-        catch { return Response.json({ error: "Invalid HTML/CSS/JS bundle" }, { status: 400 }); }
+        try {
+          parseCloudBundle(new Uint8Array(await file.arrayBuffer()));
+        } catch {
+          return Response.json({ error: "Invalid HTML/CSS/JS bundle" }, { status: 400 });
+        }
       }
       const customId = `${identity.subject}:${dependencies.createUploadId()}`;
       const storageKey = `${STORAGE_KEY_PREFIX}${customId}`;
-      await dependencies.uploadFile({ file, customId });
-
-      let id: string;
-      try {
-        id = await dependencies.createMetadata(
-          client,
-          {
-            title,
-            storageProvider: "uploadthing",
-            storageKey,
-            contentType: bundle ? cloudBundleContentType : "text/html",
-            sizeBytes: file.size,
-          },
-          identity.subject,
-          request
-        );
-      } catch (error) {
-        try {
-          await dependencies.deleteStorageObject(storageKey);
-        } catch (cleanupCause) {
-          await reportDocumentUploadCompensationFailure(dependencies.reportCompensationFailure, {
-            objectKey: storageKey,
-            metadataCause: error,
-            cleanupCause,
-          });
-        }
-        throw error;
-      }
+      const metadata: DocumentUploadMetadata = {
+        title,
+        storageProvider: "uploadthing",
+        storageKey,
+        contentType: bundle ? cloudBundleContentType : "text/html",
+        sizeBytes: file.size,
+      };
+      const id = await uploadReservedDocument({
+        metadata,
+        file,
+        customId,
+        reserve: () => dependencies.reserveMetadata(client, metadata, identity.subject, request),
+        upload: dependencies.uploadFile,
+        commit: () => dependencies.createMetadata(client, metadata, identity.subject, request),
+        abandon: (uploadConfirmed) =>
+          dependencies.abandonMetadata(
+            client,
+            metadata,
+            identity.subject,
+            request,
+            uploadConfirmed
+          ),
+        ...(dependencies.reportCompensationFailure
+          ? { reportCompensationFailure: dependencies.reportCompensationFailure }
+          : {}),
+      });
 
       return Response.json({ id }, { status: 201 });
     } catch (error) {
@@ -179,7 +191,7 @@ export function createDocumentUploadHandler<Client>(
         return dependencies.missingServerConfigurationResponse();
       }
 
-      return dependencies.errorResponse(error);
+      return storageQuotaErrorResponse(error) ?? dependencies.errorResponse(error);
     }
   };
 }

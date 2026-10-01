@@ -25,3 +25,27 @@ export const processDeletion = internalAction({
     }
   },
 });
+
+export const processAbandonedUpload = internalAction({
+  args: { reservationId: v.id("uploadReservations") },
+  handler: async (ctx, { reservationId }) => {
+    const claim = await ctx.runMutation(internal.documents.claimUploadCleanup, { reservationId });
+    if (!claim) return;
+    try {
+      const token = process.env["UPLOADTHING_TOKEN"];
+      if (!token) throw new Error("UploadThing is not configured for deletion");
+      await deleteUploadThingFile(new UTApi({ token }), claim.storageKey);
+      await ctx.runMutation(internal.documents.finishUploadCleanup, {
+        reservationId,
+        attempts: claim.attempts,
+      });
+    } catch (error) {
+      // biome-ignore lint/suspicious/noConsole: Convex logs expose failed background attempts.
+      console.error("Abandoned upload cleanup failed", error);
+      await ctx.runMutation(internal.documents.deferUploadCleanup, {
+        reservationId,
+        attempts: claim.attempts,
+      });
+    }
+  },
+});

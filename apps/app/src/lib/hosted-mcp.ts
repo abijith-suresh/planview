@@ -50,16 +50,18 @@ const handler = createMcpHandler(
     server.registerTool(
       "read_document",
       {
-        description: "Read your cloud document HTML in chunks of up to 32768 characters.",
+        description:
+          "Read your cloud document in chunks of up to 32768 characters. Bundle reads default to index.html; set path to read a CSS, JavaScript, or other text asset.",
         inputSchema: z.object({
           id: z.string().min(1),
           offset: z.number().int().min(0).optional(),
           maxCharacters: z.number().int().min(1).max(32_768).optional(),
+          path: z.string().min(1).max(1024).optional(),
         }),
         annotations: { readOnlyHint: true },
       },
-      async ({ id, offset, maxCharacters }) =>
-        runTool("read_document", () => documents.read(id, offset, maxCharacters))
+      async ({ id, offset, maxCharacters, path }) =>
+        runTool("read_document", () => documents.read(id, offset, maxCharacters, path))
     );
 
     server.registerTool(
@@ -78,19 +80,40 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      "list_bundle_files",
+      {
+        description:
+          "List files in your uploaded artifact bundle, up to 50 files per page. Use nextOffset to continue.",
+        inputSchema: z.object({
+          id: z.string().min(1),
+          offset: z.number().int().min(0).optional(),
+          limit: z.number().int().min(1).max(50).optional(),
+        }),
+        annotations: { readOnlyHint: true },
+      },
+      async ({ id, offset, limit }) =>
+        runTool("list_bundle_files", () => documents.listBundleFiles(id, offset, limit))
+    );
+
+    server.registerTool(
       "upload_bundle",
       {
-        description: "Upload an HTML/CSS/JavaScript artifact as one document. Requires root index.html. File paths are relative and URL-safe. Files contain UTF-8 text; at most 512 files and 8 MiB including the manifest. get_document reads its index.html. Each upload creates a new document.",
+        description:
+          "Upload an HTML/CSS/JavaScript artifact as one document. Requires root index.html. File paths are relative and URL-safe. Files contain UTF-8 text; at most 512 files and 8 MiB including the manifest. read_document reads its index.html. Each upload creates a new document.",
         inputSchema: z.object({
           title: z.string().min(1).max(200),
-          files: z.array(z.object({ path: z.string().min(1).max(1024), content: z.string() })).min(1).max(512),
+          files: z
+            .array(z.object({ path: z.string().min(1).max(1024), content: z.string() }))
+            .min(1)
+            .max(512),
         }),
         annotations: { readOnlyHint: false, idempotentHint: false },
       },
-      async ({ title, files }) => runTool("upload_bundle", async () => {
-        const result = await documents.uploadBundle(title, files);
-        return { ...result, url: `${siteUrl}/api/documents/${encodeURIComponent(result.id)}` };
-      })
+      async ({ title, files }) =>
+        runTool("upload_bundle", async () => {
+          const result = await documents.uploadBundle(title, files);
+          return { ...result, ...presentMcpUpload(result.id, siteUrl!) };
+        })
     );
 
     server.registerTool(

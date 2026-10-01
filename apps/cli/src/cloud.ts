@@ -1,3 +1,4 @@
+import { parseCloudBundle } from "@planview/core/cloud-bundle";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, type FileHandle, lstat, mkdir, open, rename, unlink } from "node:fs/promises";
@@ -444,9 +445,13 @@ export const uploadCloudDocument = async (
     const prepared = await preparePublishSource(sourcePath, { maxBytes: MAX_HTML_SIZE_BYTES });
     try {
       return await uploadCloudDocument(prepared.sourcePath, profile, {
-        ...options, bundle: true, title: basename(sourcePath) || "Artifact",
+        ...options,
+        bundle: true,
+        title: basename(sourcePath) || "Artifact",
       });
-    } finally { await prepared.cleanup(); }
+    } finally {
+      await prepared.cleanup();
+    }
   }
 
   if (!fileStats.isFile() || fileStats.isSymbolicLink()) {
@@ -492,12 +497,14 @@ export const uploadCloudDocument = async (
     await source.close();
   }
 
+  if (options.bundle) parseCloudBundle(bytes);
   const file = new File([bytes], options.bundle ? "artifact.planview" : basename(sourcePath), {
     type: options.bundle ? "application/vnd.planview.bundle" : "text/html",
     lastModified: openedStats.mtimeMs,
   });
-  const title = (options.title ?? basename(sourcePath).replace(/\.html$/i, ""))
-    .trim().slice(0, 200) || "Untitled HTML";
+  const title =
+    (options.title ?? basename(sourcePath).replace(/\.html$/i, "")).trim().slice(0, 200) ||
+    "Untitled HTML";
   const formData = new FormData();
   formData.set("file", file);
   formData.set("title", title);

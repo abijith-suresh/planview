@@ -154,6 +154,25 @@ const runSmoke = async () => {
     assertSuccessful(retrieved, "packed CLI get");
     assert.deepEqual(retrieved.stdout, Buffer.from(original));
 
+    const artifact = join(workspace, "artifact");
+    mkdirSync(join(artifact, "assets"), { recursive: true });
+    const artifactHtml =
+      '<!doctype html><link rel="stylesheet" href="assets/style.css"><script src="assets/app.js"></script><h1>Artifact smoke</h1>';
+    const artifactCss = "h1{color:rgb(12,34,56)}";
+    const artifactJs = 'document.body.dataset.artifact="works";';
+    writeFileSync(join(artifact, "index.html"), artifactHtml);
+    writeFileSync(join(artifact, "assets", "style.css"), artifactCss);
+    writeFileSync(join(artifact, "assets", "app.js"), artifactJs);
+    const artifactPublished = execute(["publish", artifact]);
+    assertSuccessful(artifactPublished, "packed CLI artifact folder publish");
+    const artifactUrl = text(artifactPublished.stdout).trim();
+    const artifactId = artifactUrl.slice(artifactUrl.lastIndexOf("/") + 1);
+    const artifactRetrieved = execute(["get", artifactId]);
+    assertSuccessful(artifactRetrieved, "packed CLI artifact folder get");
+    assert.deepEqual(artifactRetrieved.stdout, Buffer.from(artifactHtml));
+    assert.equal(await (await fetch(`${artifactUrl}/assets/style.css`)).text(), artifactCss);
+    assert.equal(await (await fetch(`${artifactUrl}/assets/app.js`)).text(), artifactJs);
+
     const stopped = execute(["stop"]);
     assertSuccessful(stopped, "packed CLI stop");
     assert.match(text(stopped.stdout), /stopped/);
