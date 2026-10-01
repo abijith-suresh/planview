@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { signCreateDocumentProof, verifyCreateDocumentProof } from "../convex/document-proof.ts";
+import { signCreateDocumentProof, verifyCreateDocumentProof } from "../convex/documentProof.ts";
 
 const secret = "test-secret-for-document-mutation-proofs";
 const createInput = {

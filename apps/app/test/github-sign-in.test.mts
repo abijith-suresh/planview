@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { authAttemptCookie, hasAuthAttemptCookie } from "../src/lib/auth-attempt.ts";
 import { startGitHubSignIn } from "../src/lib/github-sign-in.ts";
 
 const backendUrl = "https://auth-backend.example";
@@ -70,6 +71,25 @@ test("uses the public forwarded host and first forwarded protocol behind an inte
   });
   assert.equal(result.status, 302);
   assert.equal(result.headers.get("location"), "https://github.com/login/oauth/authorize");
+});
+
+test("passes a signed OAuth query to Better Auth when starting agent sign-in", async () => {
+  let upstream: RequestInit | undefined;
+  await startGitHubSignIn(
+    createRequest(
+      "https://app.example/auth/github?oauth_query=client_id%3Dagent%26sig%3Dsignature"
+    ),
+    createDependencies(async (_url, options) => {
+      upstream = options;
+      return responseWithLocation();
+    })
+  );
+  assert.ok(upstream);
+  assert.deepEqual(JSON.parse(String(upstream.body)), {
+    provider: "github",
+    callbackURL: "/mcp/consent?client_id=agent&sig=signature",
+    oauth_query: "client_id=agent&sig=signature",
+  });
 });
 
 test("prefers a configured Railway public domain and defaults it to HTTPS", async () => {
@@ -202,7 +222,10 @@ test("prefers Better Auth's Location header and forwards its cookie", async () =
 
   assert.equal(result.status, 302);
   assert.equal(result.headers.get("location"), "https://github.com/from-header");
-  assert.equal(result.headers.get("set-cookie"), "better-auth.state=abc; Path=/; HttpOnly; Secure");
+  assert.deepEqual(result.headers.getSetCookie(), [
+    "better-auth.state=abc; Path=/; HttpOnly; Secure",
+    authAttemptCookie,
+  ]);
 });
 
 test("forwards each Better Auth cookie as a separate Set-Cookie header", async () => {
@@ -222,7 +245,12 @@ test("forwards each Better Auth cookie as a separate Set-Cookie header", async (
   );
 
   assert.equal(result.status, 302);
-  assert.deepEqual(result.headers.getSetCookie(), [stateCookie, sessionCookie]);
+  assert.deepEqual(result.headers.getSetCookie(), [stateCookie, sessionCookie, authAttemptCookie]);
+});
+
+test("recognizes the sign-in marker without matching unrelated cookies", () => {
+  assert.equal(hasAuthAttemptCookie("theme=dark; planview_auth_attempt=1"), true);
+  assert.equal(hasAuthAttemptCookie("planview_auth_attempted=1"), false);
 });
 
 test("maps a successful response without a redirect to AUTH_REDIRECT_MISSING", async () => {

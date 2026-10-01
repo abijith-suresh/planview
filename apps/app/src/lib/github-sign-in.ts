@@ -1,3 +1,6 @@
+import { authAttemptCookie } from "./auth-attempt.ts";
+import { logAuthResponse } from "./auth-diagnostics.ts";
+
 type SocialSignInResponse = {
   url?: string;
 };
@@ -60,6 +63,7 @@ export const startGitHubSignIn = async (
   const appUrl = new URL(`${appProtocol}://${appHost}`);
   const upstreamUrl = `${convexSiteUrl}/api/auth/sign-in/social`;
   const requestedReturnTo = requestUrl.searchParams.get("returnTo");
+  const oauthQuery = requestUrl.searchParams.get("oauth_query");
   let callbackURL = "/dashboard";
 
   if (requestedReturnTo) {
@@ -73,6 +77,10 @@ export const startGitHubSignIn = async (
     }
 
     callbackURL = `${returnUrl.pathname}${returnUrl.search}${returnUrl.hash}`;
+  } else if (oauthQuery) {
+    // Keep the original MCP request through GitHub's callback even if the
+    // OAuth provider's post-login hook does not replace the return URL.
+    callbackURL = `/mcp/consent?${oauthQuery}`;
   }
 
   const headers = new Headers({
@@ -96,16 +104,13 @@ export const startGitHubSignIn = async (
       body: JSON.stringify({
         provider: "github",
         callbackURL,
+        ...(oauthQuery ? { oauth_query: oauthQuery } : {}),
       }),
       redirect: "manual",
     });
 
     if (!response.ok) {
-      logger.error(
-        "Better Auth social sign-in returned an error",
-        response.status,
-        await response.text()
-      );
+      logger.error("Better Auth social sign-in returned an error", response.status);
       return Response.json(
         {
           error: "GitHub sign-in could not be started.",
@@ -132,8 +137,11 @@ export const startGitHubSignIn = async (
     for (const cookie of response.headers.getSetCookie()) {
       redirectHeaders.append("set-cookie", cookie);
     }
+    redirectHeaders.append("set-cookie", authAttemptCookie);
 
-    return new Response(null, { status: 302, headers: redirectHeaders });
+    const result = new Response(null, { status: 302, headers: redirectHeaders });
+    await logAuthResponse(request, result);
+    return result;
   } catch (error) {
     logger.error("Could not reach Better Auth for GitHub sign-in", error);
     return Response.json(

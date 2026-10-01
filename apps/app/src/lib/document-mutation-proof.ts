@@ -1,9 +1,6 @@
-import {
-  signCreateDocumentProof,
-  type CreateDocumentProofInput,
-} from "../../convex/document-proof";
+import { signCreateDocumentProof, type CreateDocumentProofInput } from "../../convex/documentProof";
 
-const requireMutationSecret = () => {
+export const requireMutationSecret = () => {
   const secret = process.env["DOCUMENT_MUTATION_SECRET"];
   if (!secret || new TextEncoder().encode(secret).length < 32) {
     throw new Error("Document mutation signing is not configured");

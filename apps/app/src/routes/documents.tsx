@@ -159,8 +159,14 @@ export default function Documents() {
       when={!session().isPending && session().data}
       fallback={
         <main class="auth-loading" aria-live="polite">
-          <span class="status-dot" aria-hidden="true" />
-          Opening your workspace…
+          {session().error ? (
+            <p role="alert">Could not check your session. Refresh this page to try again.</p>
+          ) : (
+            <>
+              <span class="status-dot" aria-hidden="true" />
+              Opening your workspace…
+            </>
+          )}
         </main>
       }
     >

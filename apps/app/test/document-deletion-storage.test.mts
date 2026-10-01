@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { deleteUploadThingFile } from "../convex/document-deletion-storage.ts";
+import { deleteUploadThingFile } from "../convex/documentDeletionStorage.ts";
 
 const customKey = "uploadthing-custom-id:owner_123:document_123";
 
