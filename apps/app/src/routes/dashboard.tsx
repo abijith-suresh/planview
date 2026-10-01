@@ -1,15 +1,10 @@
 import { Meta, Title } from "@solidjs/meta";
 import { A } from "@solidjs/router";
-import { For, Show, createEffect, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 
 import AppShell from "~/components/AppShell";
 import Icon from "~/components/Icon";
-import {
-  formatBytes,
-  formatDocumentDate,
-  formatRelativeDate,
-  type DocumentRecord,
-} from "~/lib/documents";
+import { formatBytes, formatRelativeDate, type DocumentRecord } from "~/lib/documents";
 import { documentsStore, ensureDocumentsSubscription } from "~/lib/documents-live";
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
@@ -27,31 +22,9 @@ export default function Dashboard() {
   });
 
   const isReady = () => status() === "ready";
-  const isConnecting = () => status() === "connecting" || status() === "idle";
-  const storedTotal = () => documents().reduce((total, document) => total + document.sizeBytes, 0);
-
-  const documentsValue = () => (isReady() ? String(documents().length) : "…");
-  const documentsMeta = () => {
-    if (!isReady()) return "Checking workspace…";
-    if (documents().length === 0) return "No HTML pages saved yet.";
-    return documents().length === 1
-      ? "1 HTML page saved in your workspace."
-      : `${documents().length} HTML pages saved in your workspace.`;
-  };
-
-  const storedValue = () => {
-    if (!isReady()) return "…";
-    return formatBytes(storedTotal());
-  };
-
-  const lastUploadValue = () => {
-    const first = documents()[0];
-    if (isReady()) {
-      if (first) return formatDocumentDate(first.createdAt);
-      return "—";
-    }
-    return isConnecting() ? "…" : "—";
-  };
+  onCleanup(() => {
+    if (feedbackTimer) clearTimeout(feedbackTimer);
+  });
 
   const showActionMessage = (message: string) => {
     setActionMessage(message);
@@ -82,8 +55,13 @@ export default function Dashboard() {
       when={!session().isPending && session().data}
       fallback={
         <main class="auth-loading" aria-live="polite">
-          <span class="signal-dot" aria-hidden="true" />
-          Opening your workspace…
+          <Show
+            when={!session().error}
+            fallback={<p role="alert">Could not check your session. Refresh to try again.</p>}
+          >
+            <span class="signal-dot" aria-hidden="true" />
+            Opening your workspace…
+          </Show>
         </main>
       }
     >
@@ -94,7 +72,7 @@ export default function Dashboard() {
           <header class="page-header">
             <div>
               <h1>Overview</h1>
-              <p class="page-lede">A quiet place for the HTML pages your agent makes.</p>
+              <p class="page-lede">Pick up where you left off.</p>
             </div>
           </header>
 
@@ -104,37 +82,12 @@ export default function Dashboard() {
             </p>
           </Show>
 
-          <div class="stat-grid">
-            <article class="stat-card">
-              <span class="stat-label">Documents</span>
-              <span class="stat-value">{documentsValue()}</span>
-              <p class="stat-meta">{documentsMeta()}</p>
-            </article>
-            <article class="stat-card">
-              <span class="stat-label">Stored</span>
-              <span class="stat-value">{storedValue()}</span>
-              <p class="stat-meta">Total size of the pages you saved.</p>
-            </article>
-            <article class="stat-card">
-              <span class="stat-label">Last upload</span>
-              <span class="stat-value">{lastUploadValue()}</span>
-              <p class="stat-meta">
-                {isReady() && documents().length === 0
-                  ? "Nothing uploaded yet."
-                  : "Most recent page added to this workspace."}
-              </p>
-            </article>
-          </div>
-
           <Show when={isReady() && documents().length > 0}>
             <section class="card" aria-labelledby="recent-pages-title">
               <div class="list-header">
                 <h2 id="recent-pages-title">Recent pages</h2>
                 <A class="text-link" href="/documents">
-                  {documents().length === 1
-                    ? "View 1 page"
-                    : `View all ${documents().length} pages`}{" "}
-                  →
+                  View all documents →
                 </A>
               </div>
               <For each={documents().slice(0, 5)}>
@@ -174,14 +127,6 @@ export default function Dashboard() {
                 )}
               </For>
             </section>
-
-            <section class="card onboarding-card" aria-labelledby="terminal-card-title">
-              <h2 id="terminal-card-title">From your terminal.</h2>
-              <p class="stat-meta">Serve a page locally</p>
-              <code class="step-code">planview publish ./report.html</code>
-              <p class="stat-meta">Save a private copy here</p>
-              <code class="step-code">planview login && planview upload ./report.html</code>
-            </section>
           </Show>
 
           <Show when={isReady() && documents().length === 0}>
@@ -190,51 +135,20 @@ export default function Dashboard() {
                 <span class="empty-icon" aria-hidden="true">
                   <Icon name="file" size={24} />
                 </span>
-                <h2 id="empty-overview-title">Nothing here yet.</h2>
-                <p>
-                  Your first saved page will appear here with its size, date, and its own private
-                  link.
-                </p>
+                <h2 id="empty-overview-title">Your first page starts with your agent</h2>
+                <p>Connect with MCP or upload an HTML file from the CLI.</p>
                 <div class="empty-actions">
-                  <A class="text-link" href="/documents">
-                    View documents
+                  <A class="button-primary" href="/settings#connect-agent">
+                    Connect your agent
                   </A>
                 </div>
               </div>
             </section>
-
-            <section class="card onboarding-card" aria-labelledby="onboarding-card-title">
-              <h2 id="onboarding-card-title">Three ways a page gets here.</h2>
-              <ol class="steps">
-                <li class="step">
-                  <span class="step-index" aria-hidden="true">
-                    01
-                  </span>
-                  <h3>Publish a file</h3>
-                  <p>Any agent can write it. One command hands it a URL.</p>
-                  <code class="step-code">planview publish ./report.html</code>
-                </li>
-                <li class="step">
-                  <span class="step-index" aria-hidden="true">
-                    02
-                  </span>
-                  <h3>Save a cloud copy</h3>
-                  <p>Sign in once, then upload the page to this workspace.</p>
-                  <code class="step-code">planview login && planview upload ./report.html</code>
-                </li>
-                <li class="step">
-                  <span class="step-index" aria-hidden="true">
-                    03
-                  </span>
-                  <h3>Keep it working</h3>
-                  <p>Pages stay here — searchable, deletable, yours — until you delete them.</p>
-                </li>
-              </ol>
-              <p class="page-note">
-                Install the CLI once — <code>npm install --global @abijith-suresh/planview</code> —
-                and any page it publishes can be saved here.
-              </p>
-            </section>
+          </Show>
+          <Show when={status() === "idle" || status() === "connecting"}>
+            <p class="page-note" role="status">
+              Loading recent pages…
+            </p>
           </Show>
 
           <div class="action-message" role="status" aria-live="polite">

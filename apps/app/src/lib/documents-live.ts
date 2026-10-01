@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store";
 
 import { api } from "../../convex/_generated/api";
 import { authClient } from "~/lib/auth";
+import { createDocumentPages } from "~/lib/document-pages";
 import type { DocumentRecord } from "~/lib/documents";
 
 export type DocumentsStatus = "idle" | "connecting" | "ready" | "error";
@@ -11,12 +12,16 @@ export type DocumentsState = {
   status: DocumentsStatus;
   documents: DocumentRecord[];
   error: string;
+  hasMore: boolean;
+  loadingMore: boolean;
 };
 
 const [documentsStore, setDocumentsStore] = createStore<DocumentsState>({
   status: "idle",
   documents: [],
   error: "",
+  hasMore: false,
+  loadingMore: false,
 });
 
 export { documentsStore };
@@ -26,21 +31,30 @@ const sessionExpiredError = "Your session expired. Sign in again.";
 const loadFailedError = "Documents could not be loaded. Try refreshing the page.";
 
 let client: ConvexClient | undefined;
-let unsubscribe: (() => void) | undefined;
+let pagination: ReturnType<typeof createDocumentPages<DocumentRecord>> | undefined;
+let paginationId = 0;
 let cachedToken: string | null = null;
 let pendingToken: Promise<string | null> | undefined;
 let authFailed = false;
+let generation = 0;
 
 const markSessionExpired = () => {
   if (authFailed) return;
   authFailed = true;
   client?.client.clearAuth();
-  setDocumentsStore({ status: "error", error: sessionExpiredError });
+  setDocumentsStore({
+    status: "error",
+    documents: [],
+    error: sessionExpiredError,
+    hasMore: false,
+    loadingMore: false,
+  });
 };
 
 export function resetDocumentsSubscription() {
-  unsubscribe?.();
-  unsubscribe = undefined;
+  generation += 1;
+  pagination?.close();
+  pagination = undefined;
 
   if (client) {
     void client.close().catch(() => undefined);
@@ -50,7 +64,13 @@ export function resetDocumentsSubscription() {
   authFailed = false;
   cachedToken = null;
   pendingToken = undefined;
-  setDocumentsStore({ status: "idle", documents: [], error: "" });
+  setDocumentsStore({
+    status: "idle",
+    documents: [],
+    error: "",
+    hasMore: false,
+    loadingMore: false,
+  });
 }
 
 const fetchAccessToken = async ({
@@ -61,17 +81,19 @@ const fetchAccessToken = async ({
   if (cachedToken && !forceRefreshToken) return cachedToken;
   if (!forceRefreshToken && pendingToken) return pendingToken;
 
+  const tokenGeneration = generation;
   pendingToken = (async () => {
     try {
       const result = await authClient.convex.token({ fetchOptions: { throw: false } });
       const token = result?.data?.token ?? null;
+      if (tokenGeneration !== generation) return null;
       cachedToken = token;
       return token;
     } catch {
-      cachedToken = null;
+      if (tokenGeneration === generation) cachedToken = null;
       return null;
     } finally {
-      pendingToken = undefined;
+      if (tokenGeneration === generation) pendingToken = undefined;
     }
   })();
 
@@ -95,23 +117,24 @@ function startSubscription(convexUrl: string) {
     if (!isAuthenticated && client === freshClient) markSessionExpired();
   });
 
-  unsubscribe = freshClient.onUpdate(
-    api.documents.list,
-    {},
-    (result) => {
-      setDocumentsStore({ status: "ready", documents: result as DocumentRecord[], error: "" });
-    },
-    (error) => {
+  pagination = createDocumentPages<DocumentRecord>({
+    id: ++paginationId,
+    subscribe: (paginationOpts, update, error) =>
+      freshClient.onUpdate(api.documents.listPage, { paginationOpts }, update, error),
+    update: (state) => {
       if (client !== freshClient || authFailed) return;
-
+      const { initialLoading, ...loaded } = state;
+      setDocumentsStore({ status: initialLoading ? "connecting" : "ready", ...loaded, error: "" });
+    },
+    error: (error) => {
+      if (client !== freshClient || authFailed) return;
       if (/unauthenticated|authentication/i.test(error.message)) {
         markSessionExpired();
         return;
       }
-
-      setDocumentsStore({ status: "error", error: loadFailedError });
-    }
-  );
+      setDocumentsStore({ status: "error", loadingMore: false, error: loadFailedError });
+    },
+  });
 }
 
 export function ensureDocumentsSubscription() {
@@ -127,9 +150,14 @@ export function ensureDocumentsSubscription() {
   if (authFailed) {
     resetDocumentsSubscription();
   } else if (client) {
-    if (!client.closed && unsubscribe) return;
+    if (!client.closed && pagination) return;
     resetDocumentsSubscription();
   }
 
   startSubscription(convexUrl);
+}
+
+export function loadMoreDocuments() {
+  if (authFailed) return;
+  pagination?.loadMore();
 }

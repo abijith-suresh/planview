@@ -31,6 +31,7 @@ export default function AppShell(props: AppShellProps) {
             class="sidebar-link"
             classList={{ "sidebar-link-active": props.active === "dashboard" }}
             href="/dashboard"
+            aria-label="Overview"
             aria-current={props.active === "dashboard" ? "page" : undefined}
           >
             <Icon name="grid" />
@@ -40,6 +41,7 @@ export default function AppShell(props: AppShellProps) {
             class="sidebar-link"
             classList={{ "sidebar-link-active": props.active === "documents" }}
             href="/documents"
+            aria-label="Documents"
             aria-current={props.active === "documents" ? "page" : undefined}
           >
             <Icon name="file" />
@@ -49,6 +51,7 @@ export default function AppShell(props: AppShellProps) {
             class="sidebar-link"
             classList={{ "sidebar-link-active": props.active === "settings" }}
             href="/settings"
+            aria-label="Settings"
             aria-current={props.active === "settings" ? "page" : undefined}
           >
             <Icon name="settings" />

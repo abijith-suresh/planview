@@ -1,5 +1,6 @@
 import { createEffect } from "solid-js";
 
+import { createDocumentAccountBoundary } from "~/lib/document-account-boundary";
 import { authClient } from "~/lib/auth";
 import { resetDocumentsSubscription } from "~/lib/documents-live";
 import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
@@ -9,6 +10,8 @@ const signOutDestination = () => {
 
   return typeof siteUrl === "string" && siteUrl ? `${siteUrl.replace(/\/+$/, "")}/` : "/";
 };
+
+const updateDocumentAccount = createDocumentAccountBoundary(resetDocumentsSubscription);
 
 export function useWorkspaceAuth() {
   const session = authClient.useSession();
@@ -26,6 +29,7 @@ export function useWorkspaceAuth() {
     const currentSession = session();
 
     if (currentSession.isPending) return;
+    updateDocumentAccount(currentSession.data?.user.id ?? null);
 
     if (currentSession.data) {
       document.cookie = clearAuthAttemptCookie;

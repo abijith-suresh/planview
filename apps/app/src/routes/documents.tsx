@@ -1,5 +1,6 @@
+import { A } from "@solidjs/router";
 import { Meta, Title } from "@solidjs/meta";
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 
 import AppShell from "~/components/AppShell";
 import Icon from "~/components/Icon";
@@ -9,7 +10,11 @@ import {
   type DocumentRecord,
   getErrorMessage,
 } from "~/lib/documents";
-import { documentsStore, ensureDocumentsSubscription } from "~/lib/documents-live";
+import {
+  documentsStore,
+  ensureDocumentsSubscription,
+  loadMoreDocuments,
+} from "~/lib/documents-live";
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
 export default function Documents() {
@@ -38,8 +43,14 @@ export default function Documents() {
     return documents().filter((document) => document.title.toLowerCase().includes(needle));
   });
 
+  onCleanup(() => {
+    if (feedbackTimer) clearTimeout(feedbackTimer);
+  });
+
   const pageCountLabel = (count: number) =>
-    count === 1 ? "1 HTML page in this workspace." : `${count} HTML pages in this workspace.`;
+    documentsStore.hasMore
+      ? `${count} documents loaded`
+      : `${count} ${count === 1 ? "document" : "documents"}`;
 
   const pageLede = () => {
     if (status() === "error") return "";
@@ -50,7 +61,9 @@ export default function Documents() {
   const isFiltering = () => normalizedQuery().length > 0;
   const listCount = () => {
     if (isFiltering()) return `${filteredDocuments().length} of ${documents().length}`;
-    return !isReady() && documents().length === 0 ? "…" : documents().length;
+    return !isReady() && documents().length === 0
+      ? "…"
+      : `${documents().length}${documentsStore.hasMore ? "+" : ""}`;
   };
 
   const showActionMessage = (message: string) => {
@@ -105,8 +118,13 @@ export default function Documents() {
       when={!session().isPending && session().data}
       fallback={
         <main class="auth-loading" aria-live="polite">
-          <span class="signal-dot" aria-hidden="true" />
-          Opening your workspace…
+          <Show
+            when={!session().error}
+            fallback={<p role="alert">Could not check your session. Refresh to try again.</p>}
+          >
+            <span class="signal-dot" aria-hidden="true" />
+            Opening your workspace…
+          </Show>
         </main>
       }
     >
@@ -126,7 +144,14 @@ export default function Documents() {
               class="search-input"
               type="search"
               placeholder="Filter by title…"
-              aria-label="Filter documents by title"
+              aria-label={
+                documentsStore.hasMore
+                  ? "Filter loaded documents by title"
+                  : "Filter documents by title"
+              }
+              name="title"
+              autocomplete="off"
+              spellcheck={false}
               value={query()}
               onInput={(event) => setQuery(event.currentTarget.value)}
             />
@@ -138,7 +163,7 @@ export default function Documents() {
               <span class="list-count">{listCount()}</span>
             </div>
             <Show
-              when={status() !== "error"}
+              when={status() !== "error" || documents().length > 0}
               fallback={
                 <p class="error-message" role="alert">
                   {documentsStore.error}
@@ -153,11 +178,13 @@ export default function Documents() {
                       <span class="empty-icon" aria-hidden="true">
                         <Icon name="file" size={24} />
                       </span>
-                      <h2>No pages yet.</h2>
-                      <p>
-                        Publish and upload from your terminal — <code>planview login</code>, then{" "}
-                        <code>planview upload ./page.html</code>.
-                      </p>
+                      <h2>No documents yet</h2>
+                      <p>Connect your agent to save your first HTML page.</p>
+                      <div class="empty-actions">
+                        <A class="button-primary" href="/settings#connect-agent">
+                          Connect your agent
+                        </A>
+                      </div>
                     </Show>
                   </div>
                 }
@@ -175,12 +202,25 @@ export default function Documents() {
                 >
                   <For each={filteredDocuments()}>
                     {(document) => (
-                      <article class="document-row">
+                      <article
+                        class="document-row"
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") setPendingDeleteId("");
+                        }}
+                      >
                         <span class="document-file-icon" aria-hidden="true">
                           <Icon name="file" size={17} />
                         </span>
                         <div class="document-details">
-                          <strong title={document.title}>{document.title}</strong>
+                          <a
+                            class="document-title"
+                            href={documentHref(document._id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={document.title}
+                          >
+                            {document.title}
+                          </a>
                           <small>
                             {formatRelativeDate(document.createdAt)} ·{" "}
                             {formatBytes(document.sizeBytes)}
@@ -224,20 +264,22 @@ export default function Documents() {
                             }
                           >
                             <span class="delete-confirm" role="alert">
-                              <span class="confirm-label">Delete "{document.title}"?</span>
+                              <span class="confirm-label">Delete?</span>
                               <button
                                 class="button-danger"
                                 type="button"
+                                aria-label={`Confirm deletion of ${document.title}`}
                                 disabled={deletingId() === document._id}
                                 onClick={() => void removeDocument(document)}
                               >
-                                Delete
+                                {deletingId() === document._id ? "Deleting…" : "Delete"}
                               </button>
                               <button
                                 class="icon-button"
                                 type="button"
-                                aria-label="Cancel"
+                                aria-label={`Cancel deleting ${document.title}`}
                                 title="Cancel"
+                                ref={(element) => queueMicrotask(() => element.focus())}
                                 disabled={deletingId() === document._id}
                                 onClick={() => setPendingDeleteId("")}
                               >
@@ -267,6 +309,27 @@ export default function Documents() {
               </Show>
             </Show>
           </section>
+
+          <Show when={documents().length > 0 && documentsStore.hasMore}>
+            <div class="list-footer">
+              <span class="page-note">
+                {isFiltering() ? "Filtering loaded documents" : "More documents available"}
+              </span>
+              <button
+                class="button-secondary"
+                type="button"
+                disabled={documentsStore.loadingMore}
+                onClick={loadMoreDocuments}
+              >
+                {documentsStore.loadingMore ? "Loading…" : "Load more"}
+              </button>
+            </div>
+          </Show>
+          <Show when={status() === "error" && documents().length > 0}>
+            <p class="error-message" role="alert">
+              {documentsStore.error}
+            </p>
+          </Show>
 
           <Show when={deleteError()}>
             <p class="error-message" role="alert">

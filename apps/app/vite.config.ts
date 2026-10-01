@@ -4,9 +4,7 @@ import { nitro } from "nitro/vite";
 
 import { solidStart } from "@solidjs/start/config";
 
-const resolveUriEsm = fileURLToPath(
-  import.meta.resolve("@jridgewell/resolve-uri/package.json"),
-);
+const resolveUriEsm = fileURLToPath(import.meta.resolve("@jridgewell/resolve-uri/package.json"));
 
 export default defineConfig({
   plugins: [solidStart({ middleware: "./src/middleware.ts" }), nitro()],
@@ -15,10 +13,7 @@ export default defineConfig({
     // build with no default export) when the source-map dev toolbar imports
     // trace-mapping; force the ESM build everywhere.
     alias: {
-      "@jridgewell/resolve-uri": resolveUriEsm.replace(
-        /package\.json$/,
-        "dist/resolve-uri.mjs",
-      ),
+      "@jridgewell/resolve-uri": resolveUriEsm.replace(/package\.json$/, "dist/resolve-uri.mjs"),
     },
   },
 });

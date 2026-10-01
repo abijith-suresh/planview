@@ -2,6 +2,7 @@ import { Meta, Title } from "@solidjs/meta";
 import { Show, createSignal } from "solid-js";
 
 import AppShell from "~/components/AppShell";
+import AgentConnection from "~/components/AgentConnection";
 import Icon from "~/components/Icon";
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
@@ -27,19 +28,24 @@ export default function Settings() {
       when={!session().isPending && session().data}
       fallback={
         <main class="auth-loading" aria-live="polite">
-          <span class="signal-dot" aria-hidden="true" />
-          Opening your workspace…
+          <Show
+            when={!session().error}
+            fallback={<p role="alert">Could not check your session. Refresh to try again.</p>}
+          >
+            <span class="signal-dot" aria-hidden="true" />
+            Opening your workspace…
+          </Show>
         </main>
       }
     >
       <Title>Settings | plansplease</Title>
-      <Meta name="description" content="Your plansplease account, CLI connection, and session." />
+      <Meta name="description" content="Your plansplease account, MCP and CLI connections." />
       <AppShell active="settings" userInitial={userInitial} userName={userName}>
         <div class="page-content settings-content">
           <header class="page-header">
             <div>
               <h1>Settings</h1>
-              <p class="page-lede">Your account and workspace details.</p>
+              <p class="page-lede">Connect your agent and manage your account.</p>
             </div>
           </header>
 
@@ -48,7 +54,7 @@ export default function Settings() {
             <div class="settings-account">
               <span class="profile-avatar">
                 {user()?.image ? (
-                  <img src={user()?.image ?? ""} alt="" />
+                  <img src={user()?.image ?? ""} alt="" width="56" height="56" />
                 ) : (
                   <span>{userInitial()}</span>
                 )}
@@ -61,21 +67,10 @@ export default function Settings() {
             </div>
           </section>
 
-          <section class="card onboarding-card" aria-labelledby="settings-cli-title">
-            <h2 id="settings-cli-title">Connect the CLI</h2>
-            <p>
-              Run <code>planview login</code> in your terminal and approve the browser page that
-              opens.
-            </p>
-            <p class="page-note">
-              Uploading from the CLI is how pages reach this workspace. Pages appear here
-              automatically as they are saved.
-            </p>
-          </section>
+          <AgentConnection />
 
           <section class="card onboarding-card" aria-labelledby="settings-session-title">
             <h2 id="settings-session-title">Session</h2>
-            <p>Signing out returns you to the plansplease site.</p>
             <div class="settings-actions">
               <button
                 class="button-secondary"
