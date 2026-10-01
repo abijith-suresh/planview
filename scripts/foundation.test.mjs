@@ -221,10 +221,16 @@ test("repository foundation has the expected configuration", () => {
   const cliPackageJson = readJson("apps/cli/package.json");
   expectEqual(cliPackageJson.name, "@abijith-suresh/planview", "CLI package name");
   expectEqual(cliPackageJson.type, "module", "CLI package module type");
+  expectProperty(
+    cliPackageJson.devDependencies,
+    "@planview/core",
+    "0.1.0",
+    "CLI bundled Core format dependency"
+  );
   assert.equal(
-    cliPackageJson.devDependencies?.["@planview/core"],
+    cliPackageJson.dependencies?.["@planview/core"],
     undefined,
-    "the public package must not declare private core"
+    "the published CLI must bundle private Core instead of requiring it at runtime"
   );
   assert.equal(
     cliPackageJson.devDependencies?.["@planview/daemon"],
