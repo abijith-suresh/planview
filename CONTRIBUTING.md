@@ -17,7 +17,10 @@ the CLI binary remains `planview`, and the private workspace is named
 
 - Keep shared local-document invariants and types in `@planview/core`; keep
   app-specific authorization, routing, and cloud policy in their owning
-  workspace until a shared boundary is justified. Core currently has narrow
+  workspace until a shared boundary is justified. The cloud bundle format and
+  MIME/path policy are pure shared Core modules used by app validation and CLI
+  prevalidation. App and CLI declare that Core dependency; neither imports the
+  other application. Core currently has narrow
   Node-backed defaults: `node:crypto` for document ID randomness and
   `node:os`/`node:path`, `process.platform`, `process.env`, and `homedir()` for
   app-data path resolution. Keep these defaults limited and injectable, and

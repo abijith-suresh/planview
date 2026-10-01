@@ -11,8 +11,8 @@ const allowedDependencies = new Map([
   ["@planview/storage", ["@planview/core"]],
   ["@planview/daemon", ["@planview/core", "@planview/storage"]],
   ["@planview/local", ["@planview/core", "@planview/storage", "@planview/daemon"]],
-  ["@abijith-suresh/planview", ["@planview/local"]],
-  ["@planview/app", []],
+  ["@abijith-suresh/planview", ["@planview/core", "@planview/local"]],
+  ["@planview/app", ["@planview/core"]],
   ["@planview/site", []],
 ]);
 
