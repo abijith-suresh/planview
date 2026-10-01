@@ -46,7 +46,7 @@ export function useWorkspaceAuth() {
         redirect: (destination) => window.location.assign(destination),
         destination: signOutDestination(
           window.location.origin,
-          import.meta.env.VITE_PUBLIC_SITE_URL
+          import.meta.env["VITE_PUBLIC_SITE_URL"]
         ),
       });
     } catch (error) {
