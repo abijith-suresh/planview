@@ -4,12 +4,7 @@ import { createDocumentAccountBoundary } from "~/lib/document-account-boundary";
 import { authClient } from "~/lib/auth";
 import { resetDocumentsSubscription } from "~/lib/documents-live";
 import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
-
-const signOutDestination = () => {
-  const { VITE_PUBLIC_SITE_URL: siteUrl } = import.meta.env;
-
-  return typeof siteUrl === "string" && siteUrl ? `${siteUrl.replace(/\/+$/, "")}/` : "/";
-};
+import { completeSignOut, signOutDestination } from "~/lib/sign-out-navigation";
 
 const updateDocumentAccount = createDocumentAccountBoundary(resetDocumentsSubscription);
 
@@ -48,10 +43,18 @@ export function useWorkspaceAuth() {
     isSigningOut = true;
 
     try {
-      await authClient.signOut();
-      resetDocumentsSubscription();
-      document.cookie = clearAuthAttemptCookie;
-      window.location.assign(signOutDestination());
+      await completeSignOut({
+        signOut: () => authClient.signOut(),
+        clearAuthAttempt: () => {
+          resetDocumentsSubscription();
+          document.cookie = clearAuthAttemptCookie;
+        },
+        redirect: (destination) => window.location.assign(destination),
+        destination: signOutDestination(
+          window.location.origin,
+          import.meta.env.VITE_PUBLIC_SITE_URL
+        ),
+      });
     } catch (error) {
       isSigningOut = false;
       throw error;
