@@ -82,7 +82,10 @@ with Client ID Metadata Documents (CIMD), account sign-in, explicit consent,
 and a `cloud:documents` scope. Agents can list, read, upload, and delete only
 the signed-in account's cloud documents. `read_document` returns at most 32,768
 characters per call; repeat with `nextOffset` to read the rest. Uploads accept
-one HTML document up to 8 MiB. There is no document count quota during
+one HTML document up to 8 MiB. `upload_document` returns `{ id, url }`, where
+`url` is the account workspace preview and requires the owning account to be
+signed in. It is not an anonymous share link or a direct storage URL.
+There is no document count quota during
 development. Deletes hide the document and queue storage cleanup; the existing
 Convex retry worker finishes cleanup in the background. UploadThing files have
 public URLs during development, including files uploaded through MCP.

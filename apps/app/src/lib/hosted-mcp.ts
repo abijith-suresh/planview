@@ -3,6 +3,7 @@ import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 
 import { createMcpDocumentService } from "./mcp-documents";
+import { presentMcpUpload } from "./mcp-document-links";
 
 const siteUrl = process.env["SITE_URL"]?.replace(/\/$/, "");
 const resource = siteUrl ? `${siteUrl}/mcp` : undefined;
@@ -69,7 +70,11 @@ const handler = createMcpHandler(
         inputSchema: z.object({ title: z.string().min(1).max(200), html: z.string() }),
         annotations: { readOnlyHint: false },
       },
-      async ({ title, html }) => runTool("upload_document", () => documents.upload(title, html))
+      async ({ title, html }) =>
+        runTool("upload_document", async () => {
+          const { id } = await documents.upload(title, html);
+          return presentMcpUpload(id, siteUrl!);
+        })
     );
 
     server.registerTool(
