@@ -45,7 +45,8 @@ Use optimistic concurrency: if the current revision has changed since the agent 
 it, return a conflict. The agent reads the new revision and asks how to reconcile the
 changes rather than silently replacing another session's work. Bind an idempotency
 key to the caller, document, base revision, and content so retries do not create
-multiple revisions. Reusing a key for a different operation fails.
+multiple revisions. Check for a committed replay before the stale-base check and
+return the original success. Reusing a key for a different operation fails.
 
 ## Storage and authorization
 
@@ -55,9 +56,17 @@ points to its latest revision. Convert old documents to revision 1 during a sepa
 reviewed migration with a dry run and restartable batches.
 
 Store new bytes first, then atomically insert the revision and conditionally advance
-the latest pointer in Convex. On authorization failure or a stale base, clean up the
-uncommitted file through the existing compensation/retry mechanism. Extend mutation
-proofs to bind the parent, base revision, and new content locator. An agent cannot
+the latest pointer in Convex. Reject known authorization and stale-base failures before
+uploading when possible, then recheck atomically at commit.
+
+Add durable cleanup jobs for uncommitted upload locators, independent of a document ID.
+Today's upload compensation only attempts deletion and logs failures; the existing
+delete retry worker requires a persisted document and cannot clean orphan uploads.
+Reuse its scheduling and backoff conventions, but distinguish orphan cleanup from
+revision and parent deletion. On an ambiguous timeout, consult the idempotency receipt
+before deleting any bytes. If publication may have committed, retain the file until
+reconciliation proves that no revision references it. Extend mutation proofs to bind
+the parent, base revision, and new content locator. An agent cannot
 append to or read another account's document even if it knows both IDs.
 
 History is paginated. Account storage use must count every retained revision rather
