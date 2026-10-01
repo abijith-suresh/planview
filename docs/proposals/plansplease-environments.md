@@ -45,6 +45,31 @@ update the callback to the new origin during the cutover. GitHub checks the
 [redirect URL against the registered callback](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#redirect-urls).
 Changing only the Railway domain would risk breaking the test experience.
 
+The CLI also embeds the old host in `apps/cli/src/cloud.ts` as `DEFAULT_CLOUD_URL`.
+Saved credentials contain their own `cloudUrl`, which uploads and revocation use.
+Setting `PLANVIEW_CLOUD_URL` changes the next login destination; it does not migrate
+an existing saved credential. Login revokes the previous credential before saving
+the replacement, so a credential pointing at a removed host can block re-login.
+
+Before cutover, prepare a separate, tested CLI compatibility release that updates
+the default origin and provides recovery for saved old-host credentials. Do not
+rename the binary, npm package, profile paths, or credential format as part of that
+release. Publish it when the new origin is ready. Until that release is available,
+only proceed if every current CLI tester can run `planview logout` against the old
+host before it disappears, in every profile they use:
+
+```sh
+planview logout
+planview --profile testing logout
+```
+
+Use actual profile names instead of the `testing` example. Do not silently delete
+credential files and leave their server tokens active. An offline tester who misses
+logout needs the compatibility recovery flow to revoke the old token through the
+confirmed replacement backend and save a fresh credential. That recovery must not
+send tokens to an arbitrary new origin. Wait for that release if this cannot be
+handled safely for all current testers.
+
 Prepare the GitHub OAuth app settings page before running the commands below.
 Use a short maintenance window, with no sign-ins or MCP authorizations in progress.
 If the domain rename fails, stop and leave the current callback and origins intact.
@@ -104,6 +129,21 @@ deployment's `SUCCESS`. Deploy merged code only. `PUBLIC_APP_URL` is used by the
 site build, so a successful app restart alone does not update the marketing link.
 Convex `SITE_URL` changes also change the trusted origin and OAuth issuer.
 
+After the new origin works, testers who logged out can sign in and upload with an
+explicit destination even before installing the CLI release with its new default:
+
+```sh
+PLANVIEW_CLOUD_URL=https://plansplease-app-staging.up.railway.app planview login
+planview upload --open ./report.html
+
+planview --profile testing login --cloud-url https://plansplease-app-staging.up.railway.app
+planview --profile testing upload --json ./report.html
+```
+
+An environment variable only on `upload` cannot override the saved destination.
+Older CLI versions without a new login still point to the removed host and will
+fail. Update bundled examples and the CLI default in the compatibility release.
+
 Before announcing the new URL, verify:
 
 - `GET /api/health` returns `{"status":"ok"}` on the new app host.
@@ -115,6 +155,10 @@ Before announcing the new URL, verify:
   callback setting.
 - A fresh MCP connection authorizes, lists documents, and uploads a test document.
   Existing clients must update the server URL and may need to authorize again.
+- CLI login, upload, and logout succeed on the new host for the default profile and
+  an isolated profile. Test the compatibility release with a saved old-host
+  credential and an unreachable old origin, including failed revocation. Confirm
+  failures preserve the old credential and clean up any newly issued token.
 - The staging site links to the new app, and an existing document preview opens.
 
 Update README links only after these checks pass. Existing app sessions are tied
@@ -128,6 +172,12 @@ and the GitHub callback to `https://app-staging-a39a.up.railway.app`. Wait for t
 app and site deployments to succeed and repeat the checks above. Reclaiming the
 old generated label is not guaranteed; keep the actual active domain consistent
 across all four settings if reclamation fails.
+
+Before removing the new host during rollback, CLI testers must log out there in
+every active profile. After the restored host passes checks, use
+`planview login --cloud-url https://app-staging-a39a.up.railway.app` in each profile.
+The CLI default and saved credentials need the same rollback/recovery treatment
+as the forward cutover. Do not assume reverting Railway variables fixes them.
 
 ## Add production when it has a purpose
 
