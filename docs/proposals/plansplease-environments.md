@@ -59,11 +59,11 @@ uses the new app host with no old hostname remaining in the rendered page.
 The owner subsequently updated the GitHub callback to
 `https://plansplease-app-staging.up.railway.app/api/auth/callback/github` and
 personally confirmed that sign-in reached the dashboard. Complete new-client MCP
-authorization has not been reverified after that manual change. A separate tested CLI
-compatibility release is proposed to update the default and normalize the old
-staging origin to the new one for saved-credential recovery. Existing installs
-and credentials must not be assumed to use the new host until that release is
-available and installed.
+authorization has not been reverified after that manual change. The tested CLI
+compatibility change merged in PR #127 updates the default and normalizes the old
+staging origin to the new one for saved-credential recovery. npm publication
+remains disabled. Existing installs and credentials must not be assumed to use
+the new host until that source change is released and installed.
 
 ## Original cutover runbook and recovery requirements
 
@@ -89,7 +89,8 @@ update the callback to the new origin during the cutover. GitHub checks the
 [redirect URL against the registered callback](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps#redirect-urls).
 Changing only the Railway domain would risk breaking the test experience.
 
-The CLI also embeds the old host in `apps/cli/src/cloud.ts` as `DEFAULT_CLOUD_URL`.
+At the original cutover, the CLI embedded the old host in
+`apps/cli/src/cloud.ts` as `DEFAULT_CLOUD_URL`.
 Saved credentials contain their own `cloudUrl`, which uploads and revocation use.
 Setting `PLANVIEW_CLOUD_URL` changes the next login destination; it does not migrate
 an existing saved credential. Login revokes the previous credential before saving
@@ -219,7 +220,7 @@ across all four settings if reclamation fails.
 
 Before removing the new host during rollback, prepare and publish a tested
 rollback CLI release that removes or reverses the forward old-to-new origin alias
-and restores the appropriate default. The proposed forward compatibility release
+and restores the appropriate default. The merged forward compatibility change
 normalizes even an explicit `--cloud-url` old origin to the new host, so that flag
 alone cannot target a restored old host. Keep the new host active until credential
 revocation and recovery have been handled if a rollback CLI is not yet available.
