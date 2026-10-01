@@ -1,7 +1,10 @@
 # Plansplease naming and environments
 
-Status: proposal. This document does not rename resources, create deployments,
-or change storage. Live configuration was checked on 2026-10-01.
+Status: proposal for the remaining naming, environment, and storage decisions.
+The user approved the staging hostname cutover on 2026-10-01 and accepted GitHub
+sign-in downtime until they update the OAuth callback. They are the only current
+tester. The operational status below records that cutover; this PR itself changes
+documentation only.
 
 Use plansplease for the product and public links. Keep published CLI identifiers
 compatible while we establish a separate production environment. For the alpha,
@@ -16,7 +19,7 @@ continue using staging and describe file URLs as public.
 | Railway project | `planview-cloud` | `plansplease-cloud`, display name only |
 | Railway app service | `app` | `plansplease-app`, shared service name across environments |
 | Railway site service | `plansplease-site` | Keep |
-| Staging app origin | `https://app-staging-a39a.up.railway.app` | `https://plansplease-app-staging.up.railway.app`, subject to availability |
+| Staging app origin | `https://plansplease-app-staging.up.railway.app` | Keep the user-selected host |
 | Staging site origin | `https://plansplease-site-staging.up.railway.app` | Keep |
 | Production app/site origins | No active app deployment or app domain verified | Prefer owned product domains; generated `plansplease-app-prod` and `plansplease-site-prod` are fallback labels |
 | npm package and CLI | `@abijith-suresh/planview`, `planview` | Keep until a separate compatibility release |
@@ -26,15 +29,56 @@ Railway already has `staging` and `production` environments. The production app
 had no domains or deployments when checked. Provisioning a second running app
 is unnecessary for the current friends-and-family test.
 
-## Move the staging app URL without breaking sign-in
+## Approved staging cutover
+
+The existing generated app domain, ID `38b5df65-9796-46ac-a110-06d8a8c1ad6a`,
+was renamed from `app-staging-a39a.up.railway.app` to
+`plansplease-app-staging.up.railway.app`. Railway reports it as `ACTIVE`.
+
+These settings now use `https://plansplease-app-staging.up.railway.app`:
+
+- Railway staging app `SITE_URL`.
+- Convex deployment `tame-dolphin-986` `SITE_URL`. Convex labels this deployment
+  as production in its CLI; it is the existing backend used by Railway staging.
+- Railway staging site `PUBLIC_APP_URL`.
+
+The app and site use reviewed merged commit
+`476480e798bdff60b61be8b975d8d72bc3a009fa`. No unmerged UI or marketing changes
+were deployed. Railway production, GitHub OAuth settings and secrets, documents,
+and storage remain unchanged.
+
+Both submitted deployments reached `SUCCESS`:
+
+- App `b8038440-2f05-43ec-93e5-288478227077`.
+- Site `cfc70c1f-d56b-4a09-8210-72a77af27913`.
+
+The new app health check and both MCP/OAuth discovery endpoints return `200` and
+advertise the new host. GitHub sign-in initiation returns `302` with the new
+callback. The staging site health check returns `200`, and its dashboard link
+uses the new app host with no old hostname remaining in the rendered page.
+These checks do not establish that a complete GitHub login works.
+
+The owner still needs to set the GitHub OAuth app's authorization callback to
+`https://plansplease-app-staging.up.railway.app/api/auth/callback/github`.
+Sign-in and new MCP authorization are not ready for testing until that setting
+is updated and a complete browser login succeeds. The separate CLI URL and
+saved-credential migration work is also still required; existing CLI installs
+and saved credentials must not be assumed to use the new host.
+
+## Original cutover runbook and recovery requirements
+
+The following is the reviewed forward-cutover reference. The domain and origin
+settings have already changed; do not repeat the old-host rename command.
+The user explicitly accepted the sign-in and CLI interruption instead of waiting
+for the prerequisites below. Retain them for recovery and future origin changes.
 
 The current app is healthy at `/api/health`. MCP discovery and GitHub sign-in both
 use the current app origin. Railway allows one generated domain per service.
 [Renaming it](https://docs.railway.com/cli/domain) replaces the old host, so existing
 links cannot be assumed to redirect.
 
-The GitHub OAuth client currently in use is `Ov23liMcd6zsqoA4GYKE`. A live sign-in
-request produces this callback:
+The GitHub OAuth client in use is `Ov23liMcd6zsqoA4GYKE`. Before the cutover, a
+live sign-in request produced this callback:
 
 ```text
 https://app-staging-a39a.up.railway.app/api/auth/callback/github
@@ -73,12 +117,12 @@ handled safely for all current testers.
 Prepare the GitHub OAuth app settings page before running the commands below.
 Use a short maintenance window, with no sign-ins or MCP authorizations in progress.
 If the domain rename fails, stop and leave the current callback and origins intact.
-Domain availability has not been confirmed. Railway's availability API rejected
-the read with `Not Authorized`; no rename was attempted.
+The initial availability read returned `Not Authorized`. The later authorized
+rename confirmed that the user-selected hostname was available and is now active.
 
 The following commands use the verified IDs and Railway CLI 5.63.1. Run them from
 the app directory in a clean checkout, with Convex CLI access to `tame-dolphin-986`.
-They are a cutover runbook, not commands to run when merging this proposal.
+They record the original cutover, not commands to run when merging this proposal.
 
 ```sh
 plansplease_project=306aabd5-d0a6-4f2b-854b-b8d457330eed
@@ -243,8 +287,8 @@ that implementation and the migration checks pass.
 
 ## Decisions to settle
 
-- Does the proposed staging app label work, and who can edit the GitHub OAuth
-  app callback during the cutover?
+- The staging app label is chosen and active. The owner must finish the GitHub
+  OAuth callback update before sign-in can be verified.
 - Is an owned plansplease domain already available, or should generated Railway
   domains remain the testing URLs?
 - Keep public UploadThing storage for this test, or prioritize a private Convex
