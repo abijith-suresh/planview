@@ -16,6 +16,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     deletionRequestedAt: v.optional(v.number()),
+    shareTokenHash: v.optional(v.string()),
   })
     .index("by_owner_createdAt", ["ownerId", "createdAt"])
     .index("by_owner_active_createdAt", ["ownerId", "deletionRequestedAt", "createdAt"])

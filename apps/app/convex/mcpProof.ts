@@ -1,4 +1,10 @@
-export type McpDocumentAction = "list" | "get" | "create" | "delete";
+export type McpDocumentAction =
+  | "list"
+  | "get"
+  | "create"
+  | "delete"
+  | "create-share"
+  | "revoke-share";
 
 export type McpDocumentProof = Readonly<{
   expiresAt: number;

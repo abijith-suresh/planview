@@ -9,6 +9,8 @@ import { createDocumentProof } from "./document-mutation-proof";
 import { getDocumentStorage } from "./document-storage";
 import { reportDocumentUploadCompensationFailure } from "./document-upload-compensation";
 import { createMcpDocumentProof } from "./mcp-document-proof";
+import { createDocumentShareToken, documentShareUrl } from "./document-share-token";
+import { documentSharingFunctions } from "./document-sharing-functions";
 
 const maxFileBytes = 8 * 1024 * 1024;
 const maxReadCharacters = 32_768;
@@ -180,6 +182,33 @@ export function createMcpDocumentService(ownerId: string) {
       });
       documentReadCache.invalidate(JSON.stringify([ownerId, id]));
       return result;
+    },
+
+    async share(id: string) {
+      const siteUrl = process.env["SITE_URL"];
+      if (!siteUrl) throw new Error("The sharing origin is not configured");
+      const issued = await createDocumentShareToken();
+      const url = documentShareUrl(siteUrl, id, issued.token);
+      const enabled = await client.mutation(documentSharingFunctions.enableWithMcpProof, {
+        id: id as Id<"documents">,
+        ownerId,
+        tokenHash: issued.tokenHash,
+        proof: await createMcpDocumentProof({
+          action: "create-share",
+          ownerId,
+          arguments: [id, issued.tokenHash],
+        }),
+      });
+      return enabled ? { id, url, access: "anyone_with_link" } : null;
+    },
+
+    async unshare(id: string) {
+      const disabled = await client.mutation(documentSharingFunctions.disableWithMcpProof, {
+        id: id as Id<"documents">,
+        ownerId,
+        proof: await createMcpDocumentProof({ action: "revoke-share", ownerId, arguments: [id] }),
+      });
+      return { id, disabled };
     },
   };
 }
