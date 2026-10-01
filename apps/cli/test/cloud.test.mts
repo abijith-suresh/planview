@@ -322,6 +322,99 @@ test("logout retains a credential when server revocation fails", async () => {
   });
 });
 
+test("login defaults to the current plansplease staging origin", async () => {
+  await withIsolatedAppData(async () => {
+    const previousUrl = process.env["PLANVIEW_CLOUD_URL"];
+    delete process.env["PLANVIEW_CLOUD_URL"];
+    try {
+      const result = await loginToCloud({
+        profile: "staging-default",
+        writeStatus: () => undefined,
+        openBrowser: async (value) => {
+          const signIn = new URL(value);
+          assert.equal(signIn.origin, "https://plansplease-app-staging.up.railway.app");
+          const returnTo = new URL(signIn.searchParams.get("returnTo")!, signIn.origin);
+          const callback = new URL(returnTo.searchParams.get("redirect_uri")!);
+          const response = await fetch(callback, {
+            method: "POST",
+            headers: { Origin: callback.origin, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              state: returnTo.searchParams.get("state"),
+              token: "staging-default-token",
+            }),
+          });
+          assert.equal(response.status, 200);
+          await response.text();
+        },
+      });
+      assert.deepEqual(result, { cloudUrl: "https://plansplease-app-staging.up.railway.app" });
+    } finally {
+      if (previousUrl === undefined) delete process.env["PLANVIEW_CLOUD_URL"];
+      else process.env["PLANVIEW_CLOUD_URL"] = previousUrl;
+    }
+  });
+});
+
+test("saved staging credentials revoke through the confirmed replacement origin", async (t) => {
+  await withIsolatedAppData(async () => {
+    const profile = "staging-migration";
+    await saveTestCredentials(profile);
+    const path = cloudCredentialsPath(profile);
+    const saved = JSON.parse(readFileSync(path, "utf8"));
+    writeFileSync(
+      path,
+      JSON.stringify({ ...saved, cloudUrl: "https://app-staging-a39a.up.railway.app" })
+    );
+    t.mock.method(globalThis, "fetch", async (input: string, init: RequestInit) => {
+      assert.equal(input, "https://plansplease-app-staging.up.railway.app/api/cli/session");
+      assert.equal(init.method, "DELETE");
+      assert.equal(
+        new Headers(init.headers).get("Authorization"),
+        "Bearer planview_cli_security-test-token"
+      );
+      return Response.json({ success: true });
+    });
+    await removeCloudCredentials(profile);
+    assert.equal(existsSync(path), false);
+  });
+});
+
+test("failed staging credential migration revocation preserves the saved credential", async (t) => {
+  await withIsolatedAppData(async () => {
+    const profile = "staging-migration-retry";
+    await saveTestCredentials(profile);
+    const path = cloudCredentialsPath(profile);
+    const saved = JSON.parse(readFileSync(path, "utf8"));
+    const original = JSON.stringify({
+      ...saved,
+      cloudUrl: "https://app-staging-a39a.up.railway.app",
+    });
+    writeFileSync(path, original);
+    t.mock.method(globalThis, "fetch", async (input: string) => {
+      assert.equal(input, "https://plansplease-app-staging.up.railway.app/api/cli/session");
+      return Response.json({ error: "down" }, { status: 503 });
+    });
+    await assert.rejects(removeCloudCredentials(profile), /could not revoke/);
+    assert.equal(readFileSync(path, "utf8"), original);
+  });
+});
+
+test("a similarly named custom origin never redirects its saved token to staging", async (t) => {
+  await withIsolatedAppData(async () => {
+    const profile = "custom-origin";
+    await saveTestCredentials(profile);
+    const path = cloudCredentialsPath(profile);
+    const saved = JSON.parse(readFileSync(path, "utf8"));
+    const customOrigin = "https://app-staging-a39a.up.railway.app.example.test";
+    writeFileSync(path, JSON.stringify({ ...saved, cloudUrl: customOrigin }));
+    t.mock.method(globalThis, "fetch", async (input: string) => {
+      assert.equal(input, `${customOrigin}/api/cli/session`);
+      return Response.json({ success: true });
+    });
+    await removeCloudCredentials(profile);
+  });
+});
+
 test("login and logout can repair a private but invalid credentials file", async () => {
   await withIsolatedAppData(async () => {
     const profile = "invalid-credentials";
