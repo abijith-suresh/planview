@@ -14,7 +14,7 @@ const uploadRequestSizeLimit = 8 * 1024 * 1024 + 64 * 1024;
 function createHandler(overrides: Partial<DocumentUploadHandlerDependencies<TestClient>> = {}) {
   const calls = {
     getCurrentUser: 0,
-    uploads: [] as { customId: string; fileName: string }[],
+    uploads: [] as { objectId: string; fileName: string }[],
     metadata: [] as DocumentUploadMetadata[],
     metadataOwners: [] as string[],
     deletedKeys: [] as string[],
@@ -26,16 +26,17 @@ function createHandler(overrides: Partial<DocumentUploadHandlerDependencies<Test
       return { subject: "owner_123" };
     },
     isStorageConfigured: () => true,
-    uploadFile: async ({ file, customId }) => {
-      calls.uploads.push({ customId, fileName: file.name });
+    uploadFile: async ({ file, objectId }) => {
+      calls.uploads.push({ objectId, fileName: file.name });
+      return { storageProvider: "uploadthing", storageKey: `uploadthing-custom-id:${objectId}` };
     },
     createMetadata: async (_client, input, ownerId) => {
       calls.metadata.push(input);
       calls.metadataOwners.push(ownerId);
       return "document_123";
     },
-    deleteStorageObject: async (key) => {
-      calls.deletedKeys.push(key);
+    deleteStorageObject: async ({ storageKey }) => {
+      calls.deletedKeys.push(storageKey);
     },
     createUploadId: () => "uuid-123",
     missingServerConfigurationResponse: () =>
@@ -179,7 +180,7 @@ test("stores one HTML file and binds its storage key to the authenticated owner"
 
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), { id: "document_123" });
-  assert.deepEqual(calls.uploads, [{ customId: "owner_123:uuid-123", fileName: "hello.html" }]);
+  assert.deepEqual(calls.uploads, [{ objectId: "owner_123:uuid-123", fileName: "hello.html" }]);
   assert.deepEqual(calls.metadata, [
     {
       title: "My document",
@@ -220,7 +221,7 @@ test("deletes the uploaded object if metadata creation fails", async () => {
 
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { error: "metadata creation failed" });
-  assert.deepEqual(calls.uploads, [{ customId: "owner_123:uuid-123", fileName: "hello.html" }]);
+  assert.deepEqual(calls.uploads, [{ objectId: "owner_123:uuid-123", fileName: "hello.html" }]);
   assert.deepEqual(calls.deletedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
 });
 
@@ -236,8 +237,8 @@ test("reports a failed compensation and keeps the metadata error response", asyn
     createMetadata: async () => {
       throw metadataCause;
     },
-    deleteStorageObject: async (key) => {
-      calls.deletedKeys.push(key);
+    deleteStorageObject: async ({ storageKey }) => {
+      calls.deletedKeys.push(storageKey);
       throw cleanupCause;
     },
     reportCompensationFailure: async (failure) => {

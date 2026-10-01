@@ -2,11 +2,10 @@ import {
   reportDocumentUploadCompensationFailure,
   type DocumentUploadCompensationReporter,
 } from "./document-upload-compensation.ts";
+import type { DocumentStorageUpload, StoredDocument } from "./document-storage.ts";
 
-export type DocumentUploadMetadata = {
+export type DocumentUploadMetadata = StoredDocument & {
   title: string;
-  storageProvider: "uploadthing";
-  storageKey: string;
   contentType: "text/html";
   sizeBytes: number;
 };
@@ -15,14 +14,14 @@ export type DocumentUploadHandlerDependencies<Client> = {
   getAuthedClient(request: Request): Promise<{ client: Client; token: string | null | undefined }>;
   getCurrentUser(client: Client, request: Request): Promise<{ subject: string } | null | undefined>;
   isStorageConfigured(): boolean;
-  uploadFile(input: { file: File; customId: string }): Promise<void>;
+  uploadFile(input: DocumentStorageUpload): Promise<StoredDocument>;
   createMetadata(
     client: Client,
     input: DocumentUploadMetadata,
     ownerId: string,
     request: Request
   ): Promise<string>;
-  deleteStorageObject(key: string): Promise<void>;
+  deleteStorageObject(document: StoredDocument): Promise<void>;
   reportCompensationFailure?: DocumentUploadCompensationReporter;
   createUploadId(): string;
   missingServerConfigurationResponse(): Response;
@@ -31,7 +30,6 @@ export type DocumentUploadHandlerDependencies<Client> = {
 
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_SIZE_BYTES = MAX_FILE_SIZE_BYTES + 64 * 1024;
-const STORAGE_KEY_PREFIX = "uploadthing-custom-id:";
 
 async function readBoundedFormData(request: Request): Promise<FormData | null> {
   const reader = request.body?.getReader();
@@ -136,9 +134,8 @@ export function createDocumentUploadHandler<Client>(
         );
       }
 
-      const customId = `${identity.subject}:${dependencies.createUploadId()}`;
-      const storageKey = `${STORAGE_KEY_PREFIX}${customId}`;
-      await dependencies.uploadFile({ file, customId });
+      const objectId = `${identity.subject}:${dependencies.createUploadId()}`;
+      const storedDocument = await dependencies.uploadFile({ file, objectId });
 
       let id: string;
       try {
@@ -146,8 +143,7 @@ export function createDocumentUploadHandler<Client>(
           client,
           {
             title,
-            storageProvider: "uploadthing",
-            storageKey,
+            ...storedDocument,
             contentType: "text/html",
             sizeBytes: file.size,
           },
@@ -156,10 +152,10 @@ export function createDocumentUploadHandler<Client>(
         );
       } catch (error) {
         try {
-          await dependencies.deleteStorageObject(storageKey);
+          await dependencies.deleteStorageObject(storedDocument);
         } catch (cleanupCause) {
           await reportDocumentUploadCompensationFailure(dependencies.reportCompensationFailure, {
-            objectKey: storageKey,
+            objectKey: storedDocument.storageKey,
             metadataCause: error,
             cleanupCause,
           });

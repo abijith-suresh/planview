@@ -4,7 +4,6 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 import { api, getUnauthedConvexClient } from "./convex-server";
 import { createDocumentReadCache } from "./document-read-cache";
-import { uploadHtmlFile } from "./document-file-upload";
 import { createDocumentProof } from "./document-mutation-proof";
 import { getDocumentStorage } from "./document-storage";
 import { reportDocumentUploadCompensationFailure } from "./document-upload-compensation";
@@ -127,16 +126,13 @@ export function createMcpDocumentService(ownerId: string) {
         throw new Error("Title must be between 1 and 200 characters");
       }
       if (bytes.length > maxFileBytes) throw new Error("HTML exceeds the 8 MiB limit");
-      const customId = `${ownerId}:${randomUUID()}`;
-      const storageKey = `uploadthing-custom-id:${customId}`;
-      await uploadHtmlFile({
+      const storedDocument = await getDocumentStorage().upload({
         file: new File([bytes], "document.html", { type: "text/html" }),
-        customId,
+        objectId: `${ownerId}:${randomUUID()}`,
       });
       const input = {
         title: cleanTitle,
-        storageProvider: "uploadthing" as const,
-        storageKey,
+        ...storedDocument,
         contentType: "text/html" as const,
         sizeBytes: bytes.length,
       };
@@ -160,10 +156,12 @@ export function createMcpDocumentService(ownerId: string) {
         return { id };
       } catch (metadataCause) {
         try {
-          await getDocumentStorage("uploadthing").delete(storageKey);
+          await getDocumentStorage(storedDocument.storageProvider).delete(
+            storedDocument.storageKey
+          );
         } catch (cleanupCause) {
           await reportDocumentUploadCompensationFailure(undefined, {
-            objectKey: storageKey,
+            objectKey: storedDocument.storageKey,
             metadataCause,
             cleanupCause,
           });
