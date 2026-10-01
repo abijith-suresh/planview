@@ -1,0 +1,51 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this layout component below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses these page values below.
+import { appMcpUrl, appSignInUrl } from "../lib/app-url";
+---
+
+<SiteLayout
+  title="MCP | plansplease"
+  description="Connect your agent to your plansplease cloud documents with MCP."
+  activePath="docs"
+>
+  <section class="page-heading" aria-labelledby="mcp-title">
+    <div>
+      <h1 id="mcp-title">Connect your agent.</h1>
+      <p>Save and reopen HTML pages without leaving your agent.</p>
+    </div>
+    <a class="page-action" href={appSignInUrl}>Open workspace</a>
+  </section>
+
+  <section class="content-section mcp-setup" aria-label="MCP setup">
+    <ol>
+      <li>
+        <h2>Add a remote MCP server</h2>
+        <p>Use this endpoint in a client that supports remote MCP with browser sign-in.</p>
+        <pre><code>{appMcpUrl}</code></pre>
+      </li>
+      <li>
+        <h2>Sign in and approve access</h2>
+        <p>Complete GitHub sign-in in the browser and approve your agent's access.</p>
+      </li>
+      <li>
+        <h2>Save your first page</h2>
+        <p>Ask your agent to upload an HTML plan to plansplease. It can also list, read, and delete your documents.</p>
+      </li>
+    </ol>
+    <p class="page-note">Cloud file URLs are public during alpha. Workspace previews require your account.</p>
+    <p class="page-note">Prefer the terminal? Use <a href="../cli/">the CLI</a>.</p>
+  </section>
+</SiteLayout>
+
+<style>
+  .mcp-setup { max-width: 44rem; }
+  ol { margin: 0; padding-left: 1.5rem; }
+  li { padding-left: 0.75rem; margin-bottom: 2rem; }
+  li::marker { color: var(--mint); font-family: var(--mono); }
+  h2 { font-size: 1.2rem; margin: 0 0 0.75rem; }
+  p { color: var(--night-muted); }
+  pre { padding: 1rem; border: 1px solid var(--night-border); border-radius: var(--radius); background: var(--night-card); overflow-x: auto; font-family: var(--mono); font-size: 0.85rem; }
+  .page-note + .page-note { margin-top: 1rem; }
+</style>

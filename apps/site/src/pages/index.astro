@@ -21,14 +21,13 @@ import { appSignInUrl } from "../lib/app-url";
       </h1>
 
       <p class="hero-lede">
-        Specs, dashboards, code reviews, tiny tools — your agent writes them as HTML. plansplease
-        turns every file into a URL: instant on your machine, with a cloud copy you can open from
-        your phone. Cloud files have public direct URLs during alpha.
+        Keep the HTML pages your agent makes. Preview locally or save them to your workspace
+        with the CLI or MCP. Cloud file URLs are public during alpha.
       </p>
 
       <div class="hero-actions">
         <a class="btn-primary" href={appSignInUrl}>Continue with GitHub</a>
-        <a class="btn-ghost" href="/docs/">Read the docs</a>
+        <a class="btn-ghost" href="/mcp/">Connect your agent</a>
       </div>
     </div>
 
@@ -69,7 +68,7 @@ import { appSignInUrl } from "../lib/app-url";
         <div class="page-bar">
           <span class="page-glyph"></span>
           <span class="page-url">plansplease.app/p/auth-migration-spec</span>
-          <span class="page-sync"><span class="sync-dot"></span>Synced</span>
+          <span class="page-sync"><span class="sync-dot"></span>Saved</span>
         </div>
         <div class="page-body">
           <h2 class="page-title">Auth migration — rollout plan</h2>
@@ -124,8 +123,7 @@ import { appSignInUrl } from "../lib/app-url";
         <span class="step-index" aria-hidden="true">03</span>
         <h3>Keep it working</h3>
         <p>
-          Pages outlive the chat. They stay in your workspace — searchable, deletable, yours —
-          until you decide otherwise.
+          Reopen saved pages from another device, or delete them when you are done.
         </p>
       </li>
     </ol>
@@ -159,11 +157,10 @@ import { appSignInUrl } from "../lib/app-url";
   </section>
 
   <section class="why" aria-labelledby="why-title">
-    <h2 id="why-title">Markdown caps out around a hundred lines. Your agent's work doesn't.</h2>
+    <h2 id="why-title">A page worth keeping should outlive the conversation.</h2>
     <p>
-      HTML carries diagrams, interaction, and structure in one file your browser already knows how
-      to run. plansplease just gives that file a home — works with Claude Code, Cursor, Codex, or
-      anything that writes HTML.
+      HTML keeps diagrams and interactions in a file you can open in a browser.
+      Save it through the CLI or let your agent use MCP.
     </p>
   </section>
 
@@ -171,7 +168,7 @@ import { appSignInUrl } from "../lib/app-url";
     id="cta-title"
     title="Stop losing good work in chat scrollback."
     lede="Sign in, publish your next agent-made page, and see how long it lasts."
-    note="Free during alpha · CLI today, MCP soon · Cloud files have public URLs"
+    note="Free during alpha · CLI and MCP · Public cloud file URLs"
   />
 
 </SiteLayout>

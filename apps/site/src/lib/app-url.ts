@@ -4,3 +4,5 @@ const DEFAULT_APP_URL = "https://app-staging-a39a.up.railway.app";
 const appUrl = process.env["PUBLIC_APP_URL"] ?? DEFAULT_APP_URL;
 
 export const appSignInUrl = `${appUrl.replace(/\/$/, "")}/dashboard`;
+
+export const appMcpUrl = new URL("/mcp", appUrl).href;

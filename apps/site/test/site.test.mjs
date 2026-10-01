@@ -123,6 +123,7 @@ const assertMarketingPages = (output) => {
     ["cli", "CLI | plansplease", "Give a local HTML file a URL."],
     ["about", "About | plansplease", "A place for the useful things agents make."],
     ["docs", "Docs | plansplease", "Docs for a small tool."],
+    ["mcp", "MCP | plansplease", "Connect your agent."],
     ["pricing", "Pricing | plansplease", "Simple for now. Clear about later."],
     ["faq", "FAQ | plansplease", "Questions we expect to hear."],
     ["privacy", "Privacy | plansplease", "Your pages are yours."],
@@ -156,6 +157,10 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("plansplease.app/p/auth-migration-spec"));
   assert.ok(html.includes("http://localhost:4777/auth-migration-spec"));
   assert.ok(html.includes("Two commands, two homes"));
+  assert.ok(html.includes("Connect your agent"));
+  assert.ok(html.includes("CLI and MCP"));
+  assert.equal(html.includes("MCP soon"), false);
+  assert.equal(html.includes("Synced"), false);
   assert.ok(html.includes("planview upload ./auth-migration-spec.html"));
   assert.ok(html.includes("Keep it working"));
   assert.ok(html.includes("app-staging-a39a.up.railway.app/dashboard"));

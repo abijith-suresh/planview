@@ -24,21 +24,19 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
     <div class="docs-grid">
       <article class="doc-card">
-        <h3>1. Install the CLI</h3>
+        <h3>Connect with MCP</h3>
         <p>
-          Install the command globally via npm. It gives any standalone HTML file or directory an
-          instant local loopback URL.
+          Let your agent list, read, upload, and delete cloud documents after browser sign-in.
         </p>
         <div class="code-pill">
-          <code>npm install --global @abijith-suresh/planview</code>
+          <a href="../mcp/">MCP setup →</a>
         </div>
       </article>
 
       <article class="doc-card">
-        <h3>2. Publish a local page</h3>
+        <h3>Preview locally</h3>
         <p>
-          Publish a file or page folder. The background daemon creates a lightweight local snapshot
-          and automatically opens your browser.
+          Install the CLI with <code>npm install --global @abijith-suresh/planview</code>, then open a snapshot.
         </p>
         <div class="code-pill">
           <code>planview publish --open ./page.html</code>
@@ -46,10 +44,10 @@ import SiteLayout from "../layouts/SiteLayout.astro";
       </article>
 
       <article class="doc-card">
-        <h3>3. Save a cloud copy</h3>
+        <h3>Upload from the CLI</h3>
         <p>
-          Sign in to the plansplease workspace and upload your HTML file. Cloud files have public
-          direct URLs during alpha, so avoid sensitive content.
+          Run <code>planview login</code>, then <code>planview upload ./page.html</code>.
+          Cloud file URLs are public during alpha.
         </p>
         <div class="meta-tag-pill">
           <span>Cloud workspace • GitHub sign-in</span>
