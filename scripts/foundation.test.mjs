@@ -329,7 +329,7 @@ test("repository foundation has the expected configuration", () => {
       "@planview/core": "0.1.0",
       "@planview/daemon": "0.1.0",
       "@planview/storage": "0.1.0",
-      effect: "4.0.0-rc.117",
+      effect: "4.0.0",
     },
     "local dependencies"
   );
@@ -446,12 +446,7 @@ test("repository foundation has the expected configuration", () => {
     },
     "storage clean-checkout typecheck compiler options"
   );
-  expectProperty(
-    storagePackageJson.dependencies,
-    "effect",
-    "4.0.0-rc.117",
-    "storage Effect dependency"
-  );
+  expectProperty(storagePackageJson.dependencies, "effect", "4.0.0", "storage Effect dependency");
 
   const lockfile = readJson("package-lock.json");
   expectEqual(lockfile.lockfileVersion, 3, "lockfile version");
