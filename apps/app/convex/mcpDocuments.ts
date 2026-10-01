@@ -1,9 +1,14 @@
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 
-import { mutation, query } from "./_generated/server";
-import { createForOwner, requestDeletionForOwner } from "./documents";
-import { verifyMcpDocumentProof, type McpDocumentAction } from "./mcpProof";
+import { mutation, query } from "./_generated/server.js";
+import {
+  createForOwner,
+  requestDeletionForOwner,
+  reserveUploadForOwner,
+  abandonUploadForOwner,
+} from "./documents.ts";
+import { verifyMcpDocumentProof, type McpDocumentAction } from "./mcpProof.ts";
 
 const proofValidator = v.object({ expiresAt: v.number(), signature: v.string() });
 const requireProof = async (
@@ -52,24 +57,47 @@ export const get = query({
   },
 });
 
-export const create = mutation({
-  args: {
-    ownerId: v.string(),
-    title: v.string(),
-    storageProvider: v.string(),
-    storageKey: v.string(),
-    contentType: v.string(),
-    sizeBytes: v.number(),
-    proof: proofValidator,
-    createProof: proofValidator,
+const uploadArgs = {
+  ownerId: v.string(),
+  title: v.string(),
+  storageProvider: v.string(),
+  storageKey: v.string(),
+  contentType: v.string(),
+  sizeBytes: v.number(),
+  proof: proofValidator,
+  createProof: proofValidator,
+};
+const uploadProofArguments = (args: {
+  title: string;
+  storageProvider: string;
+  storageKey: string;
+  contentType: string;
+  sizeBytes: number;
+}) => [args.title, args.storageProvider, args.storageKey, args.contentType, args.sizeBytes];
+
+export const reserveUpload = mutation({
+  args: uploadArgs,
+  handler: async (ctx, args) => {
+    await requireProof("reserve", args.ownerId, uploadProofArguments(args), args.proof);
+    return reserveUploadForOwner(ctx, args.ownerId, { ...args, proof: args.createProof });
   },
+});
+export const abandonUpload = mutation({
+  args: { ...uploadArgs, uploadConfirmed: v.boolean(), outcomeProof: proofValidator },
   handler: async (ctx, args) => {
     await requireProof(
-      "create",
+      "abandon",
       args.ownerId,
-      [args.title, args.storageProvider, args.storageKey, args.contentType, args.sizeBytes],
+      [...uploadProofArguments(args), Number(args.uploadConfirmed)],
       args.proof
     );
+    return abandonUploadForOwner(ctx, args.ownerId, { ...args, proof: args.createProof });
+  },
+});
+export const create = mutation({
+  args: uploadArgs,
+  handler: async (ctx, args) => {
+    await requireProof("create", args.ownerId, uploadProofArguments(args), args.proof);
     return createForOwner(ctx, args.ownerId, { ...args, proof: args.createProof });
   },
 });
