@@ -126,7 +126,7 @@ const assertMarketingPages = (output) => {
     ["about", "About | plansplease", "A place for the useful things agents make."],
     ["docs", "Docs | plansplease", "Docs for a small tool."],
     ["mcp", "MCP | plansplease", "Connect your agent."],
-    ["pricing", "Pricing | plansplease", "Simple for now. Clear about later."],
+    ["pricing", "Pricing | plansplease", "Free during alpha. Paid plans are still being planned."],
     ["faq", "FAQ | plansplease", "Questions we expect to hear."],
     ["privacy", "Privacy | plansplease", "Your pages are yours."],
   ];
