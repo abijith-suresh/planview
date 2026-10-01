@@ -21,6 +21,24 @@ export default defineSchema({
     .index("by_owner_createdAt", ["ownerId", "createdAt"])
     .index("by_owner_active_createdAt", ["ownerId", "deletionRequestedAt", "createdAt"])
     .index("by_owner_storageKey", ["ownerId", "storageKey"]),
+  accountStorageUsage: defineTable({
+    ownerId: v.string(),
+    usedBytes: v.number(),
+    updatedAt: v.number(),
+  }).index("by_owner", ["ownerId"]),
+  uploadReservations: defineTable({
+    ownerId: v.string(),
+    title: v.string(),
+    storageKey: v.string(),
+    sizeBytes: v.number(),
+    uploadDeadlineAt: v.number(),
+    nextAttemptAt: v.number(),
+    cleanupRequested: v.boolean(),
+    uploadConfirmed: v.boolean(),
+    attempts: v.number(),
+  })
+    .index("by_owner_storageKey", ["ownerId", "storageKey"])
+    .index("by_nextAttemptAt", ["nextAttemptAt"]),
   deletionJobs: defineTable({
     documentId: v.id("documents"),
     storageKey: v.string(),

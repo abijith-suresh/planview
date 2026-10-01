@@ -3,6 +3,8 @@ export type McpDocumentAction =
   | "get"
   | "create"
   | "delete"
+  | "reserve"
+  | "abandon"
   | "create-share"
   | "revoke-share";
 
