@@ -22,10 +22,14 @@ includes the current adapter compatibility hook and hosted MCP OAuth plugins.
 Changing URLs alone has not been tested as a complete self-hosted installation.
 
 New uploads currently require UploadThing in both the web and MCP paths.
-`DocumentStorageAdapter` only supplies read URLs and deletion. Metadata validation,
-mutation proofs, and background deletion also assume UploadThing. Legacy
-Convex-backed previews exist, but they do not constitute a supported new-upload
-workflow. A self-hosted release must implement the complete provider contract.
+The merged `DocumentStorageAdapter` supplies read URLs and deletion.
+[PR #128](https://github.com/abijith-suresh/planview/pull/128), currently unmerged,
+proposes adapter-owned uploads, deterministic reservation locators, and absolute
+upload deadlines. That would improve the upload boundary, while metadata
+validation, mutation proofs, and background deletion would still assume
+UploadThing. Legacy Convex-backed previews exist, but they do not constitute a
+supported new-upload workflow. A self-hosted release must implement and test the
+complete provider contract for local or private storage.
 
 [Convex documents self-hosting](https://docs.convex.dev/self-hosting) and provides
 [a Docker setup](https://github.com/get-convex/convex-backend/blob/main/self-hosted/README.md)
