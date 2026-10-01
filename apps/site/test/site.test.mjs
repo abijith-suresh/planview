@@ -13,6 +13,8 @@ const withBuild = ({ outputDirectory, basePath }, check) => {
   rmSync(output, { force: true, recursive: true });
 
   const environment = { ...process.env };
+  // These builds verify the repository default, independent of shell overrides.
+  delete environment.PUBLIC_APP_URL;
   if (basePath === undefined) {
     delete environment.BASE_PATH;
   } else {
@@ -163,7 +165,7 @@ const assertHomepage = (output, expectedBase) => {
   assert.equal(html.includes("Synced"), false);
   assert.ok(html.includes("planview upload ./auth-migration-spec.html"));
   assert.ok(html.includes("Keep it working"));
-  assert.ok(html.includes("app-staging-a39a.up.railway.app/dashboard"));
+  assert.ok(html.includes("plansplease-app-staging.up.railway.app/dashboard"));
   assert.ok(html.includes('class="mobile-menu"'));
   assert.ok(html.includes("Pricing"));
   assert.ok(html.includes("Docs"));

@@ -6,7 +6,8 @@ import { basename, join } from "node:path";
 import { resolveAppDataPaths } from "@planview/local";
 import { MAX_HTML_SIZE_BYTES, readBoundedCloudFile } from "./cloud-file.js";
 
-const DEFAULT_CLOUD_URL = "https://app-staging-a39a.up.railway.app";
+const DEFAULT_CLOUD_URL = "https://plansplease-app-staging.up.railway.app";
+const LEGACY_STAGING_CLOUD_URL = "https://app-staging-a39a.up.railway.app";
 const CLI_CREDENTIAL_PREFIX = "planview_cli_";
 const CREDENTIALS_NAME = "cloud-credentials.json";
 const PRIVATE_DIRECTORY_MODE = 0o700;
@@ -64,7 +65,9 @@ const normalizedCloudUrl = (value: string) => {
     throw new Error("The cloud URL must be an HTTPS origin without a path or credentials.");
   }
 
-  return url.origin;
+  // This is the same staging backend after its Railway hostname cutover.
+  // Only migrate this known origin; never send saved tokens to an env override.
+  return url.origin === LEGACY_STAGING_CLOUD_URL ? DEFAULT_CLOUD_URL : url.origin;
 };
 
 const assertCurrentUserFile = (stats: Awaited<ReturnType<typeof lstat>>, label: string) => {
