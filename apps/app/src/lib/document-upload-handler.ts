@@ -1,27 +1,38 @@
 import {
-  reportDocumentUploadCompensationFailure,
-  type DocumentUploadCompensationReporter,
-} from "./document-upload-compensation.ts";
+  uploadReservedDocument,
+  storageQuotaErrorResponse,
+  type DocumentUploadMetadata,
+} from "./reserved-document-upload.ts";
 import type { DocumentStorageUpload, StoredDocument } from "./document-storage.ts";
+import type { DocumentUploadCompensationReporter } from "./document-upload-compensation.ts";
 
-export type DocumentUploadMetadata = StoredDocument & {
-  title: string;
-  contentType: "text/html";
-  sizeBytes: number;
-};
+export type { DocumentUploadMetadata } from "./reserved-document-upload.ts";
 
 export type DocumentUploadHandlerDependencies<Client> = {
   getAuthedClient(request: Request): Promise<{ client: Client; token: string | null | undefined }>;
   getCurrentUser(client: Client, request: Request): Promise<{ subject: string } | null | undefined>;
   isStorageConfigured(): boolean;
+  getUploadLocator(objectId: string): StoredDocument;
   uploadFile(input: DocumentStorageUpload): Promise<StoredDocument>;
+  reserveMetadata(
+    client: Client,
+    input: DocumentUploadMetadata,
+    ownerId: string,
+    request: Request
+  ): Promise<{ id: string | null; uploadDeadlineAt: number }>;
+  abandonMetadata(
+    client: Client,
+    input: DocumentUploadMetadata,
+    ownerId: string,
+    request: Request,
+    uploadConfirmed: boolean
+  ): Promise<string | null>;
   createMetadata(
     client: Client,
     input: DocumentUploadMetadata,
     ownerId: string,
     request: Request
   ): Promise<string>;
-  deleteStorageObject(document: StoredDocument): Promise<void>;
   reportCompensationFailure?: DocumentUploadCompensationReporter;
   createUploadId(): string;
   missingServerConfigurationResponse(): Response;
@@ -135,33 +146,32 @@ export function createDocumentUploadHandler<Client>(
       }
 
       const objectId = `${identity.subject}:${dependencies.createUploadId()}`;
-      const storedDocument = await dependencies.uploadFile({ file, objectId });
-
-      let id: string;
-      try {
-        id = await dependencies.createMetadata(
-          client,
-          {
-            title,
-            ...storedDocument,
-            contentType: "text/html",
-            sizeBytes: file.size,
-          },
-          identity.subject,
-          request
-        );
-      } catch (error) {
-        try {
-          await dependencies.deleteStorageObject(storedDocument);
-        } catch (cleanupCause) {
-          await reportDocumentUploadCompensationFailure(dependencies.reportCompensationFailure, {
-            objectKey: storedDocument.storageKey,
-            metadataCause: error,
-            cleanupCause,
-          });
-        }
-        throw error;
-      }
+      const locator = dependencies.getUploadLocator(objectId);
+      const metadata: DocumentUploadMetadata = {
+        title,
+        ...locator,
+        contentType: "text/html",
+        sizeBytes: file.size,
+      };
+      const id = await uploadReservedDocument({
+        metadata,
+        file,
+        objectId,
+        reserve: () => dependencies.reserveMetadata(client, metadata, identity.subject, request),
+        upload: dependencies.uploadFile,
+        commit: () => dependencies.createMetadata(client, metadata, identity.subject, request),
+        abandon: (uploadConfirmed) =>
+          dependencies.abandonMetadata(
+            client,
+            metadata,
+            identity.subject,
+            request,
+            uploadConfirmed
+          ),
+        ...(dependencies.reportCompensationFailure
+          ? { reportCompensationFailure: dependencies.reportCompensationFailure }
+          : {}),
+      });
 
       return Response.json({ id }, { status: 201 });
     } catch (error) {
@@ -169,7 +179,7 @@ export function createDocumentUploadHandler<Client>(
         return dependencies.missingServerConfigurationResponse();
       }
 
-      return dependencies.errorResponse(error);
+      return storageQuotaErrorResponse(error) ?? dependencies.errorResponse(error);
     }
   };
 }

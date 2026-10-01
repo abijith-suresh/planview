@@ -10,7 +10,7 @@ import {
 import { cliCredentialFromRequest } from "~/lib/cli-credential";
 import { getDocumentStorage, isDocumentStorageConfigured } from "~/lib/document-storage";
 import { createDocumentUploadHandler } from "~/lib/document-upload-handler";
-import { createDocumentProof } from "~/lib/document-mutation-proof";
+import { createDocumentProof, createAbandonDocumentProof } from "~/lib/document-mutation-proof";
 
 export const POST = createDocumentUploadHandler({
   getAuthedClient: (request) => {
@@ -27,7 +27,38 @@ export const POST = createDocumentUploadHandler({
       : client.query(api.auth.currentUser, {});
   },
   isStorageConfigured: isDocumentStorageConfigured,
+  getUploadLocator: (objectId) => getDocumentStorage().getUploadLocator(objectId),
   uploadFile: (input) => getDocumentStorage().upload(input),
+  reserveMetadata: async (client, input, ownerId, request) => {
+    const proof = await createDocumentProof({ ownerId, ...input });
+    const cliCredential = cliCredentialFromRequest(request);
+    return cliCredential
+      ? client.mutation(api.documents.reserveUploadWithCliCredential, {
+          ...input,
+          ...cliCredential,
+          proof,
+        })
+      : client.mutation(api.documents.reserveUpload, { ...input, proof });
+  },
+  abandonMetadata: async (client, input, ownerId, request, uploadConfirmed) => {
+    const proof = await createDocumentProof({ ownerId, ...input });
+    const outcomeProof = await createAbandonDocumentProof({ ownerId, ...input, uploadConfirmed });
+    const cliCredential = cliCredentialFromRequest(request);
+    return cliCredential
+      ? client.mutation(api.documents.abandonUploadWithCliCredential, {
+          ...input,
+          ...cliCredential,
+          proof,
+          outcomeProof,
+          uploadConfirmed,
+        })
+      : client.mutation(api.documents.abandonUpload, {
+          ...input,
+          proof,
+          outcomeProof,
+          uploadConfirmed,
+        });
+  },
   createMetadata: async (client, input, ownerId, request) => {
     const proof = await createDocumentProof({ ownerId, ...input });
     const cliCredential = cliCredentialFromRequest(request);
@@ -39,8 +70,6 @@ export const POST = createDocumentUploadHandler({
         })
       : client.mutation(api.documents.create, { ...input, proof });
   },
-  deleteStorageObject: ({ storageProvider, storageKey }) =>
-    getDocumentStorage(storageProvider).delete(storageKey),
   createUploadId: randomUUID,
   missingServerConfigurationResponse,
   errorResponse,

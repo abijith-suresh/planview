@@ -1,6 +1,4 @@
-import { UTApi } from "uploadthing/server";
-
-import { createUploadThingStorageAdapter } from "./document-storage-uploadthing.ts";
+import { createUploadThingStorage } from "./document-storage-uploadthing.ts";
 
 export { createUploadThingStorageAdapter } from "./document-storage-uploadthing.ts";
 
@@ -12,7 +10,7 @@ export type StoredDocument = {
   storageKey: string;
 };
 
-export type DocumentStorageUpload = { file: File; objectId: string };
+export type DocumentStorageUpload = { file: File; objectId: string; deadlineAt: number };
 
 export interface DocumentStorageAdapter {
   readonly provider: DocumentStorageProvider;
@@ -34,5 +32,5 @@ export function getDocumentStorage(provider = "uploadthing"): DocumentStorageAda
   const token = process.env["UPLOADTHING_TOKEN"];
   if (!token) throw new Error("UploadThing is not configured");
 
-  return createUploadThingStorageAdapter(new UTApi({ token }));
+  return createUploadThingStorage(token);
 }

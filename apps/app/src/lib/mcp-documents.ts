@@ -4,9 +4,9 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 import { api, getUnauthedConvexClient } from "./convex-server";
 import { createDocumentReadCache } from "./document-read-cache";
-import { createDocumentProof } from "./document-mutation-proof";
+import { createDocumentProof, createAbandonDocumentProof } from "./document-mutation-proof";
 import { getDocumentStorage } from "./document-storage";
-import { reportDocumentUploadCompensationFailure } from "./document-upload-compensation";
+import { uploadReservedDocument } from "./reserved-document-upload";
 import { createMcpDocumentProof } from "./mcp-document-proof";
 
 const maxFileBytes = 8 * 1024 * 1024;
@@ -126,48 +126,50 @@ export function createMcpDocumentService(ownerId: string) {
         throw new Error("Title must be between 1 and 200 characters");
       }
       if (bytes.length > maxFileBytes) throw new Error("HTML exceeds the 8 MiB limit");
-      const storedDocument = await getDocumentStorage().upload({
-        file: new File([bytes], "document.html", { type: "text/html" }),
-        objectId: `${ownerId}:${randomUUID()}`,
-      });
+      const objectId = `${ownerId}:${randomUUID()}`;
+      const storage = getDocumentStorage();
+      const locator = storage.getUploadLocator(objectId);
       const input = {
         title: cleanTitle,
-        ...storedDocument,
+        ...locator,
         contentType: "text/html" as const,
         sizeBytes: bytes.length,
       };
-      try {
-        const id = await client.mutation(api.mcpDocuments.create, {
-          ownerId,
-          ...input,
-          proof: await createMcpDocumentProof({
-            action: "create",
-            ownerId,
-            arguments: [
-              input.title,
-              input.storageProvider,
-              input.storageKey,
-              input.contentType,
-              input.sizeBytes,
-            ],
+      const arguments_ = [
+        input.title,
+        input.storageProvider,
+        input.storageKey,
+        input.contentType,
+        input.sizeBytes,
+      ];
+      const uploadArguments = async (action: "reserve" | "create" | "abandon") => ({
+        ownerId,
+        ...input,
+        proof: await createMcpDocumentProof({ action, ownerId, arguments: arguments_ }),
+        createProof: await createDocumentProof({ ownerId, ...input }),
+      });
+      const id = await uploadReservedDocument({
+        metadata: input,
+        file: new File([bytes], "document.html", { type: "text/html" }),
+        objectId,
+        reserve: async () =>
+          client.mutation(api.mcpDocuments.reserveUpload, await uploadArguments("reserve")),
+        upload: (input) => storage.upload(input),
+        commit: async () =>
+          client.mutation(api.mcpDocuments.create, await uploadArguments("create")),
+        abandon: async (uploadConfirmed) =>
+          client.mutation(api.mcpDocuments.abandonUpload, {
+            ...(await uploadArguments("abandon")),
+            uploadConfirmed,
+            proof: await createMcpDocumentProof({
+              action: "abandon",
+              ownerId,
+              arguments: [...arguments_, Number(uploadConfirmed)],
+            }),
+            outcomeProof: await createAbandonDocumentProof({ ownerId, ...input, uploadConfirmed }),
           }),
-          createProof: await createDocumentProof({ ownerId, ...input }),
-        });
-        return { id };
-      } catch (metadataCause) {
-        try {
-          await getDocumentStorage(storedDocument.storageProvider).delete(
-            storedDocument.storageKey
-          );
-        } catch (cleanupCause) {
-          await reportDocumentUploadCompensationFailure(undefined, {
-            objectKey: storedDocument.storageKey,
-            metadataCause,
-            cleanupCause,
-          });
-        }
-        throw metadataCause;
-      }
+      });
+      return { id };
     },
 
     async delete(id: string) {
