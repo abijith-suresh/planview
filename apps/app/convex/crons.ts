@@ -10,4 +10,10 @@ crons.interval(
   internal.documents.reconcileDeletions
 );
 
+crons.interval(
+  "retry abandoned upload cleanup",
+  { minutes: 1 },
+  internal.documents.reconcileUploads
+);
+
 export default crons;

@@ -1,15 +1,26 @@
 import { v } from "convex/values";
 import { makeFunctionReference, paginationOptsValidator } from "convex/server";
 
-import type { Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel.js";
 import {
   internalMutation,
   internalQuery,
   mutation,
   query,
   type MutationCtx,
-} from "./_generated/server";
-import { verifyCreateDocumentProof, type DocumentMutationProof } from "./documentProof";
+} from "./_generated/server.js";
+import {
+  verifyCreateDocumentProof,
+  verifyAbandonDocumentProof,
+  type DocumentMutationProof,
+} from "./documentProof.ts";
+
+import {
+  reserveAccountBytes,
+  releaseAccountBytes,
+  uploadLifetimeMs,
+  uploadCleanupGraceMs,
+} from "./storageQuota.ts";
 
 const uploadThingLocatorPrefix = (ownerId: string) => `uploadthing-custom-id:${ownerId}:`;
 const maxHtmlSizeBytes = 8 * 1024 * 1024;
@@ -30,9 +41,16 @@ type CreateArgs = {
   sizeBytes: number;
   proof: DocumentMutationProof;
 };
+const abandonArgs = { ...createArgs, uploadConfirmed: v.boolean(), outcomeProof: proofValidator };
+type AbandonArgs = CreateArgs & { uploadConfirmed: boolean; outcomeProof: DocumentMutationProof };
+
 const deletionWorker = makeFunctionReference<"action", { jobId: Id<"deletionJobs"> }>(
   "documentDeletion:processDeletion"
 );
+const uploadCleanupWorker = makeFunctionReference<
+  "action",
+  { reservationId: Id<"uploadReservations"> }
+>("documentDeletion:processAbandonedUpload");
 const deletionLeaseMs = 11 * 60_000;
 
 export const deletionRetryDelay = (attempts: number) =>
@@ -95,7 +113,7 @@ export const listPage = query({
   },
 });
 
-export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: CreateArgs) => {
+export const verifyUploadInput = async (ownerId: string, args: CreateArgs) => {
   if (
     args.storageProvider !== "uploadthing" ||
     !args.storageKey.startsWith(uploadThingLocatorPrefix(ownerId)) ||
@@ -123,7 +141,96 @@ export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: Cr
     args.proof
   );
   if (!validProof) throw new Error("Invalid document mutation proof");
+};
 
+const findStoredDocument = (ctx: MutationCtx, ownerId: string, storageKey: string) =>
+  ctx.db
+    .query("documents")
+    .withIndex("by_owner_storageKey", (q) => q.eq("ownerId", ownerId).eq("storageKey", storageKey))
+    .first();
+
+const findUploadReservation = (ctx: MutationCtx, ownerId: string, storageKey: string) =>
+  ctx.db
+    .query("uploadReservations")
+    .withIndex("by_owner_storageKey", (q) => q.eq("ownerId", ownerId).eq("storageKey", storageKey))
+    .first();
+
+const reservationMatches = (reservation: { title: string; sizeBytes: number }, args: CreateArgs) =>
+  reservation.title === args.title.trim() && reservation.sizeBytes === args.sizeBytes;
+
+export const reserveUploadForOwner = async (
+  ctx: MutationCtx,
+  ownerId: string,
+  args: CreateArgs
+) => {
+  await verifyUploadInput(ownerId, args);
+  const document = await findStoredDocument(ctx, ownerId, args.storageKey);
+  if (document) {
+    if (document.deletionRequestedAt !== undefined) throw new Error("Document is being deleted");
+    return { id: document._id, uploadDeadlineAt: 0 };
+  }
+  const reservation = await findUploadReservation(ctx, ownerId, args.storageKey);
+  if (reservation) {
+    if (
+      !reservationMatches(reservation, args) ||
+      reservation.cleanupRequested ||
+      reservation.uploadDeadlineAt <= Date.now()
+    ) {
+      throw new Error("Upload reservation is no longer available");
+    }
+    return { id: null, uploadDeadlineAt: reservation.uploadDeadlineAt };
+  }
+  await reserveAccountBytes(ctx, ownerId, args.sizeBytes);
+  const uploadDeadlineAt = Date.now() + uploadLifetimeMs;
+  const nextAttemptAt = uploadDeadlineAt + uploadCleanupGraceMs;
+  const reservationId = await ctx.db.insert("uploadReservations", {
+    ownerId,
+    title: args.title.trim(),
+    storageKey: args.storageKey,
+    sizeBytes: args.sizeBytes,
+    uploadDeadlineAt,
+    nextAttemptAt,
+    cleanupRequested: false,
+    uploadConfirmed: false,
+    attempts: 0,
+  });
+  await ctx.scheduler.runAfter(uploadLifetimeMs + uploadCleanupGraceMs, uploadCleanupWorker, {
+    reservationId,
+  });
+  return { id: null, uploadDeadlineAt };
+};
+
+export const abandonUploadForOwner = async (
+  ctx: MutationCtx,
+  ownerId: string,
+  args: AbandonArgs
+) => {
+  await verifyUploadInput(ownerId, args);
+  if (
+    !(await verifyAbandonDocumentProof(
+      requireMutationSecret(),
+      { ownerId, ...args },
+      args.outcomeProof
+    ))
+  )
+    throw new Error("Invalid upload outcome proof");
+  // A commit can succeed before its response is lost. Check and fence the
+  // reservation transactionally before asking the worker to delete anything.
+  const document = await findStoredDocument(ctx, ownerId, args.storageKey);
+  if (document) return document.deletionRequestedAt === undefined ? document._id : null;
+  const reservation = await findUploadReservation(ctx, ownerId, args.storageKey);
+  if (reservation) {
+    if (!reservationMatches(reservation, args)) throw new Error("Invalid upload reservation");
+    await ctx.db.patch(reservation._id, {
+      cleanupRequested: true,
+      uploadConfirmed: args.uploadConfirmed || reservation.uploadConfirmed,
+    });
+  }
+  return null;
+};
+
+export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: CreateArgs) => {
+  await verifyUploadInput(ownerId, args);
   const existing = await ctx.db
     .query("documents")
     .withIndex("by_owner_storageKey", (q) =>
@@ -137,9 +244,17 @@ export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: Cr
     return existing._id;
   }
 
+  const reservation = await findUploadReservation(ctx, ownerId, args.storageKey);
+  if (
+    !reservation ||
+    !reservationMatches(reservation, args) ||
+    reservation.cleanupRequested ||
+    reservation.uploadDeadlineAt + uploadCleanupGraceMs <= Date.now()
+  ) {
+    throw new Error("Upload reservation is no longer available");
+  }
   const now = Date.now();
-
-  return await ctx.db.insert("documents", {
+  const id = await ctx.db.insert("documents", {
     ownerId,
     title: args.title.trim() || "Untitled HTML",
     storageProvider: args.storageProvider,
@@ -149,26 +264,47 @@ export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: Cr
     createdAt: now,
     updatedAt: now,
   });
+  await ctx.db.delete(reservation._id);
+  return id;
 };
 
+const requireCliOwnerId = async (ctx: MutationCtx, tokenHash: string) => {
+  if (!/^[a-f0-9]{64}$/.test(tokenHash)) throw new Error("Invalid CLI credential");
+  const credential = await ctx.db
+    .query("cliCredentials")
+    .withIndex("by_tokenHash", (q) => q.eq("tokenHash", tokenHash))
+    .first();
+  if (!credential || credential.revokedAt !== undefined)
+    throw new Error("CLI credential is invalid or revoked");
+  return credential.ownerId;
+};
+
+export const reserveUpload = mutation({
+  args: createArgs,
+  handler: async (ctx, args) => reserveUploadForOwner(ctx, await requireOwnerId(ctx), args),
+});
+export const abandonUpload = mutation({
+  args: abandonArgs,
+  handler: async (ctx, args) => abandonUploadForOwner(ctx, await requireOwnerId(ctx), args),
+});
 export const create = mutation({
   args: createArgs,
   handler: async (ctx, args) => createForOwner(ctx, await requireOwnerId(ctx), args),
 });
-
+export const reserveUploadWithCliCredential = mutation({
+  args: { ...createArgs, tokenHash: v.string() },
+  handler: async (ctx, args) =>
+    reserveUploadForOwner(ctx, await requireCliOwnerId(ctx, args.tokenHash), args),
+});
+export const abandonUploadWithCliCredential = mutation({
+  args: { ...abandonArgs, tokenHash: v.string() },
+  handler: async (ctx, args) =>
+    abandonUploadForOwner(ctx, await requireCliOwnerId(ctx, args.tokenHash), args),
+});
 export const createWithCliCredential = mutation({
   args: { ...createArgs, tokenHash: v.string() },
-  handler: async (ctx, args) => {
-    if (!/^[a-f0-9]{64}$/.test(args.tokenHash)) throw new Error("Invalid CLI credential");
-    const credential = await ctx.db
-      .query("cliCredentials")
-      .withIndex("by_tokenHash", (q) => q.eq("tokenHash", args.tokenHash))
-      .first();
-    if (!credential || credential.revokedAt !== undefined) {
-      throw new Error("CLI credential is invalid or revoked");
-    }
-    return createForOwner(ctx, credential.ownerId, args);
-  },
+  handler: async (ctx, args) =>
+    createForOwner(ctx, await requireCliOwnerId(ctx, args.tokenHash), args),
 });
 
 export const requestDeletionForOwner = async (
@@ -206,7 +342,7 @@ export const requestDeletionForOwner = async (
     throw new Error("External documents require storage cleanup before metadata removal");
   }
   await ctx.storage.delete(document.storageId);
-
+  await releaseAccountBytes(ctx, document.ownerId, document.sizeBytes);
   await ctx.db.delete(id);
   return "deleted" as const;
 };
@@ -249,7 +385,10 @@ export const finishDeletion = internalMutation({
     const job = await ctx.db.get(args.jobId);
     if (!job || job.attempts !== args.attempts) return;
     const document = await ctx.db.get(job.documentId);
-    if (document) await ctx.db.delete(job.documentId);
+    if (document) {
+      await releaseAccountBytes(ctx, document.ownerId, document.sizeBytes);
+      await ctx.db.delete(job.documentId);
+    }
     await ctx.db.delete(args.jobId);
   },
 });
@@ -300,5 +439,71 @@ export const getContent = internalQuery({
       storageId: document.storageId,
       contentType: document.contentType,
     };
+  },
+});
+
+export const claimUploadCleanup = internalMutation({
+  args: { reservationId: v.id("uploadReservations") },
+  handler: async (ctx, { reservationId }) => {
+    const reservation = await ctx.db.get(reservationId);
+    if (!reservation || reservation.nextAttemptAt > Date.now()) return null;
+    const document = await findStoredDocument(ctx, reservation.ownerId, reservation.storageKey);
+    if (document) {
+      await releaseAccountBytes(ctx, reservation.ownerId, reservation.sizeBytes);
+      await ctx.db.delete(reservationId);
+      return null;
+    }
+    if (!reservation.uploadConfirmed) {
+      // A crashed process or interrupted HTTP request may still have an ingest
+      // in progress. Keep its capacity charged for manual reconciliation.
+      await ctx.db.patch(reservationId, {
+        cleanupRequested: true,
+        nextAttemptAt: Number.MAX_SAFE_INTEGER,
+      });
+      return null;
+    }
+    const attempts = reservation.attempts + 1;
+    await ctx.db.patch(reservationId, {
+      cleanupRequested: true,
+      attempts,
+      nextAttemptAt: Date.now() + deletionLeaseMs,
+    });
+    return { attempts, storageKey: reservation.storageKey };
+  },
+});
+export const finishUploadCleanup = internalMutation({
+  args: { reservationId: v.id("uploadReservations"), attempts: v.number() },
+  handler: async (ctx, { reservationId, attempts }) => {
+    const reservation = await ctx.db.get(reservationId);
+    if (
+      reservation?.cleanupRequested &&
+      reservation.uploadConfirmed &&
+      attempts > 0 &&
+      reservation.attempts === attempts
+    ) {
+      await releaseAccountBytes(ctx, reservation.ownerId, reservation.sizeBytes);
+      await ctx.db.delete(reservationId);
+    }
+  },
+});
+export const deferUploadCleanup = internalMutation({
+  args: { reservationId: v.id("uploadReservations"), attempts: v.number() },
+  handler: async (ctx, { reservationId, attempts }) => {
+    const reservation = await ctx.db.get(reservationId);
+    if (!reservation || reservation.attempts !== attempts) return;
+    const delay = deletionRetryDelay(attempts);
+    await ctx.db.patch(reservationId, { nextAttemptAt: Date.now() + delay });
+    await ctx.scheduler.runAfter(delay, uploadCleanupWorker, { reservationId });
+  },
+});
+export const reconcileUploads = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const due = await ctx.db
+      .query("uploadReservations")
+      .withIndex("by_nextAttemptAt", (q) => q.lte("nextAttemptAt", Date.now()))
+      .take(100);
+    for (const reservation of due)
+      await ctx.scheduler.runAfter(0, uploadCleanupWorker, { reservationId: reservation._id });
   },
 });
