@@ -18,10 +18,17 @@ Responses forbid caching, suppress referrers, and tell compliant search engines
 not to index or follow the page. Unlisted links can still be forwarded, so use
 them only for documents the owner is comfortable sharing.
 
+When cloud bundle support is installed, the same link opens the bundle's
+`index.html`. Its relative asset routes check the current sharing token on every
+request, so revocation and rotation also block later CSS, JavaScript, and image
+requests. Sharing and bundle support can be reviewed and installed separately.
+
 UploadThing file URLs remain public during alpha. Revoking an app share link
 does not revoke a direct storage URL. This feature does not make alpha uploads
-private. The browser downloads document bytes directly from the storage provider
-and renders them in a sandbox without access to the workspace session. A future
-private provider must supply short-lived read URLs and browser CORS support; link
-revocation then denies new URL issuance, while previously issued URLs remain
-usable until they expire.
+private. Standalone HTML previews download bytes directly from storage and render
+them in a sandbox without access to the workspace session. Bundle asset routes
+fetch and serve bytes through the app after checking authorization.
+
+A future private provider using direct browser delivery must supply short-lived
+read URLs and browser CORS support. Link revocation then denies new URL issuance,
+while previously issued URLs remain usable until they expire.

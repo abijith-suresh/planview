@@ -57,7 +57,7 @@ export function createDocumentSharingHandlers<Client>(dependencies: {
 
 export function createSharedDocumentPreviewHandler<Document>(dependencies: {
   resolve(id: string, token: string): Promise<Document | null>;
-  preview(document: Document): Promise<Response>;
+  preview(document: Document, params: { id: string; token: string }): Promise<Response>;
 }) {
   return async ({ params }: { params: { id: string; token: string } }) => {
     const notFound = () => new Response("Not found", { status: 404, headers });
@@ -65,7 +65,7 @@ export function createSharedDocumentPreviewHandler<Document>(dependencies: {
     try {
       const document = await dependencies.resolve(params.id, params.token);
       if (!document) return notFound();
-      const response = await dependencies.preview(document);
+      const response = await dependencies.preview(document, params);
       const responseHeaders = new Headers(response.headers);
       for (const [key, value] of Object.entries(headers)) responseHeaders.set(key, value);
       return new Response(response.body, { status: response.status, headers: responseHeaders });
@@ -74,4 +74,15 @@ export function createSharedDocumentPreviewHandler<Document>(dependencies: {
       return notFound();
     }
   };
+}
+
+export function sharedBundlePreviewResponse(id: string, token: string) {
+  if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new Error("Invalid sharing token");
+  return new Response(null, {
+    status: 302,
+    headers: {
+      ...headers,
+      Location: `/api/shared-bundles/${encodeURIComponent(id)}/${token}/index.html`,
+    },
+  });
 }

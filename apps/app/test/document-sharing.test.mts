@@ -12,6 +12,7 @@ import { createDocumentShareToken, documentShareUrl } from "../src/lib/document-
 import {
   createDocumentSharingHandlers,
   createSharedDocumentPreviewHandler,
+  sharedBundlePreviewResponse,
 } from "../src/lib/document-sharing-handlers.ts";
 
 const document = (): ShareDocument => ({
@@ -208,4 +209,22 @@ test("share links cannot use an unsafe deployment origin or token path injection
     assert.throws(() => documentShareUrl(origin, "a", token));
   }
   assert.throws(() => documentShareUrl("https://app.example.test", "a", "../other"));
+});
+
+test("shared bundles retain the share token for relative assets without exposing storage locators", async () => {
+  const token = (await createDocumentShareToken()).token;
+  const handler = createSharedDocumentPreviewHandler({
+    resolve: async () => ({ contentType: "application/vnd.planview.bundle" }),
+    preview: async (_document, { id, token }) => sharedBundlePreviewResponse(id, token),
+  });
+  const response = await handler({ params: { id: "folder/document", token } });
+  assert.equal(response.status, 302);
+  assert.equal(
+    response.headers.get("location"),
+    `/api/shared-bundles/folder%2Fdocument/${token}/index.html`
+  );
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+  assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow, noarchive");
+  assert.throws(() => sharedBundlePreviewResponse("a", "../other"));
 });
