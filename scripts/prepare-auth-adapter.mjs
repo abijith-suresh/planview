@@ -77,3 +77,45 @@ if (!adapterSource.includes(stripModelKey)) {
     "Applied Better Auth 1.7 modelKey compatibility patch to Convex auth adapter.\n"
   );
 }
+
+// Better Auth 1.7 falls back to a read followed by a conditional delete when
+// an adapter has no consumeOne method. That fallback includes Convex's
+// _creationTime in its guard, which is not a valid Better Auth schema field.
+// Convex's deleteOne mutation already reads and deletes in one transaction and
+// returns the deleted document, so use it for one-time OAuth codes directly.
+const consumeOneMarker = "                delete: async (data) => {";
+const consumeOnePatch = `                consumeOne: async (data) => {
+                    if (!("runMutation" in ctx)) {
+                        throw new Error("ctx is not a mutation ctx");
+                    }
+                    if (!data.where?.length) {
+                        return null;
+                    }
+                    if (data.where.some((w) => w.connector === "OR")) {
+                        throw new Error("where clause not supported");
+                    }
+                    const onDeleteHandle = config.authFunctions?.onDelete &&
+                        config.triggers?.[data.model]?.onDelete
+                        ? (await createFunctionHandle(config.authFunctions.onDelete))
+                        : undefined;
+                    return ctx.runMutation(api.adapter.deleteOne, {
+                        input: {
+                            model: data.model,
+                            where: parseWhere(data.where),
+                        },
+                        onDeleteHandle: onDeleteHandle,
+                    });
+                },
+`;
+const currentAdapterSource = await readFile(adapterFile, "utf8");
+if (!currentAdapterSource.includes(consumeOnePatch)) {
+  if (currentAdapterSource.includes("                consumeOne: async (data) => {") ||
+      currentAdapterSource.split(consumeOneMarker).length !== 2) {
+    throw new Error("The Convex auth adapter changed; review the atomic consume patch.");
+  }
+  await writeFile(
+    adapterFile,
+    currentAdapterSource.replace(consumeOneMarker, `${consumeOnePatch}${consumeOneMarker}`)
+  );
+  process.stdout.write("Applied atomic OAuth code consumption patch to Convex auth adapter.\n");
+}
