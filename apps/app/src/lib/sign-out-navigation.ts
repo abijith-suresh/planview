@@ -24,7 +24,7 @@ export function signOutDestination(appOrigin: string, configuredSiteUrl?: string
   return appOrigin === officialAppOrigin ? `${officialSiteOrigin}/` : "/signed-out";
 }
 
-type SignOutResult = { error?: { message?: string } | null };
+type SignOutResult = { error?: { message?: string | undefined } | null };
 
 export async function completeSignOut({
   signOut,
