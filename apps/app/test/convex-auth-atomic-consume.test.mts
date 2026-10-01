@@ -20,7 +20,10 @@ test("authorization codes are consumed through one Convex mutation", async () =>
   let remaining: typeof row | null = row;
   let mutations = 0;
   const ctx = {
-    runMutation: async (_reference: unknown, args: { input: { model: string; where: unknown[] } }) => {
+    runMutation: async (
+      _reference: unknown,
+      args: { input: { model: string; where: unknown[] } }
+    ) => {
       mutations += 1;
       assert.equal(args.input.model, "verification");
       assert.deepEqual(args.input.where, [
@@ -45,8 +48,8 @@ test("authorization codes are consumed through one Convex mutation", async () =>
   ]);
 
   assert.equal(mutations, 2);
-  assert.deepEqual(results.map((result: { id?: string } | null) => result?.id ?? null), [
-    row._id,
-    null,
-  ]);
+  assert.deepEqual(
+    results.map((result: { id?: string } | null) => result?.id ?? null),
+    [row._id, null]
+  );
 });

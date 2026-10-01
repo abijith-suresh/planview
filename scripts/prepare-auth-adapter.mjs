@@ -109,8 +109,10 @@ const consumeOnePatch = `                consumeOne: async (data) => {
 `;
 const currentAdapterSource = await readFile(adapterFile, "utf8");
 if (!currentAdapterSource.includes(consumeOnePatch)) {
-  if (currentAdapterSource.includes("                consumeOne: async (data) => {") ||
-      currentAdapterSource.split(consumeOneMarker).length !== 2) {
+  if (
+    currentAdapterSource.includes("                consumeOne: async (data) => {") ||
+    currentAdapterSource.split(consumeOneMarker).length !== 2
+  ) {
     throw new Error("The Convex auth adapter changed; review the atomic consume patch.");
   }
   await writeFile(
