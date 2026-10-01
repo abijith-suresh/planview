@@ -1,6 +1,8 @@
 import { createEffect } from "solid-js";
 
 import { authClient } from "~/lib/auth";
+import { resetDocumentsSubscription } from "~/lib/documents-live";
+import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
 
 const signOutDestination = () => {
   const { VITE_PUBLIC_SITE_URL: siteUrl } = import.meta.env;
@@ -14,7 +16,10 @@ export function useWorkspaceAuth() {
   let isSigningOut = false;
 
   const redirectToSignIn = () => {
-    if (typeof window !== "undefined") window.location.assign("/auth/github");
+    if (typeof window === "undefined") return;
+    window.location.assign(
+      hasAuthAttemptCookie(document.cookie) ? "/auth/problem" : "/auth/github"
+    );
   };
 
   createEffect(() => {
@@ -22,7 +27,14 @@ export function useWorkspaceAuth() {
 
     if (currentSession.isPending) return;
 
-    if (!currentSession.data && !isSigningOut && !authRedirectStarted) {
+    if (currentSession.data) {
+      document.cookie = clearAuthAttemptCookie;
+      return;
+    }
+
+    if (currentSession.error) return;
+
+    if (!isSigningOut && !authRedirectStarted) {
       authRedirectStarted = true;
       redirectToSignIn();
     }
@@ -33,6 +45,8 @@ export function useWorkspaceAuth() {
 
     try {
       await authClient.signOut();
+      resetDocumentsSubscription();
+      document.cookie = clearAuthAttemptCookie;
       window.location.assign(signOutDestination());
     } catch (error) {
       isSigningOut = false;

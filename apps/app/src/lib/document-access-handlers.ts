@@ -16,8 +16,7 @@ export type DocumentAccessHandlerDependencies<Client> = {
   fetch(input: string, init?: RequestInit): Promise<Response>;
   readonly convexSiteUrl: string | undefined;
   proxyResponse(response: Response): Promise<Response>;
-  removeDocument(client: Client, id: string): Promise<unknown>;
-  removeDocumentMetadata(client: Client, id: string): Promise<unknown>;
+  requestDeletion(client: Client, id: string): Promise<"accepted" | "deleted" | "not_found">;
   missingServerConfigurationResponse(): Response;
   errorResponse(error: unknown): Response;
 };
@@ -118,21 +117,11 @@ export function createDocumentDeleteHandler<Client>(
         return Response.json({ error: "Authentication required" }, { status: 401 });
       }
 
-      const document = await dependencies.getDocument(client, params.id);
-
-      if (!document) {
+      const result = await dependencies.requestDeletion(client, params.id);
+      if (result === "not_found") {
         return Response.json({ error: "Document not found" }, { status: 404 });
       }
-
-      if (document.storageProvider && document.storageKey) {
-        const storage = dependencies.getDocumentStorage(document.storageProvider);
-        await storage.delete(document.storageKey);
-        await dependencies.removeDocumentMetadata(client, params.id);
-      } else {
-        await dependencies.removeDocument(client, params.id);
-      }
-
-      return new Response(null, { status: 204 });
+      return new Response(null, { status: result === "accepted" ? 202 : 204 });
     } catch (error) {
       return errorResponse(dependencies, error);
     }

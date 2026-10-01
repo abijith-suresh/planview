@@ -11,7 +11,7 @@ import { appSignInUrl } from "../lib/app-url";
 
 <SiteLayout
   title="plansplease | Keep the pages your agent makes"
-  description="Agents write specs, prototypes, and tools as HTML. plansplease gives each file a URL — instant locally, private in the cloud."
+  description="Agents write specs, prototypes, and tools as HTML. plansplease gives each file a local URL or a cloud copy."
 >
   <section class="hero" aria-labelledby="hero-title">
     <div class="hero-head">
@@ -22,8 +22,8 @@ import { appSignInUrl } from "../lib/app-url";
 
       <p class="hero-lede">
         Specs, dashboards, code reviews, tiny tools — your agent writes them as HTML. plansplease
-        turns every file into a URL: instant on your machine, private in the cloud, open from your
-        phone.
+        turns every file into a URL: instant on your machine, with a cloud copy you can open from
+        your phone. Cloud files have public direct URLs during alpha.
       </p>
 
       <div class="hero-actions">
@@ -36,7 +36,7 @@ import { appSignInUrl } from "../lib/app-url";
       class="demo"
       id="demo"
       role="img"
-      aria-label="Animation of an agent publishing a page: asked to keep a migration plan, the agent writes auth-migration-spec.html and runs planview publish, which serves it at a local URL and saves a private copy at plansplease.app/p/auth-migration-spec — the saved page then opens alongside."
+      aria-label="Animation of an agent saving a page: it writes auth-migration-spec.html, runs planview publish for a local URL, then runs planview upload to save a cloud copy, which opens alongside."
     >
       <div class="term" aria-hidden="true">
         <div class="term-bar">
@@ -54,6 +54,9 @@ import { appSignInUrl } from "../lib/app-url";
           <p class="tl">
             <span class="check">✓</span> served at
             <span class="url">http://localhost:4777/auth-migration-spec</span>
+          </p>
+          <p class="tl is-step">
+            <span class="step-bullet">●</span> planview upload ./auth-migration-spec.html
           </p>
           <p class="tl">
             <span class="check">✓</span> saved to workspace
@@ -95,25 +98,26 @@ import { appSignInUrl } from "../lib/app-url";
   <section class="how" aria-labelledby="how-title">
     <SectionIntro
       id="how-title"
-      title="One command, two homes"
-      lede="The CLI is the fastest way in. Point it at any HTML file and it serves the page on your machine and saves a private copy to your workspace at the same time."
+      title="Two commands, two homes"
+      lede="Use planview publish for a local preview. After signing in, run planview upload when you want a cloud copy in your workspace."
     />
 
     <ol class="steps">
       <li class="step">
         <span class="step-index" aria-hidden="true">01</span>
-        <h3>Publish the file</h3>
-        <p>Any agent can write it. One command hands it a URL.</p>
+        <h3>Preview the file locally</h3>
+        <p>Any agent can write it. Publish gives it a URL on your machine.</p>
         <code class="step-code">planview publish ./auth-migration-spec.html</code>
       </li>
 
       <li class="step">
         <span class="step-index" aria-hidden="true">02</span>
-        <h3>Open it anywhere</h3>
+        <h3>Upload a cloud copy</h3>
         <p>
-          A local address for the machine you're on. A private cloud link for your phone, your
-          team, and your future self.
+          Sign in and upload when you want to open it from another device. Direct cloud file URLs
+          are public during alpha.
         </p>
+        <code class="step-code">planview upload ./auth-migration-spec.html</code>
       </li>
 
       <li class="step">
@@ -167,7 +171,7 @@ import { appSignInUrl } from "../lib/app-url";
     id="cta-title"
     title="Stop losing good work in chat scrollback."
     lede="Sign in, publish your next agent-made page, and see how long it lasts."
-    note="Free during alpha · CLI today, MCP soon · Private by default"
+    note="Free during alpha · CLI today, MCP soon · Cloud files have public URLs"
   />
 
 </SiteLayout>
@@ -217,7 +221,8 @@ import { appSignInUrl } from "../lib/app-url";
       at(3300, () => lines[2]?.classList.add("is-on"));
       at(4000, () => lines[3]?.classList.add("is-on"));
       at(4700, () => lines[4]?.classList.add("is-on"));
-      at(5450, () => page?.classList.add("is-in"));
+      at(5450, () => lines[5]?.classList.add("is-on"));
+      at(6200, () => page?.classList.add("is-in"));
       at(12500, () => demo.classList.add("is-holding"));
       at(13300, play);
     };

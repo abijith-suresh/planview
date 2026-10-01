@@ -24,10 +24,8 @@ const dependencies: DocumentAccessHandlerDependencies<ConvexClient> = {
   fetch: (input, init) => fetch(input, init),
   convexSiteUrl,
   proxyResponse,
-  removeDocument: (client, id) =>
-    client.mutation(api.documents.remove, { id: id as Id<"documents"> }),
-  removeDocumentMetadata: (client, id) =>
-    client.mutation(api.documents.removeMetadata, { id: id as Id<"documents"> }),
+  requestDeletion: (client, id) =>
+    client.mutation(api.documents.requestDeletion, { id: id as Id<"documents"> }),
   missingServerConfigurationResponse,
   errorResponse,
 };

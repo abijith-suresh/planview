@@ -9,7 +9,7 @@ const resolveUriEsm = fileURLToPath(
 );
 
 export default defineConfig({
-  plugins: [solidStart(), nitro()],
+  plugins: [solidStart({ middleware: "./src/middleware.ts" }), nitro()],
   resolve: {
     // The client resolver picks @jridgewell/resolve-uri's browser field (a UMD
     // build with no default export) when the source-map dev toolbar imports

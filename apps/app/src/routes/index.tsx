@@ -4,6 +4,7 @@ import { createEffect, createMemo, Show } from "solid-js";
 
 import Icon from "~/components/Icon";
 import { authClient } from "~/lib/auth";
+import { clearAuthAttemptCookie, hasAuthAttemptCookie } from "~/lib/auth-attempt";
 
 export default function Home() {
   const session = authClient.useSession();
@@ -13,12 +14,13 @@ export default function Home() {
 
     if (typeof window === "undefined" || currentSession.isPending || !currentSession.data) return;
 
+    document.cookie = clearAuthAttemptCookie;
     window.location.replace("/dashboard");
   });
 
   const isSignedOut = createMemo(() => {
     const currentSession = session();
-    return !currentSession.isPending && !currentSession.data;
+    return !currentSession.isPending && !currentSession.data && !currentSession.error;
   });
 
   return (
@@ -29,8 +31,10 @@ export default function Home() {
         when={isSignedOut()}
         fallback={
           <main class="auth-loading" aria-live="polite">
-            <span class="signal-dot" aria-hidden="true" />
-            Opening your workspace...
+            <Show when={!session().error} fallback={<p role="alert">Could not check your session. Refresh to try again.</p>}>
+              <span class="signal-dot" aria-hidden="true" />
+              Opening your workspace…
+            </Show>
           </main>
         }
       >
@@ -42,9 +46,9 @@ export default function Home() {
                 <span class="brand-please">please</span>
               </span>
             </A>
-            <h1>Sign in to your private workspace.</h1>
+            <h1>Your agent’s pages, in one place.</h1>
             <div class="sign-in-actions">
-              <a class="button-primary" href="/auth/github">
+              <a class="button-primary" href={typeof document !== "undefined" && hasAuthAttemptCookie(document.cookie) ? "/auth/problem" : "/auth/github"}>
                 <Icon name="github" size={18} />
                 <span>Continue with GitHub</span>
               </a>

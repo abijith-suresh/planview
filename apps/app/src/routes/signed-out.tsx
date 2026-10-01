@@ -9,7 +9,7 @@ export default function SignedOut() {
       <Meta name="description" content="You have signed out of your plansplease workspace." />
       <p class="eyebrow">plansplease</p>
       <h1>You're signed out.</h1>
-      <p class="panel-lede">Return to your private workspace whenever you are ready.</p>
+      <p class="panel-lede">Return to your workspace whenever you are ready.</p>
       <div class="panel-actions">
         <a class="button-primary" href="/auth/github">
           <Icon name="github" size={16} />

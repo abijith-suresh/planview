@@ -9,9 +9,17 @@
  */
 
 import type * as auth from "../auth.js";
-import type * as betterAuth_auth from "../betterAuth/auth.js";
+import type * as authConfig from "../authConfig.js";
+import type * as cliCredentials from "../cliCredentials.js";
+import type * as crons from "../crons.js";
+import type * as documentDeletion from "../documentDeletion.js";
+import type * as documentDeletionStorage from "../documentDeletionStorage.js";
+import type * as documentProof from "../documentProof.js";
 import type * as documents from "../documents.js";
 import type * as http from "../http.js";
+import type * as mcpDocuments from "../mcpDocuments.js";
+import type * as mcpProof from "../mcpProof.js";
+import type * as pluginEndpoints from "../pluginEndpoints.js";
 
 import type {
   ApiFromModules,
@@ -21,9 +29,17 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
-  "betterAuth/auth": typeof betterAuth_auth;
+  authConfig: typeof authConfig;
+  cliCredentials: typeof cliCredentials;
+  crons: typeof crons;
+  documentDeletion: typeof documentDeletion;
+  documentDeletionStorage: typeof documentDeletionStorage;
+  documentProof: typeof documentProof;
   documents: typeof documents;
   http: typeof http;
+  mcpDocuments: typeof mcpDocuments;
+  mcpProof: typeof mcpProof;
+  pluginEndpoints: typeof pluginEndpoints;
 }>;
 
 /**
@@ -53,5 +69,5 @@ export declare const internal: FilterApi<
 >;
 
 export declare const components: {
-  betterAuth: import("@convex-dev/better-auth/_generated/component.js").ComponentApi<"betterAuth">;
+  betterAuth: import("../betterAuth/_generated/component.js").ComponentApi<"betterAuth">;
 };

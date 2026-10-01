@@ -1,8 +1,50 @@
 import { v } from "convex/values";
+import { makeFunctionReference, paginationOptsValidator } from "convex/server";
 
-import { internalQuery, mutation, query } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+  type MutationCtx,
+} from "./_generated/server";
+import { verifyCreateDocumentProof, type DocumentMutationProof } from "./documentProof";
 
 const uploadThingLocatorPrefix = (ownerId: string) => `uploadthing-custom-id:${ownerId}:`;
+const maxHtmlSizeBytes = 8 * 1024 * 1024;
+const proofValidator = v.object({ expiresAt: v.number(), signature: v.string() });
+const createArgs = {
+  title: v.string(),
+  storageProvider: v.string(),
+  storageKey: v.string(),
+  contentType: v.string(),
+  sizeBytes: v.number(),
+  proof: proofValidator,
+};
+type CreateArgs = {
+  title: string;
+  storageProvider: string;
+  storageKey: string;
+  contentType: string;
+  sizeBytes: number;
+  proof: DocumentMutationProof;
+};
+const deletionWorker = makeFunctionReference<"action", { jobId: Id<"deletionJobs"> }>(
+  "documentDeletion:processDeletion"
+);
+const deletionLeaseMs = 11 * 60_000;
+
+export const deletionRetryDelay = (attempts: number) =>
+  Math.min(60 * 60_000, 30_000 * 2 ** Math.min(attempts - 1, 7));
+
+const requireMutationSecret = () => {
+  const secret = process.env["DOCUMENT_MUTATION_SECRET"];
+  if (!secret || new TextEncoder().encode(secret).length < 32) {
+    throw new Error("Document mutation signing is not configured");
+  }
+  return secret;
+};
 
 const requireOwnerId = async (ctx: {
   auth: { getUserIdentity: () => Promise<{ subject: string } | null> };
@@ -23,61 +65,155 @@ export const list = query({
 
     return await ctx.db
       .query("documents")
-      .withIndex("by_owner_createdAt", (q) => q.eq("ownerId", ownerId))
+      .withIndex("by_owner_active_createdAt", (q) =>
+        q.eq("ownerId", ownerId).eq("deletionRequestedAt", undefined)
+      )
       .order("desc")
       .take(100);
   },
 });
 
-export const create = mutation({
-  args: {
-    title: v.string(),
-    storageProvider: v.string(),
-    storageKey: v.string(),
-    contentType: v.string(),
-    sizeBytes: v.number(),
-  },
-  handler: async (ctx, args) => {
+export const listPage = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { paginationOpts }) => {
+    if (
+      !Number.isSafeInteger(paginationOpts.numItems) ||
+      paginationOpts.numItems < 1 ||
+      paginationOpts.numItems > 100
+    ) {
+      throw new Error("Page size must be between 1 and 100");
+    }
     const ownerId = await requireOwnerId(ctx);
 
-    if (
-      args.storageProvider !== "uploadthing" ||
-      !args.storageKey.startsWith(uploadThingLocatorPrefix(ownerId))
-    ) {
-      throw new Error("The document storage locator does not belong to this account");
-    }
+    return await ctx.db
+      .query("documents")
+      .withIndex("by_owner_active_createdAt", (q) =>
+        q.eq("ownerId", ownerId).eq("deletionRequestedAt", undefined)
+      )
+      .order("desc")
+      .paginate(paginationOpts);
+  },
+});
 
-    const now = Date.now();
+export const createForOwner = async (ctx: MutationCtx, ownerId: string, args: CreateArgs) => {
+  if (
+    args.storageProvider !== "uploadthing" ||
+    !args.storageKey.startsWith(uploadThingLocatorPrefix(ownerId)) ||
+    args.storageKey.length <= uploadThingLocatorPrefix(ownerId).length ||
+    args.contentType !== "text/html" ||
+    args.title.trim().length === 0 ||
+    args.title.length > 200 ||
+    !Number.isSafeInteger(args.sizeBytes) ||
+    args.sizeBytes < 0 ||
+    args.sizeBytes > maxHtmlSizeBytes
+  ) {
+    throw new Error("Invalid document metadata");
+  }
 
-    return await ctx.db.insert("documents", {
+  const validProof = await verifyCreateDocumentProof(
+    requireMutationSecret(),
+    {
       ownerId,
-      title: args.title.trim() || "Untitled HTML",
+      title: args.title,
       storageProvider: args.storageProvider,
       storageKey: args.storageKey,
       contentType: args.contentType,
       sizeBytes: args.sizeBytes,
-      createdAt: now,
-      updatedAt: now,
-    });
+    },
+    args.proof
+  );
+  if (!validProof) throw new Error("Invalid document mutation proof");
+
+  const existing = await ctx.db
+    .query("documents")
+    .withIndex("by_owner_storageKey", (q) =>
+      q.eq("ownerId", ownerId).eq("storageKey", args.storageKey)
+    )
+    .first();
+  if (existing) {
+    if (existing.deletionRequestedAt !== undefined) {
+      throw new Error("Document is being deleted");
+    }
+    return existing._id;
+  }
+
+  const now = Date.now();
+
+  return await ctx.db.insert("documents", {
+    ownerId,
+    title: args.title.trim() || "Untitled HTML",
+    storageProvider: args.storageProvider,
+    storageKey: args.storageKey,
+    contentType: args.contentType,
+    sizeBytes: args.sizeBytes,
+    createdAt: now,
+    updatedAt: now,
+  });
+};
+
+export const create = mutation({
+  args: createArgs,
+  handler: async (ctx, args) => createForOwner(ctx, await requireOwnerId(ctx), args),
+});
+
+export const createWithCliCredential = mutation({
+  args: { ...createArgs, tokenHash: v.string() },
+  handler: async (ctx, args) => {
+    if (!/^[a-f0-9]{64}$/.test(args.tokenHash)) throw new Error("Invalid CLI credential");
+    const credential = await ctx.db
+      .query("cliCredentials")
+      .withIndex("by_tokenHash", (q) => q.eq("tokenHash", args.tokenHash))
+      .first();
+    if (!credential || credential.revokedAt !== undefined) {
+      throw new Error("CLI credential is invalid or revoked");
+    }
+    return createForOwner(ctx, credential.ownerId, args);
   },
 });
 
-export const remove = mutation({
+export const requestDeletionForOwner = async (
+  ctx: MutationCtx,
+  ownerId: string,
+  id: Id<"documents">
+) => {
+  const document = await ctx.db.get(id);
+
+  if (!document || document.ownerId !== ownerId) {
+    return "not_found" as const;
+  }
+
+  if (document.deletionRequestedAt !== undefined) {
+    return "accepted" as const;
+  }
+
+  if (document.storageProvider !== undefined || document.storageKey !== undefined) {
+    if (document.storageProvider !== "uploadthing" || !document.storageKey || document.storageId) {
+      throw new Error("External document storage metadata is incomplete");
+    }
+    const now = Date.now();
+    await ctx.db.patch(id, { deletionRequestedAt: now });
+    const jobId = await ctx.db.insert("deletionJobs", {
+      documentId: id,
+      storageKey: document.storageKey,
+      nextAttemptAt: now,
+      attempts: 0,
+    });
+    await ctx.scheduler.runAfter(0, deletionWorker, { jobId });
+    return "accepted" as const;
+  }
+
+  if (!document.storageId || document.storageProvider || document.storageKey) {
+    throw new Error("External documents require storage cleanup before metadata removal");
+  }
+  await ctx.storage.delete(document.storageId);
+
+  await ctx.db.delete(id);
+  return "deleted" as const;
+};
+
+export const requestDeletion = mutation({
   args: { id: v.id("documents") },
-  handler: async (ctx, args) => {
-    const ownerId = await requireOwnerId(ctx);
-    const document = await ctx.db.get(args.id);
-
-    if (!document || document.ownerId !== ownerId) {
-      throw new Error("Document not found");
-    }
-
-    if (document.storageId) {
-      await ctx.storage.delete(document.storageId);
-    }
-
-    await ctx.db.delete(args.id);
-  },
+  handler: async (ctx, args) => requestDeletionForOwner(ctx, await requireOwnerId(ctx), args.id),
 });
 
 export const get = query({
@@ -86,7 +222,7 @@ export const get = query({
     const ownerId = await requireOwnerId(ctx);
     const document = await ctx.db.get(args.id);
 
-    if (!document || document.ownerId !== ownerId) {
+    if (!document || document.ownerId !== ownerId || document.deletionRequestedAt !== undefined) {
       return null;
     }
 
@@ -94,19 +230,51 @@ export const get = query({
   },
 });
 
-// External storage is deleted by the application server through its provider
-// adapter. This mutation removes only the Convex metadata after that succeeds.
-export const removeMetadata = mutation({
-  args: { id: v.id("documents") },
+export const claimDeletion = internalMutation({
+  args: { jobId: v.id("deletionJobs") },
   handler: async (ctx, args) => {
-    const ownerId = await requireOwnerId(ctx);
-    const document = await ctx.db.get(args.id);
+    const job = await ctx.db.get(args.jobId);
+    const now = Date.now();
+    if (!job || job.nextAttemptAt > now) return null;
 
-    if (!document || document.ownerId !== ownerId) {
-      throw new Error("Document not found");
+    const attempts = job.attempts + 1;
+    await ctx.db.patch(args.jobId, { attempts, nextAttemptAt: now + deletionLeaseMs });
+    return { attempts, storageKey: job.storageKey };
+  },
+});
+
+export const finishDeletion = internalMutation({
+  args: { jobId: v.id("deletionJobs"), attempts: v.number() },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job || job.attempts !== args.attempts) return;
+    const document = await ctx.db.get(job.documentId);
+    if (document) await ctx.db.delete(job.documentId);
+    await ctx.db.delete(args.jobId);
+  },
+});
+
+export const deferDeletion = internalMutation({
+  args: { jobId: v.id("deletionJobs"), attempts: v.number() },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (!job || job.attempts !== args.attempts) return;
+    const delay = deletionRetryDelay(job.attempts);
+    await ctx.db.patch(args.jobId, { nextAttemptAt: Date.now() + delay });
+    await ctx.scheduler.runAfter(delay, deletionWorker, { jobId: args.jobId });
+  },
+});
+
+export const reconcileDeletions = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const due = await ctx.db
+      .query("deletionJobs")
+      .withIndex("by_nextAttemptAt", (q) => q.lte("nextAttemptAt", Date.now()))
+      .take(100);
+    for (const job of due) {
+      await ctx.scheduler.runAfter(0, deletionWorker, { jobId: job._id });
     }
-
-    await ctx.db.delete(args.id);
   },
 });
 
@@ -118,7 +286,11 @@ export const getContent = internalQuery({
   handler: async (ctx, args) => {
     const document = await ctx.db.get(args.id);
 
-    if (!document || document.ownerId !== args.ownerId) {
+    if (
+      !document ||
+      document.ownerId !== args.ownerId ||
+      document.deletionRequestedAt !== undefined
+    ) {
       return null;
     }
 

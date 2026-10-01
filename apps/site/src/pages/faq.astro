@@ -12,7 +12,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
     <div>
       <h1 id="faq-title">Questions we expect to hear.</h1>
       <p>
-        Clear, direct answers about how plansplease serves pages locally, keeps a private cloud
+        Clear, direct answers about how plansplease serves pages locally, keeps a cloud
         copy, and fits agent workflows.
       </p>
     </div>
@@ -33,7 +33,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
           </p>
           <p>
             The plansplease CLI creates an instant, zero-latency local preview on your machine,
-            while our cloud workspace securely archives your pages so they never get lost in a
+            while our cloud workspace saves your pages so they do not get lost in a
             closed chat thread.
           </p>
         </div>
@@ -91,14 +91,15 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
       <details class="faq-item">
         <summary>
-          <span>Is my data private and secure?</span>
+          <span>Are cloud files private?</span>
           <span class="faq-toggle-icon" aria-hidden="true">+</span>
         </summary>
         <div class="faq-answer">
           <p>
-            Yes. The local CLI serves strictly over your machine's private loopback interface—none of
-            your local code or data is transmitted externally. In the cloud workspace, all uploads
-            are secured behind GitHub OAuth authentication and tied to your personal account.
+            Local previews stay on your machine's loopback interface. Cloud uploads require GitHub
+            sign-in, and the dashboard lists only your account's documents. The underlying
+            UploadThing files are public-read during alpha: anyone with a direct file URL can fetch
+            one. Do not upload sensitive content.
           </p>
         </div>
       </details>

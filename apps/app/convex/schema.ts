@@ -15,5 +15,23 @@ export default defineSchema({
     sizeBytes: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_owner_createdAt", ["ownerId", "createdAt"]),
+    deletionRequestedAt: v.optional(v.number()),
+  })
+    .index("by_owner_createdAt", ["ownerId", "createdAt"])
+    .index("by_owner_active_createdAt", ["ownerId", "deletionRequestedAt", "createdAt"])
+    .index("by_owner_storageKey", ["ownerId", "storageKey"]),
+  deletionJobs: defineTable({
+    documentId: v.id("documents"),
+    storageKey: v.string(),
+    nextAttemptAt: v.number(),
+    attempts: v.number(),
+  }).index("by_nextAttemptAt", ["nextAttemptAt"]),
+  cliCredentials: defineTable({
+    ownerId: v.string(),
+    tokenHash: v.string(),
+    createdAt: v.number(),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_owner", ["ownerId"]),
 });
