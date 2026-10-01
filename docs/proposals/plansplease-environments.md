@@ -61,9 +61,11 @@ These checks do not establish that a complete GitHub login works.
 The owner still needs to set the GitHub OAuth app's authorization callback to
 `https://plansplease-app-staging.up.railway.app/api/auth/callback/github`.
 Sign-in and new MCP authorization are not ready for testing until that setting
-is updated and a complete browser login succeeds. The separate CLI URL and
-saved-credential migration work is also still required; existing CLI installs
-and saved credentials must not be assumed to use the new host.
+is updated and a complete browser login succeeds. A separate tested CLI
+compatibility release is proposed to update the default and normalize the old
+staging origin to the new one for saved-credential recovery. Existing installs
+and credentials must not be assumed to use the new host until that release is
+available and installed.
 
 ## Original cutover runbook and recovery requirements
 
@@ -217,11 +219,19 @@ app and site deployments to succeed and repeat the checks above. Reclaiming the
 old generated label is not guaranteed; keep the actual active domain consistent
 across all four settings if reclamation fails.
 
-Before removing the new host during rollback, CLI testers must log out there in
-every active profile. After the restored host passes checks, use
+Before removing the new host during rollback, prepare and publish a tested
+rollback CLI release that removes or reverses the forward old-to-new origin alias
+and restores the appropriate default. The proposed forward compatibility release
+normalizes even an explicit `--cloud-url` old origin to the new host, so that flag
+alone cannot target a restored old host. Keep the new host active until credential
+revocation and recovery have been handled if a rollback CLI is not yet available.
+
+CLI testers must log out on the new host in every active profile before it is
+removed. After installing the rollback CLI and verifying the restored host, use
 `planview login --cloud-url https://app-staging-a39a.up.railway.app` in each profile.
-The CLI default and saved credentials need the same rollback/recovery treatment
-as the forward cutover. Do not assume reverting Railway variables fixes them.
+Verify login, upload, logout, and recovery of saved new-host credentials when the
+new host is unreachable, including preservation on failed revocation. Do not
+assume reverting Railway variables fixes the CLI default, alias, or credentials.
 
 ## Add production when it has a purpose
 
