@@ -14,6 +14,7 @@ const allowedDependencies = new Map([
   ["@abijith-suresh/planview", ["@planview/local"]],
   ["@planview/app", []],
   ["@planview/site", []],
+  ["@planview/docs", []],
 ]);
 
 const dependencyFields = [

@@ -448,6 +448,17 @@ test("repository foundation has the expected configuration", () => {
   );
   expectProperty(storagePackageJson.dependencies, "effect", "4.0.0", "storage Effect dependency");
 
+  const docsPackageJson = readJson("apps/docs/package.json");
+  expectProperty(docsPackageJson, "name", "@planview/docs", "docs package name");
+  expectProperty(docsPackageJson, "private", true, "docs package privacy");
+  expectProperty(docsPackageJson.scripts, "start", "node server.mjs", "docs static start command");
+  expectProperty(
+    readJson("apps/docs/tsconfig.json"),
+    "extends",
+    "../../tsconfig.base.json",
+    "docs shared compiler settings"
+  );
+
   const lockfile = readJson("package-lock.json");
   expectEqual(lockfile.lockfileVersion, 3, "lockfile version");
   assert.ok(

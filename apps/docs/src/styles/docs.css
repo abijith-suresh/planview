@@ -1,0 +1,372 @@
+@import "@fontsource/instrument-sans/latin-400.css";
+@import "@fontsource/instrument-sans/latin-500.css";
+@import "@fontsource/instrument-sans/latin-600.css";
+@import "@fontsource/schibsted-grotesk/latin-600.css";
+@import "@fontsource/schibsted-grotesk/latin-700.css";
+@import "@fontsource/fragment-mono/latin-400.css";
+
+:root {
+  color-scheme: dark;
+  --sl-font: "Instrument Sans", sans-serif;
+  --sl-font-mono: "Fragment Mono", monospace;
+  --sl-color-white: #f6f5f3;
+  --sl-color-gray-1: #d9d9dc;
+  --sl-color-gray-2: #a1a1a6;
+  --sl-color-gray-3: #929298;
+  --sl-color-gray-4: #333338;
+  --sl-color-gray-5: #222226;
+  --sl-color-gray-6: #121214;
+  --sl-color-black: #0c0c0e;
+  --sl-color-text: #d9d9dc;
+  --sl-color-accent: #e5795a;
+  --sl-color-accent-low: rgba(229, 121, 90, 0.08);
+  --sl-color-accent-high: #e5795a;
+  --sl-color-text-accent: #e5795a;
+  --sl-color-bg-nav: #0f0f11;
+  --sl-color-bg-sidebar: #0f0f11;
+  --sl-color-bg-inline-code: #161618;
+  --sl-color-hairline: rgba(255, 255, 255, 0.08);
+  --sl-color-hairline-shade: rgba(255, 255, 255, 0.08);
+  --sl-color-hairline-light: rgba(255, 255, 255, 0.08);
+  --sl-nav-height: 4rem;
+  --sl-nav-pad-y: 0.5rem;
+  --sl-sidebar-width: 14rem;
+  --sl-content-width: 48rem;
+  --sl-content-pad-x: 2rem;
+  --sl-text-body: 0.95rem;
+  --sl-text-body-sm: 0.85rem;
+  --sl-text-code: 0.8rem;
+  --sl-text-h1: 2rem;
+  --sl-text-h2: 1.3rem;
+  --sl-text-h3: 1.1rem;
+  --sl-line-height: 1.65;
+  --sl-menu-button-size: 2.75rem;
+}
+body {
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
+}
+h1,
+h2,
+h3 {
+  font-family: "Schibsted Grotesk", "Instrument Sans", sans-serif;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.docs-header {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  gap: 2rem;
+}
+.docs-brand {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: var(--sl-color-white);
+  flex-shrink: 0;
+}
+.docs-wordmark {
+  display: inline-flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  font:
+    700 1.05rem / 1 "Schibsted Grotesk",
+    sans-serif;
+  letter-spacing: -0.045em;
+}
+.docs-wordmark span:last-child {
+  color: #e5795a;
+}
+.docs-label {
+  color: #a1a1a6;
+  font-size: 0.8rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  padding-left: 0.75rem;
+}
+.docs-search {
+  width: min(100%, 20rem);
+  min-width: 0;
+}
+.docs-search button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.docs-search button[data-open-modal] {
+  background: #0c0c0e;
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid #e5795a;
+  outline-offset: 3px;
+}
+button,
+a {
+  touch-action: manipulation;
+}
+.content-panel {
+  padding: 1.25rem var(--sl-content-pad-x);
+}
+.content-panel:first-child {
+  padding-top: 1.75rem;
+  padding-bottom: 0;
+}
+.content-panel + .content-panel {
+  border-top: 0;
+}
+.sl-container {
+  margin-inline: auto;
+}
+.sl-container h1 {
+  margin-top: 0;
+}
+.sl-container > * + * {
+  margin-top: 1rem;
+}
+.sl-markdown-content > :first-child {
+  margin-top: 0;
+}
+.sl-markdown-content :is(h2, h3):not(:first-child) {
+  margin-top: 2rem;
+}
+.sl-markdown-content table {
+  display: block;
+  overflow: auto;
+}
+.sl-markdown-content a {
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(229, 121, 90, 0.45);
+}
+.sidebar-content {
+  padding-top: 1.25rem;
+}
+.sidebar-content .large {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.sidebar-content a {
+  min-height: 36px;
+  padding-block: 0.45rem;
+  color: #a1a1a6;
+  border-radius: 6px;
+}
+.sidebar-content a:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: #f6f5f3;
+}
+.sidebar-content a[aria-current="page"] {
+  color: #f6f5f3;
+  background: rgba(255, 255, 255, 0.045);
+  font-weight: 500;
+}
+.sidebar-content summary {
+  min-height: 36px;
+  color: #d9d9dc;
+}
+.sidebar-content ul ul {
+  border-inline-start: 0;
+}
+.sidebar-content li + li {
+  margin-top: 0;
+}
+.setup-choices {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+.sl-markdown-content a.setup-choice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem;
+  min-height: 88px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: #121214;
+  color: #d9d9dc;
+  text-decoration: none;
+}
+.setup-choice strong {
+  color: #f6f5f3;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.setup-choice p {
+  margin: 0.25rem 0 0;
+  color: #a1a1a6;
+  font-size: 0.875rem;
+}
+.setup-choice > span {
+  color: #929298;
+}
+.sl-markdown-content a.setup-choice:hover {
+  border-color: rgba(229, 121, 90, 0.3);
+  background: #161618;
+}
+.docs-quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1.5rem;
+  margin-top: 1.5rem;
+}
+.sl-markdown-content .docs-quick-links a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.4rem;
+  color: #a1a1a6;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.sl-markdown-content .docs-quick-links a:hover {
+  color: #f6f5f3;
+  text-decoration: underline;
+}
+.pagination-links .link-title {
+  font-size: 1rem;
+}
+.pagination-links a {
+  border-color: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  padding: 1rem;
+}
+
+/* Reserve a toolbar row so copy never covers a command, including after scrolling. */
+.sl-markdown-content .expressive-code .frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border-radius: 8px;
+  box-shadow: none;
+}
+.sl-markdown-content .expressive-code .frame > .header {
+  display: flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 52px;
+  padding: 4px 64px 4px 12px;
+  background: #0f0f11;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px 8px 0 0;
+}
+.sl-markdown-content .expressive-code .frame > .header::before {
+  display: none;
+}
+.sl-markdown-content .expressive-code .frame > .header .title {
+  padding: 0;
+  margin: 0;
+  font-size: 0.8rem;
+  background: transparent;
+  border: 0;
+}
+.sl-markdown-content .expressive-code .frame.is-terminal > .header .title:empty::before {
+  content: "Terminal";
+  color: #a1a1a6;
+}
+.sl-markdown-content .expressive-code .frame > pre {
+  grid-area: 2 / 1;
+  min-width: 0;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+}
+.sl-markdown-content .expressive-code .frame > .copy {
+  position: relative;
+  grid-area: 1 / 1;
+  justify-self: end;
+  align-self: center;
+  inset: auto;
+  margin-inline-end: 4px;
+}
+.sl-markdown-content .expressive-code .copy button {
+  width: 44px;
+  height: 44px;
+  opacity: 1;
+  border-radius: 6px;
+}
+.sl-markdown-content .expressive-code .copy button::after {
+  inset: 12px;
+  margin: 0;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+@media (min-width: 50rem) {
+  .docs-brand {
+    width: calc(var(--sl-sidebar-width) - 1rem);
+  }
+}
+@media (max-width: 49.99rem) {
+  :root {
+    --sl-content-pad-x: 1rem;
+    --sl-nav-pad-x: 16px;
+    --sl-nav-gap: 12px;
+    --sl-menu-button-size: 44px;
+  }
+  .docs-header {
+    gap: 12px;
+    justify-content: space-between;
+  }
+  .docs-brand {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .docs-search {
+    width: auto;
+    flex-shrink: 0;
+  }
+  .sidebar-content a,
+  .sidebar-content summary {
+    min-height: 44px;
+  }
+  .content-panel:first-child {
+    padding-top: 1.25rem;
+  }
+  .docs-search button[data-open-modal] {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    justify-content: center;
+    background: #121214;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .docs-search button[data-open-modal] svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+.sl-menu-button {
+  top: calc((var(--sl-nav-height) - var(--sl-menu-button-size) - 1px) / 2);
+  background: #121214;
+  color: #d9d9dc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+}
+.sl-menu-button svg {
+  width: 20px;
+  height: 20px;
+}
+@media (max-width: 24rem) {
+  .docs-label {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}

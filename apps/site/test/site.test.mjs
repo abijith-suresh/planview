@@ -15,6 +15,7 @@ const withBuild = ({ outputDirectory, basePath }, check) => {
   const environment = { ...process.env };
   // These builds verify the repository default, independent of shell overrides.
   delete environment.PUBLIC_APP_URL;
+  delete environment.PUBLIC_DOCS_URL;
   if (basePath === undefined) {
     delete environment.BASE_PATH;
   } else {
@@ -125,6 +126,7 @@ const assertMarketingPages = (output) => {
     ["cli", "CLI | plansplease", "Give a local HTML file a URL."],
     ["about", "About | plansplease", "A place for the useful things agents make."],
     ["docs", "Docs | plansplease", "Docs for a small tool."],
+    ["mcp", "MCP | plansplease", "Connect your agent to plansplease."],
     ["pricing", "Pricing | plansplease", "Simple for now. Clear about later."],
     ["faq", "FAQ | plansplease", "Questions we expect to hear."],
     ["privacy", "Privacy | plansplease", "Your pages are yours."],
@@ -153,6 +155,9 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("Your agent made a page."));
   assert.ok(html.includes("Give it somewhere useful to live."));
   assert.ok(html.includes("Continue with GitHub"));
+  assert.ok(html.includes("CLI and MCP"));
+  assert.equal(html.includes("MCP soon"), false);
+  assert.ok(html.includes('href="https://plansplease-docs-staging.up.railway.app/"'));
   assert.ok(html.includes('class="demo"'));
   assert.ok(html.includes("planview publish ./auth-migration-spec.html"));
   assert.ok(html.includes("plansplease.app/p/auth-migration-spec"));
