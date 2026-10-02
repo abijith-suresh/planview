@@ -53,7 +53,9 @@ Do not enable npm publishing or add registry credentials in a feature change.
 ## Workspace boundaries
 
 `apps/` contains deployable applications and the public CLI. `packages/` contains
-reusable implementation with explicit package boundaries. Keep code with its
+reusable implementation with explicit package boundaries. The static docs workspace
+owns its Starlight content and server; it links to app/site origins without importing
+another application's implementation. Keep code with its
 application until another workspace needs it or a distinct build, test, or API
 boundary justifies a package. Declare cross-workspace dependencies by package
 name in the owning `package.json`; npm links configured workspaces during install.

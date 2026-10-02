@@ -1,0 +1,85 @@
+---
+title: CLI reference
+description: Local publication, retrieval, profiles, and standalone cloud uploads.
+---
+import { Code } from '@astrojs/starlight/components';
+import { readPublicUrls } from '../../../lib/public-urls.ts';
+export const { appUrl } = readPublicUrls(import.meta.env);
+
+Install a [repository-built tarball](../install-cli/)
+before running these commands. The command is `plansplease`. Existing scripts
+that invoke `planview` must update the command name; there is no compatibility alias.
+
+## Local snapshots
+
+```sh
+plansplease publish --open ./report.html
+plansplease publish --json ./report.html
+plansplease publish --open ./artifact/
+```
+
+A file must be `.html` or `.htm`. A folder must have root `index.html` and may
+contain up to 512 regular files. The encoded snapshot, including a folder's
+manifest, must fit within 10 MiB. Symlink sources are rejected.
+
+Each publication creates an immutable snapshot. The daemon prefers port 4777
+and selects another available port when necessary. Use the exact printed URL.
+Folder pages resolve their assets beneath that URL; the browser follows a root
+redirect to serve `index.html`.
+
+### Retrieve a standalone snapshot
+
+```sh
+plansplease get <id-or-exact-local-url> > recovered.html
+```
+
+`get` writes exact HTML bytes to standard output. It accepts local references
+for the selected profile's current port, not cloud links. Current CLI retrieval
+does not follow the folder-root redirect, so use the browser to view a local
+artifact folder and its assets.
+
+## Daemon and profiles
+
+```sh
+plansplease status --json
+plansplease start
+planview stop
+plansplease restart
+plansplease clean
+plansplease --profile work publish ./report.html
+```
+
+`status` inspects without starting the daemon. `clean` removes snapshots older
+than 30 days since last access and reconciles incomplete storage operations.
+The daemon runs that cleanup at startup and every 24 hours. Profiles isolate
+local documents, daemon state, and saved cloud credentials.
+
+## Cloud upload
+
+<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}\nplanview upload --open ./report.html\nplanview upload --json ./report.html\nplanview logout`} lang="sh" />
+
+Login opens browser sign-in and authorizes this computer for uploads. The saved
+credential is upload-only. It cannot list, read, or delete cloud documents.
+Logout revokes it on the server before removing the local credential; it needs
+a connection. Browser sign-out and CLI logout are separate operations.
+
+Use `--cloud-url` on `login`, or `PLANVIEW_CLOUD_URL`, to select another app origin.
+Existing saved credentials remain tied to the origin used at login.
+Cloud upload accepts standalone HTML up to 8 MiB. Cloud folder uploads are
+[under review](../../reference/planned-features/).
+
+## Automation
+
+Errors go to stderr and failures return exit status 1. Successful commands write
+their result to stdout. `--json` emits one JSON value for publication, cloud
+upload, status, start, stop, restart, and clean. Avoid parsing human-readable
+status messages.
+
+```sh
+plansplease help
+plansplease help upload
+plansplease skills install
+```
+
+The skill installer writes `planview` and `create-html` to `~/.agents/skills`.
+It refuses existing directories unless `--force` is supplied.

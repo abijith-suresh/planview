@@ -1,0 +1,16 @@
+---
+title: Setup guides
+description: Choose CLI installation, MCP connection, or self-hosting information.
+sidebar:
+  hidden: true
+prev: false
+next: false
+editUrl: false
+---
+import SetupChoices from '../../components/SetupChoices.astro';
+import { readPublicUrls } from '../../lib/public-urls.ts';
+export const { docsBasePath } = readPublicUrls(import.meta.env);
+
+Choose a guide to get started.
+
+<SetupChoices basePath={docsBasePath} />

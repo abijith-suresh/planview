@@ -1,0 +1,74 @@
+---
+title: Repository development
+description: Build the monorepo, run checks, and configure a development cloud backend.
+---
+import { Code } from '@astrojs/starlight/components';
+import { readPublicUrls } from '../../../lib/public-urls.ts';
+export const { appUrl } = readPublicUrls(import.meta.env);
+
+Use Node.js 24.19.0 and npm 11.16.0, matching `.node-version` and the package metadata.
+
+```sh
+npm ci
+npm run verify
+npm run changeset:status
+npm run pack:check
+```
+
+Verification runs formatting, lint, workspace typechecks, tests, and builds.
+Tests use local fixtures and do not need production accounts. The public CLI
+requires a patch Changeset for user-facing changes before 1.0.0. Publishing is
+disabled until maintainers explicitly enable it.
+
+## Work on the docs
+
+```sh
+npm run dev --workspace @planview/docs
+npm run typecheck --workspace @planview/docs
+npm test --workspace @planview/docs
+npm run build --workspace @planview/docs
+npm start --workspace @planview/docs
+```
+
+Public URL configuration is read at build time. `PUBLIC_DOCS_URL` selects the
+canonical docs origin and optional path prefix. `PUBLIC_APP_URL` and
+`PUBLIC_SITE_URL` select workspace and marketing links. Copy `apps/docs/.env.example`
+to `.env.local` when you need local overrides. Rebuild after changing a URL.
+The production server reads `PORT` and exposes `/health`; it serves only built files.
+
+## Work on the app
+
+Select a **development** Convex deployment you control and generate its bindings:
+
+```sh
+cd apps/app
+npx convex deployment select <team>:<project>:dev/<name>
+npx convex dev --once
+```
+
+Then return to the repository root:
+
+```sh
+npm run dev --workspace @planview/app
+```
+
+Use `apps/app/.env.example` and the app README for configuration. App and Convex
+need compatible origins and matching server-side proof secrets. GitHub credentials
+belong in the backend configuration; UploadThing credentials remain server-only.
+Do not give them a `PUBLIC_` or `VITE_` prefix.
+
+For a hosted MCP client, point it at your chosen app's `/mcp` route. The staging
+endpoint is:
+
+<Code code={`${appUrl}mcp`} lang="text" />
+
+## Deployment boundaries
+
+Marketing, docs, and app are separate services built from the repository lockfile.
+A docs deployment needs public URL settings and a Node static server, not Convex
+or UploadThing credentials. The cloud app needs a matching Convex deployment.
+
+The merged quota implementation requires a coordinated upload maintenance window,
+backend initialization, and compatible app release. Read `apps/app/README.md`
+before deploying it beneath an older uploader. These development notes are not a
+supported self-hosting installation recipe; that is [a proposal](../planned-features/).
