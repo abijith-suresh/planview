@@ -24,9 +24,10 @@ again with the current app origin. Operators should check that the app and Conve
 share `SITE_URL`, and that the GitHub OAuth callback is
 `<app-origin>/api/auth/callback/github`.
 
-The sign-in/sign-out redirect fix is [an open PR](../planned-features/) and its
-helpers are included in the reviewed staging UI preview. A successful dashboard
-login does not by itself verify every site/app redirect.
+The sign-in/sign-out redirect helpers merged with the app redesign in
+[#120](https://github.com/abijith-suresh/planview/pull/120). Check that your deployed
+app includes them. A successful dashboard login does not by itself verify every
+site/app redirect.
 
 ## CLI says the cloud credential was rejected
 
