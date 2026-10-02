@@ -26,12 +26,18 @@ UploadThing object URLs remain public during alpha.
   reserves encoded bytes before uploads and retains uncertain outcomes until
   cleanup. It is awaiting staging rollout and needs the coordinated backend/app
   deployment described in the app README.
+- [Provider boundary and delivery, #128](https://github.com/abijith-suresh/planview/pull/128)
+  puts uploads, read URLs, and deletion behind the provider adapter. Standalone
+  HTML downloads directly from storage in an isolated browser preview. This is
+  merged on main and awaiting the coordinated staging app/backend rollout.
+- [CLI name, #135](https://github.com/abijith-suresh/planview/pull/135)
+  uses `plansplease` as the only command. Install a repository build to use it;
+  npm publication remains disabled.
 
 ## Open implementations
 
 | PR | Behavior | Staging status |
 | --- | --- | --- |
-| [#128: provider boundary and delivery](https://github.com/abijith-suresh/planview/pull/128) | Direct browser delivery for standalone HTML and a provider adapter | Awaiting merge and deployment |
 | [#130: unlisted sharing](https://github.com/abijith-suresh/planview/pull/130) | Optional bearer links with rotation/revocation and noindex | Awaiting merge and deployment |
 | [#132: auth routing](https://github.com/abijith-suresh/planview/pull/132) | Correct app/site sign-in and sign-out destinations | Helpers merged in #120; this duplicate PR remains open |
 | [#133: cloud bundles](https://github.com/abijith-suresh/planview/pull/133) | CLI folders, MCP text assets, and relative CSS/JS/module previews | Awaiting merge and deployment |
