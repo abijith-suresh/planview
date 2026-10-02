@@ -28,6 +28,7 @@ export default function Documents() {
   const [actionMessage, setActionMessage] = createSignal("");
   const [query, setQuery] = createSignal("");
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
 
   createEffect(() => {
     const currentSession = session();
@@ -45,6 +46,7 @@ export default function Documents() {
   });
 
   onCleanup(() => {
+    disposed = true;
     if (feedbackTimer) clearTimeout(feedbackTimer);
   });
 
@@ -98,6 +100,9 @@ export default function Documents() {
   };
 
   const removeDocument = async (document: DocumentRecord) => {
+    const focusedControl = window.document.activeElement;
+    const focusedRow = focusedControl?.closest(".document-row");
+    let deleted = false;
     setDeleteError("");
     setDeletingId(document._id);
 
@@ -111,15 +116,27 @@ export default function Documents() {
 
       if (!response.ok) throw new Error(await getErrorMessage(response));
 
+      deleted = true;
       showActionMessage(`${document.title} deleted.`);
     } catch (error) {
       setDeleteError(error instanceof Error ? error.message : "The document could not be deleted.");
     } finally {
       setDeletingId("");
       setPendingDeleteId("");
-      queueMicrotask(() =>
-        window.document.getElementById(`document-actions-${document._id}`)?.focus()
-      );
+      queueMicrotask(() => {
+        if (disposed || !focusedRow) return;
+        const currentFocus = window.document.activeElement;
+        // A removed confirmation control falls back to the body. Preserve any
+        // other control the user focused while the deletion request was pending.
+        if (
+          !focusedRow.contains(currentFocus) &&
+          !(currentFocus === window.document.body && !focusedControl?.isConnected)
+        )
+          return;
+        window.document
+          .getElementById(deleted ? "main-content" : `document-actions-${document._id}`)
+          ?.focus();
+      });
     }
   };
 
