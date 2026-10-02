@@ -1,5 +1,7 @@
 import { ConvexError } from "convex/values";
 
+import type { DocumentStorageUpload, StoredDocument } from "./document-storage.ts";
+
 import {
   reportDocumentUploadCompensationFailure,
   type DocumentUploadCompensationReporter,
@@ -7,7 +9,7 @@ import {
 
 export type DocumentUploadMetadata = {
   title: string;
-  storageProvider: "uploadthing";
+  storageProvider: StoredDocument["storageProvider"];
   storageKey: string;
   contentType: "text/html";
   sizeBytes: number;
@@ -16,9 +18,9 @@ export type DocumentUploadMetadata = {
 export async function uploadReservedDocument(input: {
   metadata: DocumentUploadMetadata;
   file: File;
-  customId: string;
+  objectId: string;
   reserve(): Promise<{ id: string | null; uploadDeadlineAt: number }>;
-  upload(options: { file: File; customId: string; deadlineAt: number }): Promise<void>;
+  upload(options: DocumentStorageUpload): Promise<StoredDocument>;
   commit(): Promise<string>;
   abandon(uploadConfirmed: boolean): Promise<string | null>;
   reportCompensationFailure?: DocumentUploadCompensationReporter;
@@ -29,11 +31,18 @@ export async function uploadReservedDocument(input: {
   if (reservation.id) return reservation.id;
   let uploadConfirmed = false;
   try {
-    await input.upload({
+    const stored = await input.upload({
       file: input.file,
-      customId: input.customId,
+      objectId: input.objectId,
       deadlineAt: reservation.uploadDeadlineAt,
     });
+    if (
+      stored.storageProvider !== input.metadata.storageProvider ||
+      stored.storageKey !== input.metadata.storageKey
+    ) {
+      // A mismatched locator cannot prove that the reserved object is safe to delete.
+      throw new Error("The stored document does not match its upload reservation.");
+    }
     uploadConfirmed = true;
     return await input.commit();
   } catch (metadataCause) {
