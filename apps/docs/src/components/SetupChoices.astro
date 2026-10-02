@@ -3,9 +3,21 @@
 const { basePath } = Astro.props as { basePath: string };
 // biome-ignore lint/correctness/noUnusedVariables: Astro renders these navigation links below.
 const choices = [
-  { path: 'guides/install-cli/', title: 'Install the CLI', description: 'Preview HTML on your computer and upload pages to your account.' },
-  { path: 'guides/mcp/', title: 'Connect MCP', description: 'Let your agent save, read and manage your documents.' },
-  { path: 'guides/self-hosting/', title: 'Self-hosting', description: 'Run local previews yourself and see what cloud hosting needs today.' },
+  {
+    path: "guides/install-cli/",
+    title: "Install the CLI",
+    description: "Preview HTML on your computer and upload pages to your account.",
+  },
+  {
+    path: "guides/mcp/",
+    title: "Connect MCP",
+    description: "Let your agent save, read and manage your documents.",
+  },
+  {
+    path: "guides/self-hosting/",
+    title: "Self-hosting",
+    description: "Run local previews yourself and see what cloud hosting needs today.",
+  },
 ];
 ---
 <nav class="setup-choices" aria-label="Setup guides">

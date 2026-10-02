@@ -86,6 +86,17 @@ test("production root and prefixed builds contain complete navigation, search, a
             existsSync(path) || existsSync(join(path, "index.html")),
             `missing build link ${target} on ${route}`
           );
+          if (url.hash) {
+            const page = path.endsWith(".html") ? path : join(path, "index.html");
+            if (existsSync(page)) {
+              const destination = readFileSync(page, "utf8");
+              const fragment = decodeURIComponent(url.hash.slice(1));
+              assert.ok(
+                destination.includes(`id="${fragment}"`),
+                `missing section ${target} on ${route}`
+              );
+            }
+          }
         }
       }
       const mcp = readFileSync(join(output, "guides", "mcp", "index.html"), "utf8");
