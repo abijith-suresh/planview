@@ -1,6 +1,8 @@
 import { Match, Switch } from "solid-js";
 
 export type IconName =
+  | "menu"
+  | "more"
   | "book"
   | "clock"
   | "copy"
@@ -34,6 +36,19 @@ export default function Icon(props: IconProps) {
       xmlns="http://www.w3.org/2000/svg"
     >
       <Switch>
+        <Match when={props.name === "menu"}>
+          <path
+            d="M4 6h16M4 12h16M4 18h16"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "more"}>
+          <circle cx="5" cy="12" r="1.5" fill="currentColor" />
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+          <circle cx="19" cy="12" r="1.5" fill="currentColor" />
+        </Match>
         <Match when={props.name === "grid"}>
           <rect height="5" rx="1" stroke="currentColor" stroke-width="1.7" width="5" x="3" y="3" />
           <rect height="5" rx="1" stroke="currentColor" stroke-width="1.7" width="5" x="16" y="3" />

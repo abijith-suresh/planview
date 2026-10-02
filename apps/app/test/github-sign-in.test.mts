@@ -73,6 +73,22 @@ test("uses the public forwarded host and first forwarded protocol behind an inte
   assert.equal(result.headers.get("location"), "https://github.com/login/oauth/authorize");
 });
 
+test("ordinary GitHub sign-in opens Documents directly", async () => {
+  let upstream: RequestInit | undefined;
+  await startGitHubSignIn(
+    createRequest("https://app.example/auth/github", { host: "app.example" }),
+    createDependencies(async (_url, options) => {
+      upstream = options;
+      return responseWithLocation();
+    })
+  );
+  assert.ok(upstream);
+  assert.deepEqual(JSON.parse(String(upstream.body)), {
+    provider: "github",
+    callbackURL: "/documents",
+  });
+});
+
 test("passes a signed OAuth query to Better Auth when starting agent sign-in", async () => {
   let upstream: RequestInit | undefined;
   await startGitHubSignIn(

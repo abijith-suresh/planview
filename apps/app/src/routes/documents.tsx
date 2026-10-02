@@ -1,8 +1,9 @@
-import { A } from "@solidjs/router";
 import { Meta, Title } from "@solidjs/meta";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 
 import AppShell from "~/components/AppShell";
+import DocumentActions from "~/components/DocumentActions";
+import { docsUrl } from "~/lib/docs-url";
 import Icon from "~/components/Icon";
 import {
   formatBytes,
@@ -18,7 +19,7 @@ import {
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
 export default function Documents() {
-  const { session, redirectToSignIn, userInitial, userName } = useWorkspaceAuth();
+  const { session, redirectToSignIn, userName } = useWorkspaceAuth();
   const documents = () => documentsStore.documents;
   const status = () => documentsStore.status;
   const [deletingId, setDeletingId] = createSignal("");
@@ -72,6 +73,12 @@ export default function Documents() {
     feedbackTimer = setTimeout(() => setActionMessage(""), 2600);
   };
 
+  const cancelDelete = (id: string) => {
+    if (deletingId()) return;
+    setPendingDeleteId("");
+    queueMicrotask(() => window.document.getElementById(`document-actions-${id}`)?.focus());
+  };
+
   const documentHref = (id: string) => `/api/documents/${encodeURIComponent(id)}`;
 
   const copyDocumentLink = async (document: DocumentRecord) => {
@@ -110,6 +117,9 @@ export default function Documents() {
     } finally {
       setDeletingId("");
       setPendingDeleteId("");
+      queueMicrotask(() =>
+        window.document.getElementById(`document-actions-${document._id}`)?.focus()
+      );
     }
   };
 
@@ -133,7 +143,7 @@ export default function Documents() {
         name="description"
         content="Open, copy a link, or delete the HTML pages saved in your plansplease workspace."
       />
-      <AppShell active="documents" userInitial={userInitial} userName={userName}>
+      <AppShell active="documents" userName={userName}>
         <div class="page-content">
           <header class="page-header">
             <div>
@@ -181,9 +191,9 @@ export default function Documents() {
                       <h2>No documents yet</h2>
                       <p>Connect your agent to save your first HTML page.</p>
                       <div class="empty-actions">
-                        <A class="button-primary" href="/settings#connect-agent">
+                        <a class="button-primary" href={docsUrl("getting-started/")}>
                           Connect your agent
-                        </A>
+                        </a>
                       </div>
                     </Show>
                   </div>
@@ -205,12 +215,10 @@ export default function Documents() {
                       <article
                         class="document-row"
                         onKeyDown={(event) => {
-                          if (event.key === "Escape") setPendingDeleteId("");
+                          if (event.key === "Escape" && pendingDeleteId() === document._id)
+                            cancelDelete(document._id);
                         }}
                       >
-                        <span class="document-file-icon" aria-hidden="true">
-                          <Icon name="file" size={17} />
-                        </span>
                         <div class="document-details">
                           <a
                             class="document-title"
@@ -230,37 +238,13 @@ export default function Documents() {
                           <Show
                             when={pendingDeleteId() === document._id}
                             fallback={
-                              <>
-                                <a
-                                  class="icon-button"
-                                  href={documentHref(document._id)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  aria-label={`Open ${document.title}`}
-                                  title="Open"
-                                >
-                                  <Icon name="external" />
-                                </a>
-                                <button
-                                  class="icon-button"
-                                  type="button"
-                                  aria-label={`Copy link for ${document.title}`}
-                                  title="Copy link"
-                                  onClick={() => void copyDocumentLink(document)}
-                                >
-                                  <Icon name="copy" />
-                                </button>
-                                <button
-                                  class="icon-button icon-button-danger"
-                                  type="button"
-                                  aria-label={`Delete ${document.title}`}
-                                  title="Delete"
-                                  disabled={deletingId() === document._id}
-                                  onClick={() => setPendingDeleteId(document._id)}
-                                >
-                                  <Icon name="trash" />
-                                </button>
-                              </>
+                              <DocumentActions
+                                id={document._id}
+                                title={document.title}
+                                onCopy={() => void copyDocumentLink(document)}
+                                onDelete={() => setPendingDeleteId(document._id)}
+                                disabled={deletingId() === document._id}
+                              />
                             }
                           >
                             <span class="delete-confirm" role="alert">
@@ -281,7 +265,7 @@ export default function Documents() {
                                 title="Cancel"
                                 ref={(element) => queueMicrotask(() => element.focus())}
                                 disabled={deletingId() === document._id}
-                                onClick={() => setPendingDeleteId("")}
+                                onClick={() => cancelDelete(document._id)}
                               >
                                 <svg
                                   aria-hidden="true"

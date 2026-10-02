@@ -19,7 +19,7 @@ export default function Home() {
     }
 
     document.cookie = clearAuthAttemptCookie;
-    window.location.replace("/dashboard");
+    window.location.replace("/documents");
   });
 
   const isSignedOut = createMemo(() => {

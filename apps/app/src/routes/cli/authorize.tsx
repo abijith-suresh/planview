@@ -118,7 +118,7 @@ export default function AuthorizeCli() {
             >
               {isAuthorizing() ? "Authorizing…" : "Authorize local CLI"}
             </button>
-            <a class="text-link" href="/dashboard">
+            <a class="text-link" href="/documents">
               Cancel
             </a>
           </div>

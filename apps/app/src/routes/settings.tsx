@@ -2,7 +2,6 @@ import { Meta, Title } from "@solidjs/meta";
 import { Show, createSignal } from "solid-js";
 
 import AppShell from "~/components/AppShell";
-import AgentConnection from "~/components/AgentConnection";
 import Icon from "~/components/Icon";
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
@@ -39,13 +38,13 @@ export default function Settings() {
       }
     >
       <Title>Settings | plansplease</Title>
-      <Meta name="description" content="Your plansplease account, MCP and CLI connections." />
-      <AppShell active="settings" userInitial={userInitial} userName={userName}>
+      <Meta name="description" content="Your plansplease account settings." />
+      <AppShell active="settings" userName={userName}>
         <div class="page-content settings-content">
           <header class="page-header">
             <div>
               <h1>Settings</h1>
-              <p class="page-lede">Connect your agent and manage your account.</p>
+              <p class="page-lede">Manage your account.</p>
             </div>
           </header>
 
@@ -66,8 +65,6 @@ export default function Settings() {
               </div>
             </div>
           </section>
-
-          <AgentConnection />
 
           <section class="card onboarding-card" aria-labelledby="settings-session-title">
             <h2 id="settings-session-title">Session</h2>
