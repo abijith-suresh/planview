@@ -5,14 +5,17 @@ description: Sign in, upload standalone HTML, and open account-owned previews.
 import { readPublicUrls } from '../../../lib/public-urls.ts';
 export const { appUrl } = readPublicUrls(import.meta.env);
 
-<a href={appUrl}>Open the staging workspace</a> and sign in with GitHub. The browser,
-CLI, and MCP workflows save documents to the same signed-in account.
+<a href={appUrl}>Open the staging workspace</a> and sign in with GitHub. View and
+manage documents saved through CLI or MCP to the same account.
 
 ## Upload and open
 
-Upload one standalone `.html` file through the workspace, or use
-[CLI upload](../cli/#cloud-upload) or [hosted MCP](../mcp/). HTML is limited to
-8 MiB. Use a useful title so the document is easy to find later.
+Save one standalone `.html` file using [CLI upload](../cli/#cloud-upload) or
+[hosted MCP](../mcp/). HTML is limited to 8 MiB. Use a useful title so the
+document is easy to find later.
+
+The workspace lists your documents. Open a preview, copy its link, or delete
+the document from there.
 
 Open its preview while signed in to the owning account. Generated HTML runs in
 a sandbox with an opaque origin, so it cannot access the workspace's cookies or
