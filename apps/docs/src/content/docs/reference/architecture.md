@@ -60,6 +60,7 @@ Uncertain provider outcomes stay charged until reconciled. Storage metadata uses
 a provider name and logical locator; an owner-bound UploadThing custom ID supports
 cleanup even when a provider response is lost. Server proofs do not go to browsers.
 
-The provider adapter and direct browser delivery refactor are
-[under review](../planned-features/). Current standalone previews use the app
-route; do not assume all delivery avoids app bandwidth.
+The provider adapter owns uploads, read URLs, and deletion on main. Standalone
+HTML previews download from storage in the browser after the app checks ownership.
+This refactor is [merged but awaiting staging rollout](../planned-features/).
+The current staging preview still serves document bytes through the app.
