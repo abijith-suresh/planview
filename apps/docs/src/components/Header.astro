@@ -1,0 +1,14 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro renders this component below.
+import Header from "@astrojs/starlight/components/Header.astro";
+import { readPublicUrls } from "../lib/public-urls.ts";
+// biome-ignore lint/correctness/noUnusedVariables: Astro uses these public links below.
+const { appUrl, siteUrl } = readPublicUrls(import.meta.env);
+---
+<div class="docs-header">
+  <Header {...Astro.props} />
+  <nav class="docs-product-links" aria-label="Product">
+    <a href={siteUrl}>Website</a>
+    <a class="docs-workspace-link" href={appUrl}>Workspace</a>
+  </nav>
+</div>

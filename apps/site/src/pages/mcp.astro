@@ -1,0 +1,18 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro renders this layout below.
+import SiteLayout from "../layouts/SiteLayout.astro";
+import { documentationUrl } from "../lib/docs-url";
+// biome-ignore lint/correctness/noUnusedVariables: Astro uses this public docs URL below.
+const canonical = documentationUrl("guides/mcp");
+---
+
+<SiteLayout title="MCP | plansplease" description="Use authenticated MCP tools to save and read your cloud documents." activePath="mcp" canonical={canonical}>
+  <section class="page-heading" aria-labelledby="mcp-title">
+    <div>
+      <h1 id="mcp-title">Connect your agent to plansplease.</h1>
+      <p>Add the app's /mcp endpoint in a compatible remote MCP client, then sign in with GitHub and approve access. The guide explains OAuth, tools, and client compatibility.</p>
+    </div>
+    <a class="page-action" href={canonical}>Read the MCP guide</a>
+  </section>
+  <p class="page-note">OAuth needs a compatible remote MCP client. Cloud files have public URLs during alpha.</p>
+</SiteLayout>

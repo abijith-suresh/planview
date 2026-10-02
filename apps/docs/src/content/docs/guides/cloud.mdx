@@ -1,0 +1,46 @@
+---
+title: Cloud workspace
+description: Sign in, upload standalone HTML, and open account-owned previews.
+---
+import { readPublicUrls } from '../../../lib/public-urls.ts';
+export const { appUrl } = readPublicUrls(import.meta.env);
+
+<a href={appUrl}>Open the staging workspace</a> and sign in with GitHub. The browser,
+CLI, and MCP workflows save documents to the same signed-in account.
+
+## Upload and open
+
+Upload one standalone `.html` file through the workspace, or use
+[CLI upload](../cli/#cloud-upload) or [hosted MCP](../mcp/). HTML is limited to
+8 MiB. Use a useful title so the document is easy to find later.
+
+Open its preview while signed in to the owning account. Generated HTML runs in
+a sandbox with an opaque origin, so it cannot access the workspace's cookies or
+browser storage. Scripts can still run and load external resources permitted
+by the preview policy.
+
+The account route checks ownership, but that does not make provider storage
+private. UploadThing object URLs are public during alpha. Avoid secrets and
+sensitive documents; see [privacy and limits](../../reference/privacy-and-limits/).
+
+## Editing and deletion
+
+Uploads currently create separate documents. To revise a plan, keep the original,
+ask the agent to make the changes, and upload the new version with a clear title.
+Stable document revisions are a proposal, not current behavior.
+
+Deletion hides a document and queues file cleanup. Cleanup retries provider
+failures; deletion is not a guarantee that every previously downloaded copy
+has disappeared.
+
+## What is available in staging
+
+Deployment status reviewed on **2 October 2026**.
+
+The staging service currently supports account-owned standalone uploads and
+OAuth MCP. The repository has merged a configurable 500 MB account quota, but
+staging has not deployed it yet. An older deployment may continue accepting
+uploads under the prior policy until updated.
+
+Cloud artifact folders, explicit unlisted sharing, and direct browser storage
+delivery are [open feature PRs](../../reference/planned-features/).
