@@ -25,6 +25,18 @@ const contentTypes = new Map(
   })
 );
 
+const entityTagPattern = '(?:W/)?"[\\x21\\x23-\\x7e\\x80-\\xff]*"';
+const entityTagList = new RegExp(`^\\s*${entityTagPattern}(?:\\s*,\\s*${entityTagPattern})*\\s*$`);
+const entityTags = new RegExp(entityTagPattern, "g");
+
+function matchesIfNoneMatch(value, etag) {
+  if (!value) return false;
+  if (value.trim() === "*") return true;
+  if (!entityTagList.test(value)) return false;
+  const opaqueTag = etag.replace(/^W\//, "");
+  return [...value.matchAll(entityTags)].some(([tag]) => tag.replace(/^W\//, "") === opaqueTag);
+}
+
 export function validateBasePath(basePath) {
   if (typeof basePath !== "string" || !/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(basePath))
     throw new Error("Invalid documentation build base path");
@@ -108,14 +120,22 @@ export async function createStaticDocsServer({ rootDirectory, basePath = "/" }) 
       );
       const opened = await file.stat();
       if (!opened.isFile()) throw new Error("Not a file");
+      const etag = `W/"${opened.size.toString(16)}-${opened.mtimeMs.toString(16)}-${opened.ctimeMs.toString(16)}"`;
+      const cacheControl = relativePath.startsWith("/_astro/")
+        ? "public, max-age=31536000, immutable"
+        : "no-cache";
+      if (matchesIfNoneMatch(request.headers["if-none-match"], etag)) {
+        response.writeHead(304, { ...commonHeaders, "Cache-Control": cacheControl, ETag: etag });
+        response.end();
+        return;
+      }
       response.writeHead(200, {
         ...commonHeaders,
         "Content-Type":
           contentTypes.get(extname(candidate).toLowerCase()) ?? "application/octet-stream",
         "Content-Length": opened.size,
-        "Cache-Control": relativePath.startsWith("/_astro/")
-          ? "public, max-age=31536000, immutable"
-          : "no-cache",
+        "Cache-Control": cacheControl,
+        ETag: etag,
       });
       if (request.method === "HEAD") response.end();
       else await pipeline(file.createReadStream(), response);
