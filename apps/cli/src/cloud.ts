@@ -161,7 +161,7 @@ const loadCredentials = async (
     assertCurrentUserFile(stats, "the cloud credentials file");
     const invalidCredentials = () => {
       if (options.allowInvalid) return undefined;
-      throw new Error("The saved cloud credentials are invalid. Run `planview login` again.");
+      throw new Error("The saved cloud credentials are invalid. Run `plansplease login` again.");
     };
     let parsed: unknown;
     try {
@@ -237,8 +237,8 @@ const sendText = (response: import("node:http").ServerResponse, status: number, 
 
 const callbackDocument = `<!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="referrer" content="no-referrer">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Return to Planview CLI</title>
-<body><p id="message">Finishing Planview sign-in…</p><script>
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Return to plansplease CLI</title>
+<body><p id="message">Finishing plansplease sign-in…</p><script>
 const message = document.getElementById("message");
 const params = new URLSearchParams(location.hash.slice(1));
 const state = params.get("state");
@@ -373,7 +373,7 @@ export const loginToCloud = async (options: {
   const signInUrl = new URL("/auth/github", cloudUrl);
   signInUrl.searchParams.set("returnTo", `${returnTo.pathname}${returnTo.search}`);
   const timer = setTimeout(
-    () => tokenReject(new Error("Sign-in timed out. Run `planview login` to try again.")),
+    () => tokenReject(new Error("Sign-in timed out. Run `plansplease login` to try again.")),
     LOGIN_TIMEOUT_MS
   );
   timer.unref();
@@ -428,7 +428,7 @@ const readResponseMessage = async (response: Response, signal: AbortSignal) => {
 
 const requireCloudCredentials = async (profile?: string) => {
   const credentials = await loadCredentials(profile);
-  if (!credentials) throw new Error("Not signed in to the cloud. Run `planview login` first.");
+  if (!credentials) throw new Error("Not signed in to the cloud. Run `plansplease login` first.");
   return credentials;
 };
 
@@ -518,7 +518,7 @@ export const uploadCloudDocument = async (
 
     if (response.status === 401) {
       throw new Error(
-        "Your cloud credential was rejected. Run `planview login` and retry the upload."
+        "Your cloud credential was rejected. Run `plansplease login` and retry the upload."
       );
     }
     if (!response.ok) {

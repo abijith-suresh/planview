@@ -1,23 +1,24 @@
 ---
 name: planview
-description: Preview immutable local HTML snapshots and save or retrieve cloud documents through Planview CLI and hosted MCP.
+description: Preview immutable local HTML snapshots and save or retrieve cloud documents through plansplease CLI and hosted MCP.
 metadata:
   author: planview
   version: "0.2"
 ---
 
-# Planview
+# plansplease
 
-Use Planview to give agent-generated HTML a local URL or save a standalone page to
-plansplease. Choose the workflow that matches where the page needs to live.
+Use plansplease to give agent-generated HTML a local URL or save a standalone page to
+plansplease. The command is `plansplease`; the installed skill directory remains
+`planview`. Choose the workflow that matches where the page needs to live.
 
 ## Local preview
 
 Publish a `.html` or `.htm` file, or a folder with a root `index.html` and its assets:
 
 ```sh
-planview publish --open ./report.html
-planview publish --open ./site
+plansplease publish --open ./report.html
+plansplease publish --open ./site
 ```
 
 Omit `--open` when you only need the URL. Local source snapshots have a 10 MiB limit;
@@ -29,12 +30,12 @@ Publish again after editing. Use the exact printed URL; the daemon prefers port 
 and selects another port when needed.
 
 ```sh
-planview get <id-or-exact-local-url> > recovered.html
-planview publish --json ./report.html
+plansplease get <id-or-exact-local-url> > recovered.html
+plansplease publish --json ./report.html
 ```
 
-`get` writes exact stored bytes. For a bundle, it returns the packed snapshot, not
-an extracted folder. The browser serves its `index.html` and asset paths.
+`get` writes exact standalone HTML bytes. It does not follow a folder-root redirect;
+use the browser to view a folder's `index.html` and asset paths.
 
 The daemon starts on demand. `start`, `status`, `stop`, `restart`, and `clean` manage
 it; `status` is read-only. Local snapshots expire after 30 days without access.
@@ -44,18 +45,18 @@ it; `status` is read-only. Local snapshots expire after 30 days without access.
 Sign in once in the browser, then upload one standalone `.html` file up to 8 MiB:
 
 ```sh
-planview login
-planview upload --open ./report.html
-planview upload --json ./report.html
+plansplease login
+plansplease upload --open ./report.html
+plansplease upload --json ./report.html
 ```
 
 `upload` returns the document's workspace preview link. The preview requires the
 owning account to be signed in; it is not an anonymous share link. CLI credentials
 permit uploads only. `get` reads local snapshots, not cloud documents. To list or
-read cloud documents, use hosted MCP or the workspace. `planview logout` revokes the
+read cloud documents, use hosted MCP or the workspace. `plansplease logout` revokes the
 credential and requires a connection.
 
-Use `PLANVIEW_CLOUD_URL` or `planview login --cloud-url <origin>` for a different app.
+Use `PLANVIEW_CLOUD_URL` or `plansplease login --cloud-url <origin>` for a different app.
 The selected cloud URL and credential are saved in the active CLI profile.
 
 ## Hosted MCP

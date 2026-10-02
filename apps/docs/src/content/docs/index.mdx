@@ -1,0 +1,20 @@
+---
+title: Get started
+description: Install the CLI, connect your agent, or explore self-hosting.
+prev: false
+next: false
+editUrl: false
+---
+import SetupChoices from '../../components/SetupChoices.astro';
+import { readPublicUrls } from '../../lib/public-urls.ts';
+export const { docsBasePath, appUrl, siteUrl } = readPublicUrls(import.meta.env);
+
+Choose how you want to use plansplease.
+
+<SetupChoices basePath={docsBasePath} />
+
+<div class="docs-quick-links">
+  <a href={appUrl}>Open plansplease <span aria-hidden="true">↗</span></a>
+  <a href={siteUrl}>About plansplease <span aria-hidden="true">↗</span></a>
+  <a href="https://github.com/abijith-suresh/planview">GitHub <span aria-hidden="true">↗</span></a>
+</div>

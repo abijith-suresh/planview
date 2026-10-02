@@ -6,11 +6,12 @@ import { appSignInUrl } from "../lib/app-url";
 interface Props {
   title: string;
   description: string;
-  activePath?: "features" | "cli" | "about" | "docs" | "pricing" | "faq" | "privacy" | "";
+  activePath?: "features" | "cli" | "about" | "docs" | "pricing" | "faq" | "privacy" | "mcp" | "";
+  canonical?: string;
 }
 
 // biome-ignore lint/correctness/noUnusedVariables: Astro uses these props in the document template below.
-const { title, description, activePath = "" } = Astro.props;
+const { title, description, activePath = "", canonical } = Astro.props;
 const baseUrl = import.meta.env.BASE_URL;
 // biome-ignore lint/correctness/noUnusedVariables: Astro uses this value in the document template below.
 const assetBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
@@ -39,6 +40,7 @@ const navItems = [
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="icon" href={`${assetBase}favicon.svg`} type="image/svg+xml" />
     <title>{title}</title>
+    {canonical && <link rel="canonical" href={canonical} />}
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>

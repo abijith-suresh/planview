@@ -1,0 +1,14 @@
+---
+// biome-ignore lint/correctness/noUnusedImports: Astro renders this component below.
+import Search from "@astrojs/starlight/components/Search.astro";
+import { readPublicUrls } from "../lib/public-urls.ts";
+// biome-ignore lint/correctness/noUnusedVariables: Astro renders this route below.
+const { docsBasePath } = readPublicUrls(import.meta.env);
+---
+<div class="docs-header">
+  <a class="docs-brand" href={docsBasePath} aria-label="plansplease documentation home">
+    <span class="docs-wordmark" translate="no"><span>plans</span><span>please</span></span>
+    <span class="docs-label">Docs</span>
+  </a>
+  <div class="docs-search"><Search /></div>
+</div>

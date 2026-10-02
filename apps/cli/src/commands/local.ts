@@ -34,7 +34,7 @@ const writeHelp = (stdout: StdoutWriter, topic?: HelpTopic) =>
   writeOutput(stdout, formatHelp(topic)).pipe(Effect.as(0));
 
 const formatRunning = (status: Extract<LocalDaemonStatus, { readonly state: "running" }>) =>
-  `Planview daemon is running at http://${status.host}:${status.port}/ (pid ${status.pid}).\n`;
+  `plansplease daemon is running at http://${status.host}:${status.port}/ (pid ${status.pid}).\n`;
 
 const publishFailure = (sourcePath: string, cause: unknown) =>
   new PublishCommandError({
@@ -112,7 +112,7 @@ const runDaemonCommand = Effect.fnUntraced(
     if (command === "status") {
       const result = yield* application.inspect();
       yield* writeCommandResult(stdout, format, result, (status) =>
-        status.state === "running" ? formatRunning(status) : "Planview daemon is not running.\n"
+        status.state === "running" ? formatRunning(status) : "plansplease daemon is not running.\n"
       );
       return 0;
     }
@@ -123,7 +123,7 @@ const runDaemonCommand = Effect.fnUntraced(
         stdout,
         format,
         { state: "stopped" },
-        () => "Planview daemon stopped.\n"
+        () => "plansplease daemon stopped.\n"
       );
       return 0;
     }
@@ -134,7 +134,7 @@ const runDaemonCommand = Effect.fnUntraced(
         stdout,
         format,
         result,
-        (status) => `Planview daemon restarted at http://${status.host}:${status.port}/.\n`
+        (status) => `plansplease daemon restarted at http://${status.host}:${status.port}/.\n`
       );
       return 0;
     }
@@ -150,8 +150,8 @@ const runDaemonCommand = Effect.fnUntraced(
         result.removedReadReferences === 0 &&
         result.removedFinalizationLocks === 0 &&
         result.retainedEntries === 0
-          ? "Planview cleanup found no expired or inconsistent snapshots."
-          : `Planview cleanup removed ${result.removedDocuments} expired snapshot${result.removedDocuments === 1 ? "" : "s"}, reconciled ${result.removedMetadataRows} metadata row${result.removedMetadataRows === 1 ? "" : "s"} and ${result.removedDocumentFiles} document file${result.removedDocumentFiles === 1 ? "" : "s"}, reclaimed ${result.reclaimedBytes} bytes, and removed ${result.removedStagedFiles} staged file${result.removedStagedFiles === 1 ? "" : "s"}, ${result.removedReadReferences} crashed-read marker${result.removedReadReferences === 1 ? "" : "s"}, and ${result.removedFinalizationLocks} finalization lock${result.removedFinalizationLocks === 1 ? "" : "s"}.`;
+          ? "plansplease cleanup found no expired or inconsistent snapshots."
+          : `plansplease cleanup removed ${result.removedDocuments} expired snapshot${result.removedDocuments === 1 ? "" : "s"}, reconciled ${result.removedMetadataRows} metadata row${result.removedMetadataRows === 1 ? "" : "s"} and ${result.removedDocumentFiles} document file${result.removedDocumentFiles === 1 ? "" : "s"}, reclaimed ${result.reclaimedBytes} bytes, and removed ${result.removedStagedFiles} staged file${result.removedStagedFiles === 1 ? "" : "s"}, ${result.removedReadReferences} crashed-read marker${result.removedReadReferences === 1 ? "" : "s"}, and ${result.removedFinalizationLocks} finalization lock${result.removedFinalizationLocks === 1 ? "" : "s"}.`;
       yield* writeCommandResult(stdout, format, cleanupResultForJson(result), (cleanup) => {
         const retained = cleanup.retainedEntries;
         return `${summary}${retained === 0 ? "" : ` ${retained} state${retained === 1 ? "" : "s"} retained for retry.`}\n`;
@@ -166,8 +166,8 @@ const runDaemonCommand = Effect.fnUntraced(
       { ...result.status, reused: result.reused },
       (start) =>
         start.reused
-          ? `Planview daemon is already running at http://${start.host}:${start.port}/.\n`
-          : `Planview daemon started at http://${start.host}:${start.port}/.\n`
+          ? `plansplease daemon is already running at http://${start.host}:${start.port}/.\n`
+          : `plansplease daemon started at http://${start.host}:${start.port}/.\n`
     );
     return 0;
   },
@@ -178,7 +178,7 @@ const runDaemonCommand = Effect.fnUntraced(
           new DaemonCommandError({
             command,
             cause,
-            message: `Could not ${command} the Planview daemon: ${describe(cause)}`,
+            message: `Could not ${command} the plansplease daemon: ${describe(cause)}`,
           })
       )
     )

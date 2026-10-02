@@ -7,9 +7,9 @@
     "node": ">=24.19.0 <25"
   },
   "bin": {
-    "planview": "./dist/index.js"
+    "plansplease": "./dist/index.js"
   },
-  "man": "./man/planview.1",
+  "man": "./man/plansplease.1",
   "publishConfig": {
     "access": "public"
   },
