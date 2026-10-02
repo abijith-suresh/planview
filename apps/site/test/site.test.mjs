@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readSiteOrigin } from "../src/lib/public-site-url.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -16,6 +17,7 @@ const withBuild = ({ outputDirectory, basePath }, check) => {
   // These builds verify the repository default, independent of shell overrides.
   delete environment.PUBLIC_APP_URL;
   delete environment.PUBLIC_DOCS_URL;
+  delete environment.PUBLIC_SITE_URL;
   if (basePath === undefined) {
     delete environment.BASE_PATH;
   } else {
@@ -71,6 +73,16 @@ const assertCloudStorageCopy = (html) => {
 };
 
 const assertStylesheetAndInternalLinks = (html, output, expectedBase) => {
+  const origin = readSiteOrigin();
+  const socialImage = `${origin}${expectedBase}/social-preview.png?v=1`;
+  assert.ok(html.includes(`property="og:image" content="${socialImage}"`));
+  assert.ok(html.includes(`name="twitter:image" content="${socialImage}"`));
+  assert.ok(html.includes(`rel="canonical" href="${origin}${expectedBase}/"`));
+  for (const filename of ["favicon.svg", "favicon.ico", "apple-touch-icon.png"]) {
+    assert.ok(html.includes(`href="${expectedBase}/${filename}?v=1"`));
+    assert.ok(existsSync(resolve(output, filename)));
+  }
+  assert.ok(existsSync(resolve(output, "social-preview.png")));
   const stylesheetHrefs = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(
     ([, href]) => href
   );
@@ -204,4 +216,18 @@ test("an unset BASE_PATH keeps the site at the domain root", () => {
   withBuild({ outputDirectory: "dist-root", basePath: undefined }, (output) =>
     assertHomepage(output, "")
   );
+});
+
+test("site canonical origin supports custom deployments and rejects unsafe metadata URLs", () => {
+  assert.equal(readSiteOrigin("https://product.example.com/"), "https://product.example.com");
+  assert.equal(readSiteOrigin("http://127.0.0.1:4321"), "http://127.0.0.1:4321");
+  for (const value of [
+    "javascript:alert(1)",
+    "http://product.example.com",
+    "https://user:secret@product.example.com",
+    "https://product.example.com/private",
+    "https://product.example.com/?x=1",
+    "https://product.example.com/#x",
+  ])
+    assert.throws(() => readSiteOrigin(value), undefined, value);
 });

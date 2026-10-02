@@ -15,6 +15,13 @@ const { title, description, activePath = "", canonical } = Astro.props;
 const baseUrl = import.meta.env.BASE_URL;
 // biome-ignore lint/correctness/noUnusedVariables: Astro uses this value in the document template below.
 const assetBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+if (!Astro.site) throw new Error("The site origin must be configured before building");
+// biome-ignore lint/correctness/noUnusedVariables: Astro uses metadata below.
+const pageUrl = canonical ?? new URL(Astro.url.pathname, Astro.site).href;
+// biome-ignore lint/correctness/noUnusedVariables: Astro uses metadata below.
+const socialImage = new URL(`${assetBase}social-preview.png?v=1`, Astro.site).href;
+// biome-ignore lint/correctness/noUnusedVariables: Astro uses metadata below.
+const socialImageAlt = "plansplease. Keep the pages your agent makes.";
 const homeHref = baseUrl === "/" ? "/" : baseUrl.replace(/\/$/, "");
 // biome-ignore lint/correctness/noUnusedVariables: Astro uses this helper in the document template below.
 const pageHref = (path: string) => `${homeHref === "/" ? "" : homeHref}/${path}/`;
@@ -38,9 +45,26 @@ const navItems = [
     <meta name="theme-color" content="#0c0c0e" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="icon" href={`${assetBase}favicon.svg`} type="image/svg+xml" />
+    <link rel="icon" href={`${assetBase}favicon.ico?v=1`} sizes="16x16 32x32 48x48" />
+    <link rel="icon" href={`${assetBase}favicon.svg?v=1`} type="image/svg+xml" sizes="any" />
+    <link rel="apple-touch-icon" href={`${assetBase}apple-touch-icon.png?v=1`} sizes="180x180" />
     <title>{title}</title>
-    {canonical && <link rel="canonical" href={canonical} />}
+    <link rel="canonical" href={pageUrl} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="plansplease" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={pageUrl} />
+    <meta property="og:image" content={socialImage} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={socialImageAlt} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={socialImage} />
+    <meta name="twitter:image:alt" content={socialImageAlt} />
   </head>
   <body>
     <a class="skip-link" href="#main-content">Skip to main content</a>
