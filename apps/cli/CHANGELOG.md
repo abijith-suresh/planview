@@ -1,5 +1,17 @@
 # @abijith-suresh/planview
 
+## 0.1.7
+
+### Patch Changes
+
+- ed186cf: Enforce the cloud account storage quota before uploads and retain capacity for pending cleanup.
+- 476480e: Update the bundled Planview skill for folder previews, cloud uploads, hosted MCP, and current access and retention limits.
+- 024e5f6: Render cloud-uploaded HTML directly from storage in a sandboxed browser preview, including older files delivered as attachments.
+- 4703968: Upgrade the CLI and local document runtime to the stable Effect 4.0 release.
+- 485be24: Rename the CLI executable from planview to plansplease. Update scripts to invoke plansplease; the previous command is no longer installed. Help, version output, the manual and agent examples use the plansplease name. Existing profiles, documents, credentials, daemon state and installed skills retain their locations, and the npm package and PLANVIEW\_\* settings keep their names.
+- 9ee4d81: Use the plansplease staging hostname for cloud login and migrate saved credentials from the previous staging hostname when uploading, replacing, or revoking them. Custom cloud origins remain unchanged.
+- b28590c: Keep the CLI signed in with an upload-only cloud credential and revoke it on logout.
+
 ## 0.1.6
 
 ### Patch Changes
