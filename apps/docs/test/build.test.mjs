@@ -108,6 +108,18 @@ test("production root and prefixed builds contain complete navigation, search, a
       assert.ok(guide.includes("not published to npm"));
       assert.ok(guide.includes("pack-destination"));
       assert.ok(guide.includes("https://workspace.example.com"));
+      const cliPackage = JSON.parse(readFileSync(resolve(root, "../cli/package.json"), "utf8"));
+      const installSource = readFileSync(
+        resolve(root, "src/content/docs/guides/install-cli.mdx"),
+        "utf8"
+      );
+      assert.ok(
+        installSource.includes(`npm pack --workspace ${cliPackage.name} --pack-destination .`),
+        "installation packs the existing CLI workspace"
+      );
+      const [command] = Object.keys(cliPackage.bin);
+      assert.ok(command, "CLI exposes a command");
+      assert.ok(installSource.includes(`${command} --version`), "installation uses the actual bin");
       const home = readFileSync(join(output, "index.html"), "utf8");
       assert.ok(home.includes("https://product.example.com"));
       for (const route of ["install-cli", "mcp", "self-hosting"])

@@ -21,7 +21,7 @@ The CLI is not published to npm yet. Build an installable tarball from the repos
 git clone https://github.com/abijith-suresh/planview.git
 cd planview
 npm ci
-npm pack --workspace @abijith-suresh/plansplease --pack-destination .
+npm pack --workspace @abijith-suresh/planview --pack-destination .
 ```
 
 Replace `FILE.tgz` below with the filename printed by `npm pack`:
@@ -50,7 +50,7 @@ Local links work on this computer. Publish again after editing to create a new s
 
 ## Upload to your account
 
-<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}\nplanview upload --open ./page.html`} lang="sh" />
+<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}\nplansplease upload --open ./page.html`} lang="sh" />
 
 Sign in with GitHub and approve the upload access when your browser opens.
 Cloud uploads currently accept one HTML file up to **8 MiB**. Stored file URLs

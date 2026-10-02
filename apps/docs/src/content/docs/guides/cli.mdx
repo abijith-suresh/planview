@@ -43,7 +43,7 @@ artifact folder and its assets.
 ```sh
 plansplease status --json
 plansplease start
-planview stop
+plansplease stop
 plansplease restart
 plansplease clean
 plansplease --profile work publish ./report.html
@@ -56,7 +56,7 @@ local documents, daemon state, and saved cloud credentials.
 
 ## Cloud upload
 
-<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}\nplanview upload --open ./report.html\nplanview upload --json ./report.html\nplanview logout`} lang="sh" />
+<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}\nplansplease upload --open ./report.html\nplansplease upload --json ./report.html\nplansplease logout`} lang="sh" />
 
 Login opens browser sign-in and authorizes this computer for uploads. The saved
 credential is upload-only. It cannot list, read, or delete cloud documents.
