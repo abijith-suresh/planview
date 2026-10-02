@@ -1,7 +1,10 @@
-# Planview
+# plansplease
 
-Planview is a TypeScript ESM monorepo for previewing HTML locally and saving standalone pages in a
-account-based alpha cloud workspace. Cloud file URLs are public during testing.
+plansplease is a TypeScript ESM monorepo for previewing HTML locally and saving standalone pages in an
+account-based alpha cloud workspace. Cloud file URLs are public during testing. The CLI command is `plansplease`;
+existing `planview` scripts need updating. Profiles, documents, credentials and daemon
+state retain their locations. Package names,
+local data paths, `PLANVIEW_*` settings and installed skill directories remain compatible.
 
 ## Bootstrap status
 
@@ -128,7 +131,7 @@ policy requirements.
 
 ## Planned structure
 
-- `apps/cli` — public npm package (`@abijith-suresh/planview`), with the `planview` command
+- `apps/cli` — public npm package (`@abijith-suresh/planview`), with the `plansplease` command
 - `apps/site` — private static project site
 - `packages/core` — private path, v1 policy, document identifier, and source-file validation primitives
 - `packages/daemon` — private detached lifecycle daemon and authenticated management boundary
@@ -138,4 +141,4 @@ policy requirements.
 
 SQLite-backed publication and CLI retrieval are implemented. The daemon performs
 startup reconciliation and authenticated 30-day last-access cleanup at startup and
-every 24 hours; `planview clean` invokes the same policy.
+every 24 hours; `plansplease clean` invokes the same policy.

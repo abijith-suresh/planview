@@ -1,16 +1,20 @@
-.TH PLANVIEW 1 "September 2026" "Planview" "User Commands"
+.TH PLANSPLEASE 1 "October 2026" "plansplease" "User Commands"
 .SH NAME
-planview \- publish and upload immutable HTML snapshots
+plansplease \- publish and upload immutable HTML snapshots
 .SH SYNOPSIS
-.B planview
+.B plansplease
 .RI [ global-options ]
 .I command
 [\fIoptions\fR]
 .br
-.B planview help
+.B plansplease help
 [\fIcommand\fR]
 .SH DESCRIPTION
-.B planview
+.B plansplease
+uses the existing local profiles, documents, credentials, and daemon.
+The npm package, local data paths, and PLANVIEW environment settings retain their existing names.
+.PP
+.B plansplease
 publishes an HTML file or page folder to a local daemon and returns a stable
 localhost URL. It can also upload a standalone HTML file to the cloud workspace.
 A page folder must contain
@@ -58,7 +62,7 @@ The preview requires an authenticated browser session.
 .TP
 .B get id|url
 Write a stored snapshot's exact bytes to standard output. The reference must be
-a document id or an exact local Planview URL.
+a document id or an exact local preview URL.
 .TP
 .B start [options]
 Start the local daemon, or reuse the authenticated daemon already running.
@@ -90,11 +94,11 @@ Show help for the whole CLI or for one command.
 .TP
 .B \-h, \-\-help
 Show the relevant help text. Use
-.B planview help command
+.B plansplease help command
 to request help explicitly.
 .TP
 .B \-v, \-\-version
-Show the Planview CLI version.
+Show the plansplease CLI version.
 .TP
 .B \-\-profile name
 Use the named profile for this invocation. Names start with a lowercase letter
@@ -178,15 +182,15 @@ The command completed successfully.
 The command could not complete, or its arguments were invalid.
 .SH EXAMPLES
 .EX
-planview publish ./report.html
-planview publish --open ./site
-planview login
-planview upload ./report.html
-planview logout
-planview get http://localhost:4777/<id> > report.html
-planview status --json
-planview publish --json ./report.html
-planview help publish
+plansplease publish ./report.html
+plansplease publish --open ./site
+plansplease login
+plansplease upload ./report.html
+plansplease logout
+plansplease get http://localhost:4777/<id> > report.html
+plansplease status --json
+plansplease publish --json ./report.html
+plansplease help publish
 .EE
 .SH SEE ALSO
 .BR npm (1),

@@ -28,19 +28,19 @@ import { appSignInUrl } from "../lib/app-url";
       <div class="install-info">
         <h2 id="install-title">Install once. Preview as needed.</h2>
         <p>
-          The CLI accepts a single standalone HTML file or a complete directory bundle with an
-          <code>index.html</code> entry point.
+          Build the CLI from the <a href="https://github.com/abijith-suresh/planview/blob/main/apps/cli/README.md">repository instructions</a>,
+          then replace <code>FILE.tgz</code> with the generated tarball name. npm publication is disabled.
         </p>
       </div>
 
       <div class="install-code-box">
         <div class="code-line">
-          <span class="code-comment"># Install globally via npm</span>
-          <code>npm install --global @abijith-suresh/planview</code>
+          <span class="code-comment"># Install the repository-built tarball</span>
+          <code>npm install --global --ignore-scripts ./FILE.tgz</code>
         </div>
         <div class="code-line">
           <span class="code-comment"># Publish an artifact and open immediately</span>
-          <code>planview publish --open ./report.html</code>
+          <code>plansplease publish --open ./report.html</code>
         </div>
       </div>
     </div>
@@ -61,7 +61,7 @@ import { appSignInUrl } from "../lib/app-url";
           <code>--open</code> to launch it instantly in your system's default browser.
         </p>
         <div class="command-example">
-          <code>planview publish --open ./artifact.html</code>
+          <code>plansplease publish --open ./artifact.html</code>
         </div>
       </article>
 
@@ -75,7 +75,7 @@ import { appSignInUrl } from "../lib/app-url";
           contents or verify its state.
         </p>
         <div class="command-example">
-          <code>planview get &lt;document-id&gt;</code>
+          <code>plansplease get &lt;document-id&gt;</code>
         </div>
       </article>
 
@@ -89,7 +89,7 @@ import { appSignInUrl } from "../lib/app-url";
           automated agent pipelines or CI environments.
         </p>
         <div class="command-example">
-          <code>planview start &amp;&amp; planview stop</code>
+          <code>plansplease start &amp;&amp; plansplease stop</code>
         </div>
       </article>
 
@@ -103,14 +103,14 @@ import { appSignInUrl } from "../lib/app-url";
           footprint without launching a new process.
         </p>
         <div class="command-example">
-          <code>planview status</code>
+          <code>plansplease status</code>
         </div>
       </article>
     </div>
 
     <p class="page-note">
-      The current CLI is published on npm as <code>@abijith-suresh/planview</code>. Complete source
-      code is available on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
+      The command is <code>plansplease</code>; the package keeps the name
+      <code>@abijith-suresh/planview</code>. Complete source code is available on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
     </p>
   </section>
 </SiteLayout>

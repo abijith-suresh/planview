@@ -237,9 +237,9 @@ test("repository foundation has the expected configuration", () => {
     "0.1.0",
     "CLI local application dependency"
   );
-  expectProperty(cliPackageJson.bin, "planview", "./dist/index.js", "CLI bin mapping");
+  expectProperty(cliPackageJson.bin, "plansplease", "./dist/index.js", "primary CLI bin mapping");
   expectEqual(cliPackageJson.files, ["dist", "skills", "man", "README.md"], "CLI publish files");
-  expectEqual(cliPackageJson.man, "./man/planview.1", "CLI man page");
+  expectEqual(cliPackageJson.man, "./man/plansplease.1", "CLI man page");
   expectProperty(
     cliPackageJson.scripts,
     "build",

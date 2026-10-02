@@ -65,7 +65,7 @@ if (packageJson.name !== "@abijith-suresh/planview" || !SEMVER_PATTERN.test(pack
 
 export const VERSION = packageVersion;
 
-export const formatVersion = () => `planview ${VERSION}\n`;
+export const formatVersion = () => `plansplease ${VERSION}\n`;
 
 const daemonScriptPath = () => fileURLToPath(new URL("./daemon.js", import.meta.url));
 
@@ -126,7 +126,7 @@ const runSkillsInstallCommand = (force: boolean, stdout: StdoutWriter) =>
     catch: (cause) =>
       new SkillsCommandError({
         cause,
-        message: `Could not install Planview skills: ${describe(cause)}`,
+        message: `Could not install plansplease skills: ${describe(cause)}`,
       }),
   });
 

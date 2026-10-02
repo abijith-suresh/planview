@@ -154,11 +154,11 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("Give it somewhere useful to live."));
   assert.ok(html.includes("Continue with GitHub"));
   assert.ok(html.includes('class="demo"'));
-  assert.ok(html.includes("planview publish ./auth-migration-spec.html"));
+  assert.ok(html.includes("plansplease publish ./auth-migration-spec.html"));
   assert.ok(html.includes("plansplease.app/p/auth-migration-spec"));
   assert.ok(html.includes("http://localhost:4777/auth-migration-spec"));
   assert.ok(html.includes("Two commands, two homes"));
-  assert.ok(html.includes("planview upload ./auth-migration-spec.html"));
+  assert.ok(html.includes("plansplease upload ./auth-migration-spec.html"));
   assert.ok(html.includes("Keep it working"));
   assert.ok(html.includes('href="https://plansplease-app-staging.up.railway.app/"'));
   assert.ok(html.includes('class="mobile-menu"'));

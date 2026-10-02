@@ -224,7 +224,7 @@ const createStore = (database: DatabaseSync): MetadataStore => {
           currentBytes: current.bytes,
           requestedBytes,
           quotaBytes: V1_STORAGE_QUOTA_BYTES,
-          message: `Planview storage quota exceeded: this publication needs ${formatBytes(requestedBytes)} but only ${formatBytes(Math.max(0, V1_STORAGE_QUOTA_BYTES - current.bytes))} remains of the fixed ${formatBytes(V1_STORAGE_QUOTA_BYTES)} limit. Run planview clean to remove expired snapshots, then try again.`,
+          message: `plansplease storage quota exceeded: this publication needs ${formatBytes(requestedBytes)} but only ${formatBytes(Math.max(0, V1_STORAGE_QUOTA_BYTES - current.bytes))} remains of the fixed ${formatBytes(V1_STORAGE_QUOTA_BYTES)} limit. Run plansplease clean to remove expired snapshots, then try again.`,
         });
       }
 

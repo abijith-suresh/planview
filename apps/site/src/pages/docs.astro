@@ -26,11 +26,11 @@ import SiteLayout from "../layouts/SiteLayout.astro";
       <article class="doc-card">
         <h3>1. Install the CLI</h3>
         <p>
-          Install the command globally via npm. It gives any standalone HTML file or directory an
-          instant local loopback URL.
+          Build a tarball using the <a href="https://github.com/abijith-suresh/planview/blob/main/apps/cli/README.md">repository instructions</a>.
+          Replace <code>FILE.tgz</code> with its filename, then install the <code>plansplease</code> command.
         </p>
         <div class="code-pill">
-          <code>npm install --global @abijith-suresh/planview</code>
+          <code>npm install --global --ignore-scripts ./FILE.tgz</code>
         </div>
       </article>
 
@@ -41,7 +41,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
           and automatically opens your browser.
         </p>
         <div class="code-pill">
-          <code>planview publish --open ./page.html</code>
+          <code>plansplease publish --open ./page.html</code>
         </div>
       </article>
 

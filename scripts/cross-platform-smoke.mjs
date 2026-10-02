@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { Effect } from "effect";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -12,8 +13,10 @@ const shell = process.platform === "win32";
 
 const text = (value) => (value === null ? "" : value.toString("utf8"));
 
+// These arguments contain only fixed smoke commands and generated fixture paths.
+const shellArgument = (value) => (shell ? `"${value}"` : value);
 const run = (command, args, options = {}) => {
-  const result = spawnSync(command, args, {
+  const result = spawnSync(shellArgument(command), args.map(shellArgument), {
     cwd: root,
     encoding: null,
     shell,
@@ -74,10 +77,10 @@ const pack = (destination) => {
 const findInstalledCli = (prefix) => {
   const candidates =
     process.platform === "win32"
-      ? [join(prefix, "planview.cmd"), join(prefix, "node_modules", ".bin", "planview.cmd")]
-      : [join(prefix, "bin", "planview"), join(prefix, "node_modules", ".bin", "planview")];
+      ? [join(prefix, "plansplease.cmd"), join(prefix, "node_modules", ".bin", "plansplease.cmd")]
+      : [join(prefix, "bin", "plansplease"), join(prefix, "node_modules", ".bin", "plansplease")];
   const cli = candidates.find((candidate) => existsSync(candidate));
-  assert.ok(cli, `npm did not install a planview executable. Tried: ${candidates.join(", ")}`);
+  assert.ok(cli, `npm did not install a plansplease executable. Tried: ${candidates.join(", ")}`);
   return cli;
 };
 
@@ -99,11 +102,17 @@ const runSmoke = async () => {
 
   const workspace = mkdtempSync(join(tmpdir(), "planview-cross-platform-"));
   const packageDestination = join(workspace, "package");
-  const installPrefix = join(workspace, "install");
+  const installPrefix = join(workspace, "installed CLI");
   mkdirSync(packageDestination);
   const home = join(workspace, "home");
-  const appData = join(workspace, "app-data");
-  const runtime = join(appData, "runtime");
+  // Keep using the legacy default root, including for a pre-existing named profile.
+  const dataRoot =
+    process.platform === "win32"
+      ? join(home, "AppData", "Local", "Planview")
+      : process.platform === "darwin"
+        ? join(home, "Library", "Application Support", "Planview")
+        : join(home, ".local", "share", "planview");
+  const appData = join(dataRoot, "profiles", "branding");
   const source = join(workspace, "fixture.html");
   const port = await freePort();
   const environment = {
@@ -111,18 +120,34 @@ const runSmoke = async () => {
     HOME: home,
     USERPROFILE: home,
     NODE_ENV: "test",
-    PLANVIEW_APP_DATA_DIR: appData,
-    PLANVIEW_RUNTIME_DIR: runtime,
+    XDG_DATA_HOME: join(home, ".local", "share"),
+    LOCALAPPDATA: join(home, "AppData", "Local"),
     PLANVIEW_TEST_DAEMON_PORT: String(port),
   };
 
+  // Do not let inherited overrides redirect the compatibility fixture elsewhere.
+  delete environment.PLANVIEW_APP_DATA_DIR;
+  delete environment.PLANVIEW_DATA_DIR;
+  delete environment.PLANVIEW_RUNTIME_DIR;
   let execute;
   try {
     const tarball = pack(packageDestination);
     run(npm, ["install", "--global", "--prefix", installPrefix, "--ignore-scripts", tarball]);
+    const installedRoot =
+      process.platform === "win32"
+        ? join(installPrefix, "node_modules", "@abijith-suresh", "planview")
+        : join(installPrefix, "lib", "node_modules", "@abijith-suresh", "planview");
+    const manifest = JSON.parse(readFileSync(join(installedRoot, "package.json"), "utf8"));
+    assert.deepEqual(manifest.bin, { plansplease: "./dist/index.js" });
+    assert.equal(
+      existsSync(
+        join(installPrefix, process.platform === "win32" ? "planview.cmd" : "bin/planview")
+      ),
+      false
+    );
     const cli = findInstalledCli(installPrefix);
     execute = (args, options = {}) =>
-      spawnSync(cli, args, {
+      spawnSync(shellArgument(cli), ["--profile", "branding", ...args].map(shellArgument), {
         cwd: root,
         env: environment,
         encoding: null,
@@ -132,7 +157,7 @@ const runSmoke = async () => {
 
     const version = execute(["--version"]);
     assertSuccessful(version, "packed CLI --version");
-    assert.match(text(version.stdout), /^planview \d+\.\d+\.\d+\n$/);
+    assert.match(text(version.stdout), /^plansplease \d+\.\d+\.\d+\n$/);
 
     const before = execute(["status"]);
     assertSuccessful(before, "initial packed CLI status");
@@ -140,15 +165,44 @@ const runSmoke = async () => {
 
     const original = "<!doctype html><html><body>cross-platform smoke</body></html>\n";
     writeFileSync(source, original);
+    // Seed existing profile state through the unchanged local API before the new command uses it.
+    const { createLocalApplication } = await import(
+      pathToFileURL(join(root, "packages/local/dist/index.js")).href
+    );
+    const { resolveDaemonConfigForTest } = await import(
+      pathToFileURL(join(root, "packages/daemon/dist/index.js")).href
+    );
+    const existingProfile = createLocalApplication({
+      config: resolveDaemonConfigForTest({ appDataDir: appData, profile: "branding", port }),
+      daemonScriptPath: join(installedRoot, "dist", "daemon.js"),
+    });
+    const existing = await Effect.runPromise(existingProfile.publish(source));
+    const existingStatus = await Effect.runPromise(existingProfile.inspect());
+    assert.equal(existingStatus.state, "running");
+    const existingRead = execute(["get", existing.id]);
+    assertSuccessful(existingRead, "packed CLI reads existing profile document");
+    assert.deepEqual(existingRead.stdout, Buffer.from(original));
     const published = execute(["publish", source]);
     assertSuccessful(published, "packed CLI publish");
     const url = text(published.stdout).trim();
     assert.match(url, new RegExp(`^http://localhost:${port}/[A-Za-z0-9_-]{21}$`));
     const id = url.slice(url.lastIndexOf("/") + 1);
 
-    const running = execute(["status"]);
+    assert.ok(
+      existsSync(join(appData, "metadata.sqlite")),
+      "CLI uses the existing Planview profile path"
+    );
+    const running = execute(["status", "--json"]);
     assertSuccessful(running, "running packed CLI status");
-    assert.match(text(running.stdout), /is running/);
+    const status = JSON.parse(text(running.stdout));
+    assert.equal(status.state, "running");
+    assert.equal(status.profile, "branding");
+    assert.equal(status.pid, existingStatus.pid, "CLI reuses the existing profile daemon");
+    const reused = execute(["start", "--json"]);
+    assertSuccessful(reused, "packed CLI reuses existing profile daemon");
+    const reusedStatus = JSON.parse(text(reused.stdout));
+    assert.equal(reusedStatus.pid, status.pid);
+    assert.equal(reusedStatus.reused, true);
 
     const retrieved = execute(["get", id]);
     assertSuccessful(retrieved, "packed CLI get");
