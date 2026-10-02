@@ -91,7 +91,8 @@ export async function createStaticDocsServer({ rootDirectory, basePath = "/" }) 
       if (!withinRoot(candidate)) throw new Error("Outside build");
       if (!withinRoot(await realpath(candidate))) throw new Error("Outside build");
       const details = await lstat(candidate);
-      if (details.isSymbolicLink()) throw new Error("Symlink");
+      if (details.isSymbolicLink() || (!details.isDirectory() && !details.isFile()))
+        throw new Error("Not a regular build entry");
       if (details.isDirectory()) {
         if (!pathname.endsWith("/")) {
           send(308, "", { Location: `${encodeURI(pathname)}/${query}` });
@@ -101,7 +102,10 @@ export async function createStaticDocsServer({ rootDirectory, basePath = "/" }) 
       }
       const resolved = await realpath(candidate);
       if (!withinRoot(resolved)) throw new Error("Outside build");
-      file = await open(candidate, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      file = await open(
+        candidate,
+        constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+      );
       const opened = await file.stat();
       if (!opened.isFile()) throw new Error("Not a file");
       response.writeHead(200, {
