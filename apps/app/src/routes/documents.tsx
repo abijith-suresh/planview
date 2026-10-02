@@ -1,28 +1,73 @@
 import { Meta, Title } from "@solidjs/meta";
-import { For, Show, createEffect, createSignal } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 
 import AppShell from "~/components/AppShell";
+import DocumentActions from "~/components/DocumentActions";
+import { docsUrl } from "~/lib/docs-url";
 import Icon from "~/components/Icon";
 import {
   formatBytes,
-  formatDocumentDate,
+  formatRelativeDate,
   type DocumentRecord,
   getErrorMessage,
 } from "~/lib/documents";
+import {
+  documentsStore,
+  ensureDocumentsSubscription,
+  loadMoreDocuments,
+} from "~/lib/documents-live";
 import { useWorkspaceAuth } from "~/lib/workspace-auth";
 
 export default function Documents() {
-  const { session, redirectToSignIn, signOut, userInitial, userName } = useWorkspaceAuth();
-  const [documents, setDocuments] = createSignal<DocumentRecord[]>([]);
-  const [isLoading, setIsLoading] = createSignal(true);
-  const [isUploading, setIsUploading] = createSignal(false);
-  const [uploadError, setUploadError] = createSignal("");
-  const [documentError, setDocumentError] = createSignal("");
-  const [selectedFile, setSelectedFile] = createSignal<File>();
+  const { session, redirectToSignIn, userName } = useWorkspaceAuth();
+  const documents = () => documentsStore.documents;
+  const status = () => documentsStore.status;
   const [deletingId, setDeletingId] = createSignal("");
+  const [pendingDeleteId, setPendingDeleteId] = createSignal("");
+  const [deleteError, setDeleteError] = createSignal("");
   const [actionMessage, setActionMessage] = createSignal("");
-  let fileInput: HTMLInputElement | undefined;
+  const [query, setQuery] = createSignal("");
   let feedbackTimer: ReturnType<typeof setTimeout> | undefined;
+  let disposed = false;
+
+  createEffect(() => {
+    const currentSession = session();
+
+    if (!currentSession.isPending && currentSession.data) ensureDocumentsSubscription();
+  });
+
+  const isReady = () => status() === "ready";
+
+  const normalizedQuery = () => query().trim().toLowerCase();
+  const filteredDocuments = createMemo(() => {
+    const needle = normalizedQuery();
+    if (!needle) return documents();
+    return documents().filter((document) => document.title.toLowerCase().includes(needle));
+  });
+
+  onCleanup(() => {
+    disposed = true;
+    if (feedbackTimer) clearTimeout(feedbackTimer);
+  });
+
+  const pageCountLabel = (count: number) =>
+    documentsStore.hasMore
+      ? `${count} documents loaded`
+      : `${count} ${count === 1 ? "document" : "documents"}`;
+
+  const pageLede = () => {
+    if (status() === "error") return "";
+    if (!isReady()) return "Checking workspace…";
+    return pageCountLabel(documents().length);
+  };
+
+  const isFiltering = () => normalizedQuery().length > 0;
+  const listCount = () => {
+    if (isFiltering()) return `${filteredDocuments().length} of ${documents().length}`;
+    return !isReady() && documents().length === 0
+      ? "…"
+      : `${documents().length}${documentsStore.hasMore ? "+" : ""}`;
+  };
 
   const showActionMessage = (message: string) => {
     setActionMessage(message);
@@ -30,83 +75,10 @@ export default function Documents() {
     feedbackTimer = setTimeout(() => setActionMessage(""), 2600);
   };
 
-  const loadDocuments = async () => {
-    setIsLoading(true);
-    setDocumentError("");
-
-    try {
-      const response = await fetch("/api/documents", {
-        headers: { Accept: "application/json" },
-      });
-
-      if (response.status === 401) {
-        redirectToSignIn();
-        return;
-      }
-
-      if (!response.ok) throw new Error(await getErrorMessage(response));
-
-      setDocuments((await response.json()) as DocumentRecord[]);
-    } catch (error) {
-      setDocumentError(error instanceof Error ? error.message : "Documents could not be loaded.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  createEffect(() => {
-    const currentSession = session();
-
-    if (!currentSession.isPending && currentSession.data) void loadDocuments();
-  });
-
-  const handleFileChange = (event: Event) => {
-    const input = event.currentTarget as HTMLInputElement;
-    setSelectedFile(input.files?.[0]);
-    setUploadError("");
-  };
-
-  const uploadDocument = async (event: SubmitEvent) => {
-    event.preventDefault();
-    setUploadError("");
-
-    const file = selectedFile() ?? fileInput?.files?.[0];
-
-    if (!file) {
-      setUploadError("Choose one .html file first.");
-      return;
-    }
-
-    if (!file.name.toLowerCase().endsWith(".html")) {
-      setUploadError("The first pass accepts standalone .html files only.");
-      return;
-    }
-
-    setIsUploading(true);
-
-    try {
-      const title = file.name.replace(/\.html$/i, "").trim() || "Untitled HTML";
-      const formData = new FormData();
-      formData.set("title", title);
-      formData.set("file", file);
-      const documentResponse = await fetch("/api/documents/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!documentResponse.ok) throw new Error(await getErrorMessage(documentResponse));
-
-      if (fileInput) fileInput.value = "";
-      setSelectedFile(undefined);
-      showActionMessage(`${title} uploaded.`);
-      await loadDocuments();
-    } catch (error) {
-      setUploadError(
-        error instanceof Error ? error.message : "The HTML file could not be uploaded."
-      );
-    } finally {
-      setIsUploading(false);
-    }
+  const cancelDelete = (id: string) => {
+    if (deletingId()) return;
+    setPendingDeleteId("");
+    queueMicrotask(() => window.document.getElementById(`document-actions-${id}`)?.focus());
   };
 
   const documentHref = (id: string) => `/api/documents/${encodeURIComponent(id)}`;
@@ -128,9 +100,10 @@ export default function Documents() {
   };
 
   const removeDocument = async (document: DocumentRecord) => {
-    if (typeof window !== "undefined" && !window.confirm(`Delete “${document.title}”?`)) return;
-
-    setDocumentError("");
+    const focusedControl = window.document.activeElement;
+    const focusedRow = focusedControl?.closest(".document-row");
+    let deleted = false;
+    setDeleteError("");
     setDeletingId(document._id);
 
     try {
@@ -143,14 +116,27 @@ export default function Documents() {
 
       if (!response.ok) throw new Error(await getErrorMessage(response));
 
+      deleted = true;
       showActionMessage(`${document.title} deleted.`);
-      await loadDocuments();
     } catch (error) {
-      setDocumentError(
-        error instanceof Error ? error.message : "The document could not be deleted."
-      );
+      setDeleteError(error instanceof Error ? error.message : "The document could not be deleted.");
     } finally {
       setDeletingId("");
+      setPendingDeleteId("");
+      queueMicrotask(() => {
+        if (disposed || !focusedRow) return;
+        const currentFocus = window.document.activeElement;
+        // A removed confirmation control falls back to the body. Preserve any
+        // other control the user focused while the deletion request was pending.
+        if (
+          !focusedRow.contains(currentFocus) &&
+          !(currentFocus === window.document.body && !focusedControl?.isConnected)
+        )
+          return;
+        window.document
+          .getElementById(deleted ? "main-content" : `document-actions-${document._id}`)
+          ?.focus();
+      });
     }
   };
 
@@ -159,140 +145,201 @@ export default function Documents() {
       when={!session().isPending && session().data}
       fallback={
         <main class="auth-loading" aria-live="polite">
-          {session().error ? (
-            <p role="alert">Could not check your session. Refresh this page to try again.</p>
-          ) : (
-            <>
-              <span class="status-dot" aria-hidden="true" />
-              Opening your workspace…
-            </>
-          )}
+          <Show
+            when={!session().error}
+            fallback={<p role="alert">Could not check your session. Refresh to try again.</p>}
+          >
+            <span class="signal-dot" aria-hidden="true" />
+            Opening your workspace…
+          </Show>
         </main>
       }
     >
       <Title>Documents | plansplease</Title>
-      <Meta name="description" content="Manage the HTML pages in your plansplease workspace." />
-      <AppShell
-        active="documents"
-        onSignOut={signOut}
-        userInitial={userInitial}
-        userName={userName}
-      >
+      <Meta
+        name="description"
+        content="Open, copy a link, or delete the HTML pages saved in your plansplease workspace."
+      />
+      <AppShell active="documents" userName={userName}>
         <div class="page-content">
-          <header class="page-header documents-header">
+          <header class="page-header">
             <div>
               <h1>Documents</h1>
-              <p>{documents().length} HTML pages in this workspace.</p>
+              <p class="page-lede">{pageLede()}</p>
             </div>
-            <form class="upload-form" onSubmit={uploadDocument}>
-              <label class="button button-secondary" for="html-file">
-                <Icon name="plus" />
-                <span>Choose HTML</span>
-              </label>
-              <input
-                ref={(element) => {
-                  fileInput = element;
-                }}
-                id="html-file"
-                class="file-input"
-                name="html-file"
-                type="file"
-                accept=".html,text/html"
-                aria-label="Choose an HTML file"
-                onChange={handleFileChange}
-              />
-              <Show when={selectedFile()}>
-                <span class="selected-file" title={selectedFile()?.name}>
-                  {selectedFile()?.name}
-                </span>
-              </Show>
-              <button class="button button-primary" type="submit" disabled={isUploading()}>
-                {isUploading() ? "Uploading…" : "Upload"}
-              </button>
-            </form>
+            <input
+              class="search-input"
+              type="search"
+              placeholder="Filter by title…"
+              aria-label={
+                documentsStore.hasMore
+                  ? "Filter loaded documents by title"
+                  : "Filter documents by title"
+              }
+              name="title"
+              autocomplete="off"
+              spellcheck={false}
+              value={query()}
+              onInput={(event) => setQuery(event.currentTarget.value)}
+            />
           </header>
-
-          <Show when={uploadError()}>
-            <p class="error-message" role="alert">
-              {uploadError()}
-            </p>
-          </Show>
-          <Show when={documentError()}>
-            <p class="error-message" role="alert">
-              {documentError()} Try refreshing the page.
-            </p>
-          </Show>
 
           <section class="documents-list" aria-labelledby="documents-list-title">
             <div class="list-header">
               <h2 id="documents-list-title">All documents</h2>
-              <span>{documents().length}</span>
+              <span class="list-count">{listCount()}</span>
             </div>
             <Show
-              when={!isLoading() && documents().length > 0}
+              when={status() !== "error" || documents().length > 0}
               fallback={
-                <div class="empty-state">
-                  <Icon name="file" size={20} />
-                  <h3>{isLoading() ? "Loading documents…" : "No documents yet"}</h3>
-                  <p>Choose an HTML file above to add the first page.</p>
-                </div>
+                <p class="error-message" role="alert">
+                  {documentsStore.error}
+                </p>
               }
             >
-              <For each={documents()}>
-                {(document) => (
-                  <article class="document-row">
-                    <span class="document-file-icon" aria-hidden="true">
-                      <Icon name="file" size={17} />
-                    </span>
-                    <div class="document-details">
-                      <strong title={document.title}>{document.title}</strong>
-                      <small>
-                        {formatBytes(document.sizeBytes)} · {formatDocumentDate(document.createdAt)}
-                      </small>
+              <Show
+                when={documents().length > 0}
+                fallback={
+                  <div class="empty-state">
+                    <Show when={isReady()} fallback={<p>Loading documents…</p>}>
+                      <span class="empty-icon" aria-hidden="true">
+                        <Icon name="file" size={24} />
+                      </span>
+                      <h2>No documents yet</h2>
+                      <p>Connect your agent to save your first HTML page.</p>
+                      <div class="empty-actions">
+                        <a class="button-primary" href={docsUrl("getting-started/")}>
+                          Connect your agent
+                        </a>
+                      </div>
+                    </Show>
+                  </div>
+                }
+              >
+                <Show
+                  when={filteredDocuments().length > 0}
+                  fallback={
+                    <div class="empty-state">
+                      <p>
+                        No pages match "{normalizedQuery()}". Try a different word or clear the
+                        filter.
+                      </p>
                     </div>
-                    <div class="document-actions">
-                      <a
-                        class="icon-button"
-                        href={documentHref(document._id)}
-                        target="_blank"
-                        rel="noreferrer"
-                        aria-label={`Open ${document.title}`}
-                        title="Open"
+                  }
+                >
+                  <For each={filteredDocuments()}>
+                    {(document) => (
+                      <article
+                        class="document-row"
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape" && pendingDeleteId() === document._id)
+                            cancelDelete(document._id);
+                        }}
                       >
-                        <Icon name="external" />
-                      </a>
-                      <button
-                        class="icon-button"
-                        type="button"
-                        aria-label={`Copy link for ${document.title}`}
-                        title="Copy link"
-                        onClick={() => void copyDocumentLink(document)}
-                      >
-                        <Icon name="copy" />
-                      </button>
-                      <button
-                        class="icon-button icon-button-danger"
-                        type="button"
-                        aria-label={`Delete ${document.title}`}
-                        title="Delete"
-                        disabled={deletingId() === document._id}
-                        onClick={() => void removeDocument(document)}
-                      >
-                        <Icon name="trash" />
-                      </button>
-                    </div>
-                  </article>
-                )}
-              </For>
+                        <div class="document-details">
+                          <a
+                            class="document-title"
+                            href={documentHref(document._id)}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={document.title}
+                          >
+                            {document.title}
+                          </a>
+                          <small>
+                            {formatRelativeDate(document.createdAt)} ·{" "}
+                            {formatBytes(document.sizeBytes)}
+                          </small>
+                        </div>
+                        <div class="document-actions">
+                          <Show
+                            when={pendingDeleteId() === document._id}
+                            fallback={
+                              <DocumentActions
+                                id={document._id}
+                                title={document.title}
+                                onCopy={() => void copyDocumentLink(document)}
+                                onDelete={() => setPendingDeleteId(document._id)}
+                                disabled={deletingId() === document._id}
+                              />
+                            }
+                          >
+                            <span class="delete-confirm" role="alert">
+                              <span class="confirm-label">Delete?</span>
+                              <button
+                                class="button-danger"
+                                type="button"
+                                aria-label={`Confirm deletion of ${document.title}`}
+                                disabled={deletingId() === document._id}
+                                onClick={() => void removeDocument(document)}
+                              >
+                                {deletingId() === document._id ? "Deleting…" : "Delete"}
+                              </button>
+                              <button
+                                class="icon-button"
+                                type="button"
+                                aria-label={`Cancel deleting ${document.title}`}
+                                title="Cancel"
+                                ref={(element) => queueMicrotask(() => element.focus())}
+                                disabled={deletingId() === document._id}
+                                onClick={() => cancelDelete(document._id)}
+                              >
+                                <svg
+                                  aria-hidden="true"
+                                  fill="none"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  width="16"
+                                  xmlns="http://www.w3.org/2000/svg"
+                                >
+                                  <path
+                                    d="M18 6 6 18M6 6l12 12"
+                                    stroke="currentColor"
+                                    stroke-linecap="round"
+                                    stroke-width="1.7"
+                                  />
+                                </svg>
+                              </button>
+                            </span>
+                          </Show>
+                        </div>
+                      </article>
+                    )}
+                  </For>
+                </Show>
+              </Show>
             </Show>
           </section>
 
-          <div class="page-note" aria-live="polite">
-            <Icon name="lock" size={15} />
-            <span>Storage is public during testing; workspace routes still require sign-in.</span>
-            <Show when={actionMessage()}>
-              <span class="action-message">{actionMessage()}</span>
-            </Show>
+          <Show when={documents().length > 0 && documentsStore.hasMore}>
+            <div class="list-footer">
+              <span class="page-note">
+                {isFiltering() ? "Filtering loaded documents" : "More documents available"}
+              </span>
+              <button
+                class="button-secondary"
+                type="button"
+                disabled={documentsStore.loadingMore}
+                onClick={loadMoreDocuments}
+              >
+                {documentsStore.loadingMore ? "Loading…" : "Load more"}
+              </button>
+            </div>
+          </Show>
+          <Show when={status() === "error" && documents().length > 0}>
+            <p class="error-message" role="alert">
+              {documentsStore.error}
+            </p>
+          </Show>
+
+          <Show when={deleteError()}>
+            <p class="error-message" role="alert">
+              {deleteError()} Try refreshing the page.
+            </p>
+          </Show>
+
+          <div class="action-message" role="status" aria-live="polite">
+            {actionMessage()}
           </div>
         </div>
       </AppShell>

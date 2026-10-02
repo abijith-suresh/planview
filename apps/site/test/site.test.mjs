@@ -165,7 +165,7 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("Two commands, two homes"));
   assert.ok(html.includes("planview upload ./auth-migration-spec.html"));
   assert.ok(html.includes("Keep it working"));
-  assert.ok(html.includes("plansplease-app-staging.up.railway.app/"));
+  assert.ok(html.includes('href="https://plansplease-app-staging.up.railway.app/"'));
   assert.ok(html.includes('class="mobile-menu"'));
   assert.ok(html.includes("Pricing"));
   assert.ok(html.includes("Docs"));
