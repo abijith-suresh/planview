@@ -16,7 +16,7 @@ const text = (value) => (value === null ? "" : value.toString("utf8"));
 // These arguments contain only fixed smoke commands and generated fixture paths.
 const shellArgument = (value) => (shell ? `"${value}"` : value);
 const run = (command, args, options = {}) => {
-  const result = spawnSync(shellArgument(command), args.map(shellArgument), {
+  const result = spawnSync(command, args.map(shellArgument), {
     cwd: root,
     encoding: null,
     shell,
