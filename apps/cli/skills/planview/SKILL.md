@@ -73,6 +73,11 @@ Do not copy CLI credentials into MCP configuration.
   Each upload creates a separate document.
 - `delete_document` takes an `id`, hides the document, and queues storage deletion. Confirm the
   user's intent before deleting work they may want to keep.
+- `share_document` creates an unlisted viewing link for an `id`. Use it only when
+  the user asks to share that document. Anyone with the link can view it. Creating
+  another share link revokes the previous app share link.
+- `unshare_document` revokes the document's app share link. During alpha, this
+  does not revoke a public file URL copied directly from the storage provider.
 
 There is no revision or update tool yet. Keep the original document when creating
 a revised upload, and identify both documents clearly in your response.

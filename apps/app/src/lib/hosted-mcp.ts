@@ -87,6 +87,28 @@ const handler = createMcpHandler(
       },
       async ({ id }) => runTool("delete_document", () => documents.delete(id))
     );
+
+    server.registerTool(
+      "share_document",
+      {
+        description:
+          "Only when the user explicitly requests sharing, create a public link to their document. Anyone with the link can view it. Creating a new link revokes the previous app share link. Underlying storage URLs are still public during alpha.",
+        inputSchema: z.object({ id: z.string().min(1) }),
+        annotations: { readOnlyHint: false, idempotentHint: false },
+      },
+      async ({ id }) => runTool("share_document", () => documents.share(id))
+    );
+
+    server.registerTool(
+      "unshare_document",
+      {
+        description:
+          "Revoke a document's app share link. This does not revoke public direct storage URLs during alpha.",
+        inputSchema: z.object({ id: z.string().min(1) }),
+        annotations: { destructiveHint: true, idempotentHint: true },
+      },
+      async ({ id }) => runTool("unshare_document", () => documents.unshare(id))
+    );
     return server;
   },
   // JSON escaping can expand an 8 MiB HTML string by up to six times.
