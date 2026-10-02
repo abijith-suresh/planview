@@ -17,7 +17,7 @@ sharing feature on `main` today.
 After [installing the CLI](../install-cli/):
 
 ```sh
-planview skills install
+plansplease skills install
 ```
 
 The bundled `create-html` skill helps the agent write a usable standalone page.
@@ -26,7 +26,7 @@ agent needs to discover Agent Skills in `~/.agents/skills`; support varies by cl
 
 For a local plan:
 
-> Write a standalone HTML plan in this repository, then publish it with planview
+> Write a standalone HTML plan in this repository, then publish it with plansplease
 > and give me the exact URL printed by the command.
 
 For a cloud review:

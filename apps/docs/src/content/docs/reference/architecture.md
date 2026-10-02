@@ -9,7 +9,7 @@ description: The boundaries between applications, local packages, authentication
 | `apps/app` | SolidStart account workspace, auth proxy, cloud upload/preview routes, hosted MCP |
 | `apps/site` | Static Astro marketing pages |
 | `apps/docs` | Static Astro + Starlight guides and search |
-| `apps/cli` | The `planview` command and bundled local runtime |
+| `apps/cli` | The `plansplease` command and bundled local runtime |
 
 Site and docs have independent builds and deployments. They link to the app;
 they do not host its sessions or import its server implementation. The public

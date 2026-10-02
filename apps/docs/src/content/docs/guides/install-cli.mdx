@@ -6,10 +6,14 @@ import { Code } from '@astrojs/starlight/components';
 import { readPublicUrls } from '../../../lib/public-urls.ts';
 export const { appUrl } = readPublicUrls(import.meta.env);
 
-The command is `planview`. It runs on your computer and can upload pages to your
+The command is `plansplease`. It runs on your computer and can upload pages to your
 plansplease account. You need Node.js **24.19.0** and npm **11.16.0**.
 
 ## Install
+
+The previous `planview` command is no longer installed. Update existing scripts
+to use `plansplease`. Existing profiles, documents and saved sign-in credentials
+keep their locations. The package and repository still use the name `planview`.
 
 The CLI is not published to npm yet. Build an installable tarball from the repository:
 
@@ -24,7 +28,7 @@ Replace `FILE.tgz` below with the filename printed by `npm pack`:
 
 ```sh
 npm install --global --ignore-scripts ./FILE.tgz
-planview --version
+plansplease --version
 ```
 
 ## Preview a page
@@ -32,21 +36,21 @@ planview --version
 Save a file as `page.html`, then run:
 
 ```sh
-planview publish --open ./page.html
+plansplease publish --open ./page.html
 ```
 
 The command opens a localhost preview. To preview HTML with CSS, JavaScript or
 images, publish a folder containing `index.html` instead:
 
 ```sh
-planview publish --open ./my-page/
+plansplease publish --open ./my-page/
 ```
 
 Local links work on this computer. Publish again after editing to create a new snapshot.
 
 ## Upload to your account
 
-<Code code={`planview login --cloud-url ${appUrl.replace(/\/$/, '')}\nplanview upload --open ./page.html`} lang="sh" />
+<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}\nplansplease upload --open ./page.html`} lang="sh" />
 
 Sign in with GitHub and approve the upload access when your browser opens.
 Cloud uploads currently accept one HTML file up to **8 MiB**. Stored file URLs

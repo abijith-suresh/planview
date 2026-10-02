@@ -7,15 +7,15 @@ import { readPublicUrls } from '../../../lib/public-urls.ts';
 export const { appUrl } = readPublicUrls(import.meta.env);
 
 Install a [repository-built tarball](../install-cli/)
-before running these commands. The command is `planview`, including while the
-product is named plansplease.
+before running these commands. The command is `plansplease`. Existing scripts
+that invoke `planview` must update the command name; there is no compatibility alias.
 
 ## Local snapshots
 
 ```sh
-planview publish --open ./report.html
-planview publish --json ./report.html
-planview publish --open ./artifact/
+plansplease publish --open ./report.html
+plansplease publish --json ./report.html
+plansplease publish --open ./artifact/
 ```
 
 A file must be `.html` or `.htm`. A folder must have root `index.html` and may
@@ -30,7 +30,7 @@ redirect to serve `index.html`.
 ### Retrieve a standalone snapshot
 
 ```sh
-planview get <id-or-exact-local-url> > recovered.html
+plansplease get <id-or-exact-local-url> > recovered.html
 ```
 
 `get` writes exact HTML bytes to standard output. It accepts local references
@@ -41,12 +41,12 @@ artifact folder and its assets.
 ## Daemon and profiles
 
 ```sh
-planview status --json
-planview start
-planview stop
-planview restart
-planview clean
-planview --profile work publish ./report.html
+plansplease status --json
+plansplease start
+plansplease stop
+plansplease restart
+plansplease clean
+plansplease --profile work publish ./report.html
 ```
 
 `status` inspects without starting the daemon. `clean` removes snapshots older
@@ -56,7 +56,7 @@ local documents, daemon state, and saved cloud credentials.
 
 ## Cloud upload
 
-<Code code={`planview login --cloud-url ${appUrl.replace(/\/$/, '')}\nplanview upload --open ./report.html\nplanview upload --json ./report.html\nplanview logout`} lang="sh" />
+<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}\nplansplease upload --open ./report.html\nplansplease upload --json ./report.html\nplansplease logout`} lang="sh" />
 
 Login opens browser sign-in and authorizes this computer for uploads. The saved
 credential is upload-only. It cannot list, read, or delete cloud documents.
@@ -76,9 +76,9 @@ upload, status, start, stop, restart, and clean. Avoid parsing human-readable
 status messages.
 
 ```sh
-planview help
-planview help upload
-planview skills install
+plansplease help
+plansplease help upload
+plansplease skills install
 ```
 
 The skill installer writes `planview` and `create-html` to `~/.agents/skills`.

@@ -50,7 +50,7 @@ same quota once their separate feature is approved.
 ## Local retention and deletion
 
 The local daemon keeps snapshots for 30 days since last successful access.
-Cleanup runs at startup and every 24 hours, or when `planview clean` runs.
+Cleanup runs at startup and every 24 hours, or when `plansplease clean` runs.
 Local state is private to the user profile and the daemon binds to loopback.
 
 Cloud deletion hides the document and queues provider cleanup with retries.

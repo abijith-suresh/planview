@@ -8,8 +8,8 @@ The CLI and its preview server already run on your computer without an account.
 [Install the CLI](../install-cli/), then publish a file or a folder:
 
 ```sh
-planview publish --open ./page.html
-planview publish --open ./my-page/
+plansplease publish --open ./page.html
+plansplease publish --open ./my-page/
 ```
 
 Documents stay in your local user profile. The preview server binds to localhost;

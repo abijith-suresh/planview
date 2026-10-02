@@ -10,7 +10,8 @@ ignores Changesets' README/config files and entries for other (including
 private) packages.
 
 Keep the published package name as `@abijith-suresh/planview` (`apps/cli/package.json`);
-the CLI binary remains `planview`, and the private workspace is named
+the CLI binary is `plansplease`,
+and the private workspace is named
 `planview-workspace`.
 
 ## Effect v4 and module boundaries

@@ -38,7 +38,7 @@ import { documentationUrl } from "../lib/docs-url";
       class="demo"
       id="demo"
       role="img"
-      aria-label="Animation of an agent saving a page: it writes auth-migration-spec.html, runs planview publish for a local URL, then runs planview upload to save a cloud copy, which opens alongside."
+      aria-label="Animation of an agent saving a page: it writes auth-migration-spec.html, runs plansplease publish for a local URL, then runs plansplease upload to save a cloud copy, which opens alongside."
     >
       <div class="term" aria-hidden="true">
         <div class="term-bar">
@@ -51,14 +51,14 @@ import { documentationUrl } from "../lib/docs-url";
           </p>
           <p class="tl is-step"><span class="step-bullet">●</span> Wrote auth-migration-spec.html</p>
           <p class="tl is-step">
-            <span class="step-bullet">●</span> planview publish ./auth-migration-spec.html
+            <span class="step-bullet">●</span> plansplease publish ./auth-migration-spec.html
           </p>
           <p class="tl">
             <span class="check">✓</span> served at
             <span class="url">http://localhost:4777/auth-migration-spec</span>
           </p>
           <p class="tl is-step">
-            <span class="step-bullet">●</span> planview upload ./auth-migration-spec.html
+            <span class="step-bullet">●</span> plansplease upload ./auth-migration-spec.html
           </p>
           <p class="tl">
             <span class="check">✓</span> saved to workspace
@@ -101,7 +101,7 @@ import { documentationUrl } from "../lib/docs-url";
     <SectionIntro
       id="how-title"
       title="Two commands, two homes"
-      lede="Use planview publish for a local preview. After signing in, run planview upload when you want a cloud copy in your workspace."
+      lede="Use plansplease publish for a local preview. After signing in, run plansplease upload when you want a cloud copy in your workspace."
     />
 
     <ol class="steps">
@@ -109,7 +109,7 @@ import { documentationUrl } from "../lib/docs-url";
         <span class="step-index" aria-hidden="true">01</span>
         <h3>Preview the file locally</h3>
         <p>Any agent can write it. Publish gives it a URL on your machine.</p>
-        <code class="step-code">planview publish ./auth-migration-spec.html</code>
+        <code class="step-code">plansplease publish ./auth-migration-spec.html</code>
       </li>
 
       <li class="step">
@@ -119,7 +119,7 @@ import { documentationUrl } from "../lib/docs-url";
           Sign in and upload when you want to open it from another device. Direct cloud file URLs
           are public during alpha.
         </p>
-        <code class="step-code">planview upload ./auth-migration-spec.html</code>
+        <code class="step-code">plansplease upload ./auth-migration-spec.html</code>
       </li>
 
       <li class="step">

@@ -31,7 +31,7 @@ site/app redirect.
 
 ## CLI says the cloud credential was rejected
 
-<Code code={`planview login --cloud-url ${appUrl.replace(/\/$/, '')}`} lang="sh" />
+<Code code={`plansplease login --cloud-url ${appUrl.replace(/\/$/, '')}`} lang="sh" />
 
 The saved credential is account-, profile-, and origin-specific. It permits
 uploads only. Browser sign-in does not repair or revoke a separate CLI credential.
@@ -50,11 +50,11 @@ and the error result.
 
 ## A local URL fails
 
-Use the exact printed port and selected profile. Run `planview status` to inspect
+Use the exact printed port and selected profile. Run `plansplease status` to inspect
 the daemon. The link is loopback-only and belongs to the computer where it was
 published. If the source changed, publish a new snapshot.
 
-For a folder, use its browser URL to follow the entry redirect. Current `planview
+For a folder, use its browser URL to follow the entry redirect. Current `plansplease
 get` does not follow that folder-root redirect. Asset paths must be relative to
 the folder entry, and the folder must contain root `index.html`.
 

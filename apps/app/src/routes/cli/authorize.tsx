@@ -105,7 +105,7 @@ export default function AuthorizeCli() {
           <p role="alert">Could not check your session. Refresh this page to try again.</p>
         )}
         <p class="panel-lede">
-          The Planview CLI on this computer is requesting permission to upload HTML pages to your
+          The plansplease CLI on this computer is requesting permission to upload HTML pages to your
           workspace as {userName()}.
         </p>
         {isValidRequest() ? (
