@@ -53,6 +53,8 @@ function createHandlers(
       calls.storageLookups.push(provider);
       return {
         provider: "uploadthing",
+        getUploadLocator: () => ({ storageProvider: "uploadthing", storageKey }),
+        upload: async () => ({ storageProvider: "uploadthing", storageKey }),
         getReadUrl: async (key) => {
           calls.events.push("get-read-url");
           calls.readUrlKeys.push(key);
@@ -141,58 +143,34 @@ test("requires a session before looking up or reading a document", async () => {
   assert.deepEqual(calls.storageLookups, []);
 });
 
-test("serves stored HTML with private preview security headers", async () => {
+test("authorizes before returning a direct browser preview without server byte fetches", async () => {
   const { calls, preview } = createHandlers();
-
   const response = await preview(event());
-
+  const html = await response.text();
   assert.equal(response.status, 200);
-  assert.equal(await response.text(), "<h1>Preview</h1>");
+  assert.ok(html.includes("https://storage.example/document.html"));
+  assert.ok(html.includes('sandbox="allow-scripts allow-modals allow-popups"'));
   assert.equal(response.headers.get("cache-control"), "private, no-store");
-  assert.equal(response.headers.get("content-disposition"), "inline");
-  assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
-  assert.equal(
-    response.headers.get("content-security-policy"),
-    "default-src 'none'; base-uri 'none'; object-src 'none'; form-action 'none'; frame-ancestors 'none'; sandbox allow-scripts allow-modals allow-popups; script-src 'unsafe-inline' https: blob:; style-src 'unsafe-inline' https:; img-src data: blob: https:; font-src data: blob: https:; media-src data: blob: https:; connect-src https:; worker-src blob: https:; frame-src https:"
-  );
-  assert.equal(
-    response.headers.get("permissions-policy"),
-    "camera=(), geolocation=(), microphone=(), payment=()"
-  );
-  assert.equal(response.headers.get("referrer-policy"), "no-referrer");
-  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
-  assert.deepEqual(calls.storageLookups, ["uploadthing"]);
-  assert.deepEqual(calls.readUrlKeys, [storageKey]);
-  assert.deepEqual(calls.fetches, [
-    { input: "https://storage.example/document.html", authorization: null },
-  ]);
+  assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow");
+  assert.deepEqual(calls.events, ["authenticate", "get-document", "get-storage", "get-read-url"]);
+  assert.deepEqual(calls.fetches, []);
 });
 
-test("maps a failed storage response to not found", async () => {
-  const { calls, preview } = createHandlers({
-    fetch: async () => {
-      calls.events.push("fetch");
-      return new Response("upstream unavailable", { status: 502 });
-    },
-  });
-
-  const response = await preview(event());
-
-  assert.equal(response.status, 404);
-  assert.equal(await response.text(), "Not found");
-});
-
-test("maps a storage fetch rejection through the route error handler", async () => {
+test("maps storage URL lookup rejection through the route error handler", async () => {
   const { preview } = createHandlers({
-    fetch: async () => {
-      throw new Error("storage fetch failed");
-    },
+    getDocumentStorage: () => ({
+      provider: "uploadthing",
+      getUploadLocator: () => ({ storageProvider: "uploadthing", storageKey }),
+      upload: async () => ({ storageProvider: "uploadthing", storageKey }),
+      delete: async () => undefined,
+      getReadUrl: async () => {
+        throw new Error("storage URL lookup failed");
+      },
+    }),
   });
-
   const response = await preview(event());
-
   assert.equal(response.status, 500);
-  assert.deepEqual(await response.json(), { error: "storage fetch failed" });
+  assert.deepEqual(await response.json(), { error: "storage URL lookup failed" });
 });
 
 test("proxies legacy Convex-backed documents with the authenticated token", async () => {

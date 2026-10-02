@@ -3,6 +3,7 @@ import {
   storageQuotaErrorResponse,
   type DocumentUploadMetadata,
 } from "./reserved-document-upload.ts";
+import type { DocumentStorageUpload, StoredDocument } from "./document-storage.ts";
 import type { DocumentUploadCompensationReporter } from "./document-upload-compensation.ts";
 
 export type { DocumentUploadMetadata } from "./reserved-document-upload.ts";
@@ -11,7 +12,8 @@ export type DocumentUploadHandlerDependencies<Client> = {
   getAuthedClient(request: Request): Promise<{ client: Client; token: string | null | undefined }>;
   getCurrentUser(client: Client, request: Request): Promise<{ subject: string } | null | undefined>;
   isStorageConfigured(): boolean;
-  uploadFile(input: { file: File; customId: string; deadlineAt: number }): Promise<void>;
+  getUploadLocator(objectId: string): StoredDocument;
+  uploadFile(input: DocumentStorageUpload): Promise<StoredDocument>;
   reserveMetadata(
     client: Client,
     input: DocumentUploadMetadata,
@@ -39,7 +41,6 @@ export type DocumentUploadHandlerDependencies<Client> = {
 
 const MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_REQUEST_SIZE_BYTES = MAX_FILE_SIZE_BYTES + 64 * 1024;
-const STORAGE_KEY_PREFIX = "uploadthing-custom-id:";
 
 async function readBoundedFormData(request: Request): Promise<FormData | null> {
   const reader = request.body?.getReader();
@@ -144,19 +145,18 @@ export function createDocumentUploadHandler<Client>(
         );
       }
 
-      const customId = `${identity.subject}:${dependencies.createUploadId()}`;
-      const storageKey = `${STORAGE_KEY_PREFIX}${customId}`;
+      const objectId = `${identity.subject}:${dependencies.createUploadId()}`;
+      const locator = dependencies.getUploadLocator(objectId);
       const metadata: DocumentUploadMetadata = {
         title,
-        storageProvider: "uploadthing",
-        storageKey,
+        ...locator,
         contentType: "text/html",
         sizeBytes: file.size,
       };
       const id = await uploadReservedDocument({
         metadata,
         file,
-        customId,
+        objectId,
         reserve: () => dependencies.reserveMetadata(client, metadata, identity.subject, request),
         upload: dependencies.uploadFile,
         commit: () => dependencies.createMetadata(client, metadata, identity.subject, request),

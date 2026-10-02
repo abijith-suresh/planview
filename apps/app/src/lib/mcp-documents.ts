@@ -4,7 +4,6 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 import { api, getUnauthedConvexClient } from "./convex-server";
 import { createDocumentReadCache } from "./document-read-cache";
-import { uploadHtmlFile } from "./document-file-upload";
 import { createDocumentProof, createAbandonDocumentProof } from "./document-mutation-proof";
 import { getDocumentStorage } from "./document-storage";
 import { uploadReservedDocument } from "./reserved-document-upload";
@@ -127,12 +126,12 @@ export function createMcpDocumentService(ownerId: string) {
         throw new Error("Title must be between 1 and 200 characters");
       }
       if (bytes.length > maxFileBytes) throw new Error("HTML exceeds the 8 MiB limit");
-      const customId = `${ownerId}:${randomUUID()}`;
-      const storageKey = `uploadthing-custom-id:${customId}`;
+      const objectId = `${ownerId}:${randomUUID()}`;
+      const storage = getDocumentStorage();
+      const locator = storage.getUploadLocator(objectId);
       const input = {
         title: cleanTitle,
-        storageProvider: "uploadthing" as const,
-        storageKey,
+        ...locator,
         contentType: "text/html" as const,
         sizeBytes: bytes.length,
       };
@@ -152,10 +151,10 @@ export function createMcpDocumentService(ownerId: string) {
       const id = await uploadReservedDocument({
         metadata: input,
         file: new File([bytes], "document.html", { type: "text/html" }),
-        customId,
+        objectId,
         reserve: async () =>
           client.mutation(api.mcpDocuments.reserveUpload, await uploadArguments("reserve")),
-        upload: uploadHtmlFile,
+        upload: (input) => storage.upload(input),
         commit: async () =>
           client.mutation(api.mcpDocuments.create, await uploadArguments("create")),
         abandon: async (uploadConfirmed) =>

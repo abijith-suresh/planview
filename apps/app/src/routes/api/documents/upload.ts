@@ -8,8 +8,7 @@ import {
   missingServerConfigurationResponse,
 } from "~/lib/convex-server";
 import { cliCredentialFromRequest } from "~/lib/cli-credential";
-import { isDocumentStorageConfigured } from "~/lib/document-storage";
-import { uploadHtmlFile } from "~/lib/document-file-upload";
+import { getDocumentStorage, isDocumentStorageConfigured } from "~/lib/document-storage";
 import { createDocumentUploadHandler } from "~/lib/document-upload-handler";
 import { createDocumentProof, createAbandonDocumentProof } from "~/lib/document-mutation-proof";
 
@@ -28,7 +27,8 @@ export const POST = createDocumentUploadHandler({
       : client.query(api.auth.currentUser, {});
   },
   isStorageConfigured: isDocumentStorageConfigured,
-  uploadFile: uploadHtmlFile,
+  getUploadLocator: (objectId) => getDocumentStorage().getUploadLocator(objectId),
+  uploadFile: (input) => getDocumentStorage().upload(input),
   reserveMetadata: async (client, input, ownerId, request) => {
     const proof = await createDocumentProof({ ownerId, ...input });
     const cliCredential = cliCredentialFromRequest(request);
