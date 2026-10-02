@@ -1,36 +1,20 @@
 ---
-title: Make a page worth keeping
-description: Preview local HTML, save cloud documents, and connect your agent through MCP.
+title: Get started
+description: Install the CLI, connect your agent, or explore self-hosting.
+prev: false
+next: false
+editUrl: false
 ---
+import SetupChoices from '../../components/SetupChoices.astro';
 import { readPublicUrls } from '../../lib/public-urls.ts';
-export const { appUrl } = readPublicUrls(import.meta.env);
+export const { docsBasePath, appUrl, siteUrl } = readPublicUrls(import.meta.env);
 
-plansplease gives agent-made HTML somewhere to live. Preview it on your computer,
-or save a document to your account and return to it later.
+Choose how you want to use plansplease.
 
-## Choose your workflow
+<SetupChoices basePath={docsBasePath} />
 
-| You want to | Start here |
-| --- | --- |
-| Give an agent access to your cloud documents | [Connect MCP](./guides/mcp/) |
-| Preview HTML or an artifact folder on your computer | [Use the CLI](./guides/cli/) |
-| Upload a standalone page and open it on another device | [Use the cloud workspace](./guides/cloud/) |
-| Understand what is public during testing | [Privacy and limits](./reference/privacy-and-limits/) |
-
-<a href={appUrl}>Open the staging workspace</a>, or follow the
-[getting started guide](./getting-started/) for a complete first run.
-
-:::caution[Alpha storage is public]
-The workspace checks account access, but UploadThing files have public direct
-URLs during alpha. Use test content you are comfortable sharing.
-:::
-
-## Product name, repository name
-
-The product is **plansplease**. The repository and command are still **planview**,
-and the CLI package remains `@abijith-suresh/planview`. npm publication is currently
-disabled; the CLI guide explains how to install a repository build.
-
-These guides describe the implementation on `main` and identify where staging
-has not deployed a change yet. [Features under review](./reference/planned-features/)
-are separate from the current workflows.
+<div class="docs-quick-links">
+  <a href={appUrl}>Open plansplease <span aria-hidden="true">↗</span></a>
+  <a href={siteUrl}>About plansplease <span aria-hidden="true">↗</span></a>
+  <a href="https://github.com/abijith-suresh/planview">GitHub <span aria-hidden="true">↗</span></a>
+</div>

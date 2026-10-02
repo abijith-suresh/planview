@@ -61,8 +61,10 @@ implementations and proposals separately; do not advertise private storage,
 unlimited paid plans, npm publication, or supported self-hosting before those
 contracts exist. The current folder-root CLI retrieval limitation is documented.
 
-Canonical entry routes are `/getting-started/`, `/guides/mcp/`, and `/guides/cli/`.
-Marketing `/docs/`, `/cli/`, and `/mcp/` keep their legacy pages and link to these
+Setup starts at `/`, `/guides/install-cli/`, `/guides/mcp/`, and
+`/guides/self-hosting/`. The old `/getting-started/` route remains a setup chooser.
+The CLI reference remains at `/guides/cli/`.
+Marketing `/docs/`, `/cli/`, and `/mcp/` keep their legacy pages and link to the
 canonical docs routes using their own `PUBLIC_DOCS_URL` build setting.
 
 This app pins Starlight 0.42.5 and Astro 7.3.5. Starlight's published peer metadata
@@ -70,3 +72,10 @@ supports Astro `^7.2.10`; the installed pair builds with the repository's Node 2
 and npm 11 versions. Setup follows the official [Starlight manual setup](https://starlight.astro.build/manual-setup/),
 [search guide](https://starlight.astro.build/guides/site-search/), and
 [Astro site/base configuration](https://docs.astro.build/en/reference/configuration-reference/#base).
+
+The docs use the app's dark palette and local Instrument Sans, Schibsted Grotesk,
+and Fragment Mono fonts. A theme-provider override applies dark mode before paint,
+including browsers with an older saved light preference. Setup navigation is
+visible first; guides and reference groups start collapsed. Starlight supplies
+the mobile menu, search dialog, keyboard focus handling, and code-copy controls.
+There is no permanent right-hand contents column.

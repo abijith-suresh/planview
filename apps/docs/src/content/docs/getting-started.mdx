@@ -1,65 +1,16 @@
 ---
-title: Getting started
-description: Connect an agent or publish your first local page.
+title: Setup guides
+description: Choose CLI installation, MCP connection, or self-hosting information.
+sidebar:
+  hidden: true
+prev: false
+next: false
+editUrl: false
 ---
-import { Code } from '@astrojs/starlight/components';
+import SetupChoices from '../../components/SetupChoices.astro';
 import { readPublicUrls } from '../../lib/public-urls.ts';
-export const { appUrl } = readPublicUrls(import.meta.env);
+export const { docsBasePath } = readPublicUrls(import.meta.env);
 
-## Connect your agent to the cloud
+Choose a guide to get started.
 
-1. In a client that supports remote MCP with OAuth and Client ID Metadata
-   Documents, add the server URL below.
-2. Follow the browser sign-in, choose GitHub, and approve the requested access.
-3. Ask the agent to list your documents, then save a small HTML page.
-
-<Code code={`${appUrl}mcp`} lang="text" title="Remote MCP endpoint" />
-
-Try this request:
-
-> Create a simple HTML checklist for my project, upload it as "Project checklist",
-> and give me the workspace preview link.
-
-Open the returned link while signed in to the same account. The upload creates
-one document. To refine it today, ask for a new upload and keep the earlier link.
-See [the MCP guide](../guides/mcp/) for tools, pagination, and compatibility.
-
-## Preview on your computer
-
-Use Node.js **24.19.0** and npm **11.16.0**. There is no published npm installation
-promised yet. Build and install a local tarball from this repository:
-
-```sh
-git clone https://github.com/abijith-suresh/planview.git
-cd planview
-npm ci
-npm pack --workspace @abijith-suresh/planview --pack-destination .
-```
-
-Install the `.tgz` path printed by the pack command:
-
-```sh
-npm install --global --ignore-scripts ./<printed-tarball-name>.tgz
-planview --version
-```
-
-Replace the placeholder with the actual filename. The tarball bundles the local
-implementation and declares its runtime dependencies.
-
-Save an HTML page, then publish it:
-
-```sh
-planview publish --open ./page.html
-```
-
-The command prints an immutable localhost URL. Editing the source does not edit
-that snapshot; publish again after making changes. Only this computer can use
-the localhost link. [CLI reference](../guides/cli/) covers folders and profiles.
-
-## Save the page to your account
-
-<Code code={`planview login --cloud-url ${appUrl.replace(/\/$/, '')}\nplanview upload --open ./page.html`} lang="sh" />
-
-Sign in through the browser when prompted. Cloud uploads currently accept one
-standalone HTML file up to **8 MiB**. Keep test content non-sensitive because
-provider object URLs are public during alpha.
+<SetupChoices basePath={docsBasePath} />

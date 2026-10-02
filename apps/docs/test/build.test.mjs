@@ -67,6 +67,12 @@ test("production root and prefixed builds contain complete navigation, search, a
         const html = readFileSync(file, "utf8");
         assert.match(html, /plansplease docs/);
         assert.ok(html.includes("<site-search"), `search UI on ${route}`);
+        assert.ok(
+          html.includes('dataset["theme"] = "dark"'),
+          `dark theme before paint on ${route}`
+        );
+        assert.ok(!html.includes("<starlight-theme-select"), `no theme picker on ${route}`);
+        assert.ok(!html.includes("<starlight-toc"), `no permanent contents column on ${route}`);
         if (!file.endsWith("404.html"))
           assert.ok(html.includes(`href="${docsUrl}${route}"`), `canonical ${route}`);
         const current = new URL(route, docsUrl);
@@ -87,11 +93,14 @@ test("production root and prefixed builds contain complete navigation, search, a
       const source = readFileSync(resolve(root, "../app/src/lib/hosted-mcp.ts"), "utf8");
       for (const [, tool] of source.matchAll(/registerTool\(\s*"([^"]+)"/g))
         assert.ok(mcp.includes(tool), `documented main tool ${tool}`);
-      const guide = readFileSync(join(output, "getting-started", "index.html"), "utf8");
-      assert.ok(guide.includes("published npm"));
+      const guide = readFileSync(join(output, "guides", "install-cli", "index.html"), "utf8");
+      assert.ok(guide.includes("not published to npm"));
       assert.ok(guide.includes("pack-destination"));
       assert.ok(guide.includes("https://workspace.example.com"));
-      assert.ok(guide.includes("https://product.example.com"));
+      const home = readFileSync(join(output, "index.html"), "utf8");
+      assert.ok(home.includes("https://product.example.com"));
+      for (const route of ["install-cli", "mcp", "self-hosting"])
+        assert.ok(home.includes(`href="${base}guides/${route}/"`), `setup route ${route}`);
     } finally {
       rmSync(output, { force: true, recursive: true });
     }

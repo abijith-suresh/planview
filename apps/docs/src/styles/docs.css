@@ -2,104 +2,303 @@
 @import "@fontsource/instrument-sans/latin-500.css";
 @import "@fontsource/instrument-sans/latin-600.css";
 @import "@fontsource/schibsted-grotesk/latin-600.css";
+@import "@fontsource/schibsted-grotesk/latin-700.css";
 @import "@fontsource/fragment-mono/latin-400.css";
 
 :root {
+  color-scheme: dark;
   --sl-font: "Instrument Sans", sans-serif;
   --sl-font-mono: "Fragment Mono", monospace;
-  --sl-color-accent-low: #39231c;
-  --sl-color-accent: #e5795a;
-  --sl-color-accent-high: #f5bca8;
   --sl-color-white: #f6f5f3;
-  --sl-color-gray-1: #dedcdb;
-  --sl-color-gray-2: #b6b3b2;
-  --sl-color-gray-3: #8f8b89;
-  --sl-color-gray-4: #514c49;
-  --sl-color-gray-5: #2b2827;
-  --sl-color-gray-6: #171516;
+  --sl-color-gray-1: #d9d9dc;
+  --sl-color-gray-2: #a1a1a6;
+  --sl-color-gray-3: #929298;
+  --sl-color-gray-4: #333338;
+  --sl-color-gray-5: #222226;
+  --sl-color-gray-6: #121214;
   --sl-color-black: #0c0c0e;
-  --sl-content-width: 46rem;
-  --sl-text-h1: clamp(2rem, 4vw, 2.8rem);
+  --sl-color-text: #d9d9dc;
+  --sl-color-accent: #e5795a;
+  --sl-color-accent-low: rgba(229, 121, 90, 0.08);
+  --sl-color-accent-high: #e5795a;
+  --sl-color-text-accent: #e5795a;
+  --sl-color-bg-nav: #0f0f11;
+  --sl-color-bg-sidebar: #0f0f11;
+  --sl-color-bg-inline-code: #161618;
+  --sl-color-hairline: rgba(255, 255, 255, 0.08);
+  --sl-color-hairline-shade: rgba(255, 255, 255, 0.08);
+  --sl-color-hairline-light: rgba(255, 255, 255, 0.08);
+  --sl-nav-height: 4rem;
+  --sl-nav-pad-y: 0.5rem;
+  --sl-sidebar-width: 14rem;
+  --sl-content-width: 48rem;
+  --sl-content-pad-x: 2rem;
+  --sl-text-body: 0.95rem;
+  --sl-text-body-sm: 0.85rem;
+  --sl-text-code: 0.8rem;
+  --sl-text-h1: 2rem;
+  --sl-text-h2: 1.3rem;
+  --sl-text-h3: 1.1rem;
+  --sl-line-height: 1.65;
+  --sl-menu-button-size: 2.75rem;
 }
-:root[data-theme="light"] {
-  --sl-color-accent-low: #f8e5dc;
-  --sl-color-accent: #a34125;
-  --sl-color-accent-high: #63230f;
-  --sl-color-white: #191516;
-  --sl-color-gray-1: #292426;
-  --sl-color-gray-2: #50494b;
-  --sl-color-gray-3: #766d70;
-  --sl-color-gray-4: #aaa0a3;
-  --sl-color-gray-5: #ddd5d3;
-  --sl-color-gray-6: #f4eeeb;
-  --sl-color-black: #fffaf7;
+body {
+  letter-spacing: -0.011em;
+  -webkit-font-smoothing: antialiased;
 }
 h1,
 h2,
-h3,
-.site-title {
+h3 {
   font-family: "Schibsted Grotesk", "Instrument Sans", sans-serif;
-}
-h1 {
-  letter-spacing: -0.045em;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
 }
 .docs-header {
   display: flex;
+  width: 100%;
+  height: 100%;
   align-items: center;
-  gap: 1.25rem;
+  gap: 2rem;
 }
-.docs-header > :first-child {
-  flex: 1;
-  min-width: 0;
-}
-.docs-product-links {
-  display: flex;
+.docs-brand {
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  min-height: 44px;
+  gap: 0.75rem;
+  text-decoration: none;
+  color: var(--sl-color-white);
   flex-shrink: 0;
 }
-.docs-product-links a {
-  color: var(--sl-color-text);
-  text-decoration: none;
-  font-size: 0.85rem;
-  padding: 0.7rem 0.8rem;
+.docs-wordmark {
+  display: inline-flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  font:
+    700 1.05rem / 1 "Schibsted Grotesk",
+    sans-serif;
+  letter-spacing: -0.045em;
+}
+.docs-wordmark span:last-child {
+  color: #e5795a;
+}
+.docs-label {
+  color: #a1a1a6;
+  font-size: 0.8rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+  padding-left: 0.75rem;
+}
+.docs-search {
+  width: min(100%, 20rem);
+  min-width: 0;
+}
+.docs-search button {
   min-height: 44px;
-  display: flex;
-  align-items: center;
-  border-radius: 0.4rem;
+  min-width: 44px;
 }
-.docs-product-links a:hover {
-  background: var(--sl-color-gray-6);
-}
-.docs-product-links .docs-workspace-link {
-  border: 1px solid var(--sl-color-gray-5);
+.docs-search button[data-open-modal] {
+  background: #0c0c0e;
+  border-color: rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
 }
 a:focus-visible,
 button:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--sl-color-accent);
-  outline-offset: 4px;
+summary:focus-visible {
+  outline: 2px solid #e5795a;
+  outline-offset: 3px;
 }
-.sl-markdown-content {
-  line-height: 1.75;
+button,
+a {
+  touch-action: manipulation;
+}
+.content-panel {
+  padding: 1.25rem var(--sl-content-pad-x);
+}
+.content-panel:first-child {
+  padding-top: 1.75rem;
+  padding-bottom: 0;
+}
+.content-panel + .content-panel {
+  border-top: 0;
+}
+.sl-container {
+  margin-inline: auto;
+}
+.sl-container h1 {
+  margin-top: 0;
+}
+.sl-container > * + * {
+  margin-top: 1rem;
+}
+.sl-markdown-content > :first-child {
+  margin-top: 0;
+}
+.sl-markdown-content :is(h2, h3):not(:first-child) {
+  margin-top: 2rem;
 }
 .sl-markdown-content table {
   display: block;
   overflow: auto;
 }
-@media (max-width: 72rem) {
-  .docs-product-links a:first-child {
-    display: none;
-  }
-  .docs-header {
-    gap: 0.5rem;
+.sl-markdown-content a {
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(229, 121, 90, 0.45);
+}
+.sidebar-content {
+  padding-top: 1.25rem;
+}
+.sidebar-content .large {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.sidebar-content a {
+  min-height: 36px;
+  padding-block: 0.45rem;
+  color: #a1a1a6;
+  border-radius: 6px;
+}
+.sidebar-content a:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: #f6f5f3;
+}
+.sidebar-content a[aria-current="page"] {
+  color: #f6f5f3;
+  background: rgba(255, 255, 255, 0.045);
+  font-weight: 500;
+}
+.sidebar-content summary {
+  min-height: 36px;
+  color: #d9d9dc;
+}
+.sidebar-content ul ul {
+  border-inline-start: 0;
+}
+.sidebar-content li + li {
+  margin-top: 0;
+}
+.setup-choices {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+.sl-markdown-content a.setup-choice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem;
+  min-height: 88px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: #121214;
+  color: #d9d9dc;
+  text-decoration: none;
+}
+.setup-choice strong {
+  color: #f6f5f3;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.setup-choice p {
+  margin: 0.25rem 0 0;
+  color: #a1a1a6;
+  font-size: 0.875rem;
+}
+.setup-choice > span {
+  color: #929298;
+}
+.sl-markdown-content a.setup-choice:hover {
+  border-color: rgba(229, 121, 90, 0.3);
+  background: #161618;
+}
+.docs-quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 1.5rem;
+  margin-top: 1.5rem;
+}
+.sl-markdown-content .docs-quick-links a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.4rem;
+  color: #a1a1a6;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.sl-markdown-content .docs-quick-links a:hover {
+  color: #f6f5f3;
+  text-decoration: underline;
+}
+.pagination-links .link-title {
+  font-size: 1rem;
+}
+.pagination-links a {
+  border-color: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  font-size: 0.9rem;
+  padding: 1rem;
+}
+@media (min-width: 50rem) {
+  .docs-brand {
+    width: calc(var(--sl-sidebar-width) - 1rem);
   }
 }
-@media (max-width: 50rem) {
-  .docs-product-links {
-    display: none;
+@media (max-width: 49.99rem) {
+  :root {
+    --sl-content-pad-x: 1rem;
+    --sl-nav-pad-x: 16px;
+    --sl-nav-gap: 12px;
+    --sl-menu-button-size: 44px;
   }
   .docs-header {
-    display: contents;
+    gap: 12px;
+    justify-content: space-between;
+  }
+  .docs-brand {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .docs-search {
+    width: auto;
+    flex-shrink: 0;
+  }
+  .sidebar-content a,
+  .sidebar-content summary {
+    min-height: 44px;
+  }
+  .content-panel:first-child {
+    padding-top: 1.25rem;
+  }
+  .docs-search button[data-open-modal] {
+    width: 44px;
+    height: 44px;
+  }
+  .docs-search button[data-open-modal] svg {
+    width: 20px;
+    height: 20px;
+  }
+}
+.sl-menu-button,
+.sl-menu-button:has(~ :popover-open) {
+  background: #121214;
+  color: #d9d9dc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 8px;
+}
+.sl-menu-button svg {
+  width: 20px;
+  height: 20px;
+}
+@media (max-width: 24rem) {
+  .docs-label {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
 }

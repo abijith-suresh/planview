@@ -26,39 +26,40 @@ export default defineConfig({
     starlight({
       title: "plansplease docs",
       description: "Guides for local previews, cloud documents, and MCP agents.",
-      logo: { src: "./src/assets/mark.svg" },
       customCss: ["./src/styles/docs.css"],
-      components: { Header: "./src/components/Header.astro" },
-      social: [
-        { icon: "github", label: "GitHub", href: "https://github.com/abijith-suresh/planview" },
-      ],
+      tableOfContents: false,
+      head: [{ tag: "meta", attrs: { name: "theme-color", content: "#0c0c0e" } }],
+      components: {
+        Header: "./src/components/Header.astro",
+        ThemeProvider: "./src/components/DarkTheme.astro",
+        ThemeSelect: "./src/components/Empty.astro",
+        MobileMenuFooter: "./src/components/Empty.astro",
+      },
       editLink: { baseUrl: "https://github.com/abijith-suresh/planview/edit/main/apps/docs/" },
       sidebar: [
-        { label: "Start here", items: [{ slug: "index" }, { slug: "getting-started" }] },
+        { label: "Get started", slug: "index" },
         {
-          label: "Use plansplease",
+          label: "Setup",
           items: [
-            { slug: "guides/mcp" },
-            { slug: "guides/cli" },
-            { slug: "guides/cloud" },
-            { slug: "guides/agents" },
+            { label: "Install the CLI", slug: "guides/install-cli" },
+            { label: "Connect MCP", slug: "guides/mcp" },
+            { label: "Self-hosting", slug: "guides/self-hosting" },
           ],
         },
         {
-          label: "Understand the system",
+          label: "Guides",
+          collapsed: true,
+          items: [{ slug: "guides/cli" }, { slug: "guides/cloud" }, { slug: "guides/agents" }],
+        },
+        {
+          label: "Reference",
+          collapsed: true,
           items: [
+            { slug: "reference/troubleshooting" },
             { slug: "reference/privacy-and-limits" },
             { slug: "reference/architecture" },
-            { slug: "reference/troubleshooting" },
             { slug: "reference/development" },
             { slug: "reference/planned-features" },
-          ],
-        },
-        {
-          label: "Product",
-          items: [
-            { label: "Workspace", link: urls.appUrl },
-            { label: "Website", link: urls.siteUrl },
           ],
         },
       ],

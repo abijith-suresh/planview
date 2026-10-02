@@ -61,5 +61,4 @@ or automatic expiry promise today.
 
 These docs are static and public. Search runs against a locally served Pagefind
 index; there is no configured analytics service. Fonts are served with the docs.
-Theme preference may be saved in browser storage. Signing in happens on the
-separate app origin, not on this documentation service.
+Signing in happens on the separate app origin, not on this documentation service.

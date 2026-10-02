@@ -14,7 +14,7 @@ sharing feature on `main` today.
 
 ## Install the local skills
 
-After [installing the CLI](../../getting-started/#preview-on-your-computer):
+After [installing the CLI](../install-cli/):
 
 ```sh
 planview skills install
