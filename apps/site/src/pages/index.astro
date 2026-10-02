@@ -7,6 +7,8 @@ import SectionIntro from "../components/SectionIntro.astro";
 import SiteLayout from "../layouts/SiteLayout.astro";
 // biome-ignore lint/correctness/noUnusedImports: Astro uses this page value below.
 import { appSignInUrl } from "../lib/app-url";
+// biome-ignore lint/correctness/noUnusedImports: Astro uses this guide URL in the hero below.
+import { documentationUrl } from "../lib/docs-url";
 ---
 
 <SiteLayout
@@ -28,7 +30,7 @@ import { appSignInUrl } from "../lib/app-url";
 
       <div class="hero-actions">
         <a class="btn-primary" href={appSignInUrl}>Continue with GitHub</a>
-        <a class="btn-ghost" href="/docs/">Read the docs</a>
+        <a class="btn-ghost" href={documentationUrl()}>Read the docs</a>
       </div>
     </div>
 
@@ -171,7 +173,7 @@ import { appSignInUrl } from "../lib/app-url";
     id="cta-title"
     title="Stop losing good work in chat scrollback."
     lede="Sign in, publish your next agent-made page, and see how long it lasts."
-    note="Free during alpha · CLI today, MCP soon · Cloud files have public URLs"
+    note="Free during alpha · CLI and MCP · Cloud files have public URLs"
   />
 
 </SiteLayout>
