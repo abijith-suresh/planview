@@ -47,7 +47,10 @@ configured yet. The Railway staging service is separate from app and marketing:
 - Health check: `/health`
 - Runtime port: Railway's `PORT` value, default `4322` locally
 
-The Node server exposes GET/HEAD only, validates paths before serving files,
+The Node server exposes GET/HEAD only and supports conditional revalidation with
+weak file-metadata ETags. Unchanged pages and search assets return `304`; hashed
+assets retain immutable caching. Railway supplies negotiated gzip compression.
+The server validates paths before serving files,
 checks real paths remain under `dist`, and serves search WASM with the required
 MIME type. HTML and search files revalidate; hashed Astro assets are immutable.
 It should run against a trusted, immutable repository build, not a directory
@@ -78,4 +81,6 @@ and Fragment Mono fonts. A theme-provider override applies dark mode before pain
 including browsers with an older saved light preference. Setup navigation is
 visible first; guides and reference groups start collapsed. Starlight supplies
 the mobile menu, search dialog, keyboard focus handling, and code-copy controls.
-There is no permanent right-hand contents column.
+There is no permanent right-hand contents column. Code blocks reserve a toolbar
+row for their 44px copy controls so commands remain readable while scrolling.
+Only the dark syntax theme is generated.

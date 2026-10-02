@@ -239,6 +239,68 @@ a {
   font-size: 0.9rem;
   padding: 1rem;
 }
+
+/* Reserve a toolbar row so copy never covers a command, including after scrolling. */
+.sl-markdown-content .expressive-code .frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  border-radius: 8px;
+  box-shadow: none;
+}
+.sl-markdown-content .expressive-code .frame > .header {
+  display: flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 52px;
+  padding: 4px 64px 4px 12px;
+  background: #0f0f11;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px 8px 0 0;
+}
+.sl-markdown-content .expressive-code .frame > .header::before {
+  display: none;
+}
+.sl-markdown-content .expressive-code .frame > .header .title {
+  padding: 0;
+  margin: 0;
+  font-size: 0.8rem;
+  background: transparent;
+  border: 0;
+}
+.sl-markdown-content .expressive-code .frame.is-terminal > .header .title:empty::before {
+  content: "Terminal";
+  color: #a1a1a6;
+}
+.sl-markdown-content .expressive-code .frame > pre {
+  grid-area: 2 / 1;
+  min-width: 0;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+}
+.sl-markdown-content .expressive-code .frame > .copy {
+  position: relative;
+  grid-area: 1 / 1;
+  justify-self: end;
+  align-self: center;
+  inset: auto;
+  margin-inline-end: 4px;
+}
+.sl-markdown-content .expressive-code .copy button {
+  width: 44px;
+  height: 44px;
+  opacity: 1;
+  border-radius: 6px;
+}
+.sl-markdown-content .expressive-code .copy button::after {
+  inset: 12px;
+  margin: 0;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
 @media (min-width: 50rem) {
   .docs-brand {
     width: calc(var(--sl-sidebar-width) - 1rem);
@@ -273,20 +335,26 @@ a {
   .docs-search button[data-open-modal] {
     width: 44px;
     height: 44px;
+    padding: 0;
+    justify-content: center;
+    background: #121214;
+    border: 1px solid rgba(255, 255, 255, 0.12);
   }
   .docs-search button[data-open-modal] svg {
     width: 20px;
     height: 20px;
   }
 }
-.sl-menu-button,
-.sl-menu-button:has(~ :popover-open) {
+.sl-menu-button {
+  top: calc((var(--sl-nav-height) - var(--sl-menu-button-size) - 1px) / 2);
   background: #121214;
   color: #d9d9dc;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   box-shadow: none;
-  padding: 8px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
 }
 .sl-menu-button svg {
   width: 20px;

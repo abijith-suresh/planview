@@ -28,6 +28,19 @@ export default defineConfig({
       description: "Guides for local previews, cloud documents, and MCP agents.",
       customCss: ["./src/styles/docs.css"],
       tableOfContents: false,
+      expressiveCode: {
+        themes: ["starlight-dark"],
+        useDarkModeMediaQuery: false,
+        styleOverrides: {
+          borderColor: "rgba(255, 255, 255, 0.08)",
+          frames: {
+            editorBackground: "#121214",
+            terminalBackground: "#121214",
+            inlineButtonForeground: "#d9d9dc",
+            frameBoxShadowCssValue: "none",
+          },
+        },
+      },
       head: [{ tag: "meta", attrs: { name: "theme-color", content: "#0c0c0e" } }],
       components: {
         Header: "./src/components/Header.astro",
