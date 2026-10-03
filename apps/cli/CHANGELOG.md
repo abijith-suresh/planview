@@ -1,5 +1,11 @@
 # @abijith-suresh/planview
 
+## 0.1.8
+
+### Patch Changes
+
+- 0414f92: Upload artifact folders to the cloud, preserving relative CSS and JavaScript alongside HTML. Hosted MCP can upload, list, and read artifact files.
+
 ## 0.1.7
 
 ### Patch Changes
