@@ -21,6 +21,7 @@ const fixtureWorkspaces = [
   ["apps/cli", "@abijith-suresh/planview"],
   ["apps/app", "@planview/app"],
   ["apps/site", "@planview/site"],
+  ["apps/docs", "@planview/docs"],
 ];
 
 const populateFixture = (

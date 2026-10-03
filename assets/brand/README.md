@@ -1,0 +1,27 @@
+# plansplease brand assets
+
+All three apps use a plain capital P from Schibsted Grotesk 600 on the existing
+coral and dark palette. The font's glyph is outlined, scaled uniformly to a
+44-unit cap height, and centered on a 64-unit canvas. The site, app and docs each
+have a 1200 × 630 PNG preview. Text is outlined in the editable
+SVG sources using Schibsted Grotesk 600 and Instrument Sans 400, matching the UI.
+Their font licenses are included here. Outlines keep rendering independent of
+system fonts and external font services.
+
+Edit these SVG sources, then run `npm run brand:generate` to regenerate the
+committed public assets. This uses the development-only Sharp dependency; no
+image rendering runs on a request or during deployment. The ICO contains 16, 32
+and 48 pixel PNG frames. Touch and larger PNG icons have a square, opaque coral
+background so the platform can apply its own corner mask.
+Icons and social previews use `?v=2` after replacing the mark and removing badges.
+Bump the corresponding version in all three apps when changing committed images
+that use the same filename. Social artwork carries the product name and a useful
+headline, without app, site or docs badges.
+
+When changing domains, set `PUBLIC_SITE_URL` for the marketing build,
+`PUBLIC_DOCS_URL` for the docs build, and `SITE_URL` for the app server.
+The site and app require an origin; the docs URL may include a deployment prefix.
+
+Preview text is generic product copy. The app must not include document titles,
+HTML content or account details in link previews. The larger icons are static
+assets for future use; this change does not add a service worker or install flow.

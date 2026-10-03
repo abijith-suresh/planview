@@ -7,7 +7,6 @@ import type { Id } from "../../convex/_generated/dataModel";
 
 import { api, getUnauthedConvexClient } from "./convex-server";
 import { createDocumentReadCache } from "./document-read-cache";
-import { uploadHtmlFile } from "./document-file-upload";
 import { createDocumentProof, createAbandonDocumentProof } from "./document-mutation-proof";
 import { getDocumentStorage } from "./document-storage";
 import { uploadReservedDocument } from "./reserved-document-upload";
@@ -84,12 +83,12 @@ export function createMcpDocumentService(ownerId: string) {
       throw new Error("Title must be between 1 and 200 characters");
     }
     if (bytes.length > maxFileBytes) throw new Error("Document exceeds the 8 MiB limit");
-    const customId = `${ownerId}:${randomUUID()}`;
-    const storageKey = `uploadthing-custom-id:${customId}`;
+    const objectId = `${ownerId}:${randomUUID()}`;
+    const storage = getDocumentStorage();
+    const locator = storage.getUploadLocator(objectId);
     const input = {
       title: cleanTitle,
-      storageProvider: "uploadthing" as const,
-      storageKey,
+      ...locator,
       contentType,
       sizeBytes: bytes.length,
     };
@@ -113,10 +112,10 @@ export function createMcpDocumentService(ownerId: string) {
         contentType === cloudBundleContentType ? "document.planview" : "document.html",
         { type: contentType }
       ),
-      customId,
+      objectId,
       reserve: async () =>
         client.mutation(api.mcpDocuments.reserveUpload, await uploadArguments("reserve")),
-      upload: uploadHtmlFile,
+      upload: (input) => storage.upload(input),
       commit: async () => client.mutation(api.mcpDocuments.create, await uploadArguments("create")),
       abandon: async (uploadConfirmed) =>
         client.mutation(api.mcpDocuments.abandonUpload, {
@@ -171,12 +170,16 @@ export function createMcpDocumentService(ownerId: string) {
       if (!result) return null;
       const { document, legacyReadUrl } = result;
       if (document.contentType === cloudBundleContentType) {
-        const url = await getDocumentStorage(document.storageProvider!).getReadUrl(
-          document.storageKey!
-        );
+        if (!document.storageProvider || !document.storageKey)
+          throw new Error("Bundle storage is unavailable");
         const bundle = await bundleReadCache.load(
-          bundleCacheKey(document.storageProvider!, document.storageKey!),
-          () => fetch(url, { signal: AbortSignal.timeout(20_000) }).then(readBoundedBundle)
+          bundleCacheKey(document.storageProvider, document.storageKey),
+          async () => {
+            const url = await getDocumentStorage(document.storageProvider!).getReadUrl(
+              document.storageKey!
+            );
+            return readBoundedBundle(await fetch(url, { signal: AbortSignal.timeout(20_000) }));
+          }
         );
         return {
           ...present(document),

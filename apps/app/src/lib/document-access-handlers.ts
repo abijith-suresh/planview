@@ -1,4 +1,5 @@
 import type { DocumentStorageAdapter } from "./document-storage.js";
+import { documentPreviewResponse } from "./document-preview.ts";
 
 export type DocumentAccessRecord = Readonly<{
   readonly contentType: string;
@@ -25,41 +26,6 @@ export type DocumentAccessHandlerDependencies<Client> = {
 };
 
 export type DocumentRouteEvent = { request: Request; params: { id: string } };
-
-const previewContentSecurityPolicy = [
-  "default-src 'none'",
-  "base-uri 'none'",
-  "object-src 'none'",
-  "form-action 'none'",
-  "frame-ancestors 'none'",
-  "sandbox allow-scripts allow-modals allow-popups",
-  "script-src 'unsafe-inline' https: blob:",
-  "style-src 'unsafe-inline' https:",
-  "img-src data: blob: https:",
-  "font-src data: blob: https:",
-  "media-src data: blob: https:",
-  "connect-src https:",
-  "worker-src blob: https:",
-  "frame-src https:",
-].join("; ");
-
-const previewResponse = async (response: Response, contentType: string) => {
-  if (!response.ok) {
-    return new Response("Not found", { status: 404 });
-  }
-
-  return new Response(await response.arrayBuffer(), {
-    headers: {
-      "Cache-Control": "private, no-store",
-      "Content-Disposition": "inline",
-      "Content-Security-Policy": previewContentSecurityPolicy,
-      "Content-Type": `${contentType}; charset=utf-8`,
-      "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=()",
-      "Referrer-Policy": "no-referrer",
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
-};
 
 const errorResponse = <Client>(
   dependencies: DocumentAccessHandlerDependencies<Client>,
@@ -92,8 +58,10 @@ export function createDocumentPreviewHandler<Client>(
       }
       if (document.storageProvider && document.storageKey) {
         const storage = dependencies.getDocumentStorage(document.storageProvider);
-        const response = await dependencies.fetch(await storage.getReadUrl(document.storageKey));
-        return previewResponse(response, document.contentType);
+        return documentPreviewResponse(
+          await storage.getReadUrl(document.storageKey),
+          document.title
+        );
       }
 
       if (!dependencies.convexSiteUrl) {

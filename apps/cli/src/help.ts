@@ -16,7 +16,7 @@ export const COMMANDS = [
 export type Command = (typeof COMMANDS)[number];
 export type HelpTopic = Command | "skills install";
 
-const ROOT_HELP = `Usage: planview [global-options] <command> [options]
+const ROOT_HELP = `Usage: plansplease [global-options] <command> [options]
 
 Commands:
   publish <file|folder>  Publish a snapshot and print its URL
@@ -38,11 +38,11 @@ Global options:
   --profile <name>       Use isolated state for this command (default: default)
 
 Profile names use lowercase letters, numbers, hyphens, and underscores.
-Use planview <command> --help for command options.
+Use plansplease <command> --help for command options.
 `;
 
 const COMMAND_HELP: Record<HelpTopic, string> = {
-  publish: `Usage: planview publish [options] <file|folder>
+  publish: `Usage: plansplease publish [options] <file|folder>
 
 Publish one immutable HTML snapshot and print its localhost URL.
 The input may be an HTML file or a page folder containing index.html.
@@ -53,20 +53,20 @@ Options:
   --open                 Open the published URL in the default browser
   --json                 Print the snapshot id and URL as one JSON object
 `,
-  upload: `Usage: planview upload [options] <file.html|folder>
+  upload: `Usage: plansplease upload [options] <file.html|folder>
 
 Upload an HTML file or artifact folder to your cloud workspace and print its link.
-Run planview login first. Folders need index.html; the total cloud limit is 8 MiB.
+Run plansplease login first. Folders need index.html; the total cloud limit is 8 MiB.
 
 Options:
   -h, --help             Show this help message
   --open                 Open the returned link in the default browser
   --json                 Print the document id and URL as one JSON object
 `,
-  login: `Usage: planview login [options]
+  login: `Usage: plansplease login [options]
 
 Open GitHub sign-in in your browser and authorize this computer for cloud uploads.
-Credentials are saved in the selected Planview profile's private data directory.
+Credentials are saved in the selected profile's private data directory.
 
 Options:
   -h, --help             Show this help message
@@ -75,29 +75,29 @@ Options:
 The default cloud app is the current alpha staging site. Set PLANVIEW_CLOUD_URL
 or use --cloud-url to select another app origin.
 `,
-  logout: `Usage: planview logout
+  logout: `Usage: plansplease logout
 
-Remove the saved cloud sign-in from the selected Planview profile on this computer.
+Remove the saved cloud sign-in from the selected profile on this computer.
 `,
-  get: `Usage: planview get [options] <id|url>
+  get: `Usage: plansplease get [options] <id|url>
 
 Write the stored snapshot's exact bytes to standard output.
-The reference may be a document id or an exact local Planview URL.
+The reference may be a document id or an exact local preview URL.
 The URL must use the selected profile's current port.
 
 Options:
   -h, --help             Show this help message
 `,
-  start: `Usage: planview start [options]
+  start: `Usage: plansplease start [options]
 
 Start the selected profile's daemon, or reuse its authenticated daemon.
-If the preferred port is occupied, Planview uses the next available port.
+If the preferred port is occupied, plansplease uses the next available port.
 
 Options:
   -h, --help             Show this help message
   --json                 Print the daemon status as one JSON object
 `,
-  status: `Usage: planview status [options]
+  status: `Usage: plansplease status [options]
 
 Show daemon status without starting a daemon.
 
@@ -105,7 +105,7 @@ Options:
   -h, --help             Show this help message
   --json                 Print the daemon status as one JSON object
 `,
-  stop: `Usage: planview stop [options]
+  stop: `Usage: plansplease stop [options]
 
 Gracefully stop the local daemon.
 
@@ -113,7 +113,7 @@ Options:
   -h, --help             Show this help message
   --json                 Print the stopped state as one JSON object
 `,
-  restart: `Usage: planview restart [options]
+  restart: `Usage: plansplease restart [options]
 
 Restart the local daemon.
 
@@ -121,7 +121,7 @@ Options:
   -h, --help             Show this help message
   --json                 Print the daemon status as one JSON object
 `,
-  clean: `Usage: planview clean [options]
+  clean: `Usage: plansplease clean [options]
 
 Remove expired snapshots and reconcile incomplete storage operations.
 
@@ -129,14 +129,14 @@ Options:
   -h, --help             Show this help message
   --json                 Print the cleanup result as one JSON object
 `,
-  skills: `Usage: planview skills <command>
+  skills: `Usage: plansplease skills <command>
 
 Commands:
   install [--force]      Install bundled Agent Skills into ~/.agents/skills
 
-Use planview skills install --help for installation details.
+Use plansplease skills install --help for installation details.
 `,
-  "skills install": `Usage: planview skills install [options]
+  "skills install": `Usage: plansplease skills install [options]
 
 Install the bundled planview and create-html Agent Skills into ~/.agents/skills.
 Existing skill directories are refused unless --force is supplied.
@@ -145,7 +145,7 @@ Options:
   -h, --help             Show this help message
   --force                Replace existing skill directories
 `,
-  help: `Usage: planview help [command]
+  help: `Usage: plansplease help [command]
 
 Show help for the whole CLI or for one command.
 `,

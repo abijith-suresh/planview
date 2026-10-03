@@ -1,6 +1,6 @@
 # Cloud artifacts
 
-The CLI accepts `planview upload ./artifact/`. Hosted MCP provides `upload_bundle`
+The CLI accepts `plansplease upload ./artifact/`. Hosted MCP provides `upload_bundle`
 with `title` and `files`, each containing `path` and UTF-8 `content`. Both store one
 PLVWBND1 object using the same format as local artifact previews. Standalone HTML
 uploads keep their existing API and behavior.

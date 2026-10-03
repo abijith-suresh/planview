@@ -16,7 +16,7 @@ const uploadRequestSizeLimit = 8 * 1024 * 1024 + 64 * 1024;
 function createHandler(overrides: Partial<DocumentUploadHandlerDependencies<TestClient>> = {}) {
   const calls = {
     getCurrentUser: 0,
-    uploads: [] as { customId: string; fileName: string }[],
+    uploads: [] as { objectId: string; fileName: string }[],
     metadata: [] as DocumentUploadMetadata[],
     metadataOwners: [] as string[],
     abandonedKeys: [] as string[],
@@ -28,8 +28,13 @@ function createHandler(overrides: Partial<DocumentUploadHandlerDependencies<Test
       return { subject: "owner_123" };
     },
     isStorageConfigured: () => true,
-    uploadFile: async ({ file, customId }) => {
-      calls.uploads.push({ customId, fileName: file.name });
+    getUploadLocator: (objectId) => ({
+      storageProvider: "uploadthing",
+      storageKey: `uploadthing-custom-id:${objectId}`,
+    }),
+    uploadFile: async ({ file, objectId }) => {
+      calls.uploads.push({ objectId, fileName: file.name });
+      return { storageProvider: "uploadthing", storageKey: `uploadthing-custom-id:${objectId}` };
     },
     reserveMetadata: async () => ({ id: null, uploadDeadlineAt: Date.now() + 60_000 }),
     abandonMetadata: async (_client, input) => {
@@ -154,7 +159,8 @@ test("rejects invalid titles, multiple files, non-HTML files, and files larger t
 
       assert.equal(response.status, 400);
       assert.deepEqual(await response.json(), {
-        error: "Upload one .html file up to 8 MiB with a title of 1 to 200 characters",
+        error:
+          "Upload one HTML file or artifact bundle up to 8 MiB with a title of 1 to 200 characters",
       });
       assert.equal(calls.uploads.length, 0);
       assert.equal(calls.metadata.length, 0);
@@ -183,7 +189,7 @@ test("stores one HTML file and binds its storage key to the authenticated owner"
 
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), { id: "document_123" });
-  assert.deepEqual(calls.uploads, [{ customId: "owner_123:uuid-123", fileName: "hello.html" }]);
+  assert.deepEqual(calls.uploads, [{ objectId: "owner_123:uuid-123", fileName: "hello.html" }]);
   assert.deepEqual(calls.metadata, [
     {
       title: "My document",
@@ -224,7 +230,7 @@ test("fences the reserved upload for durable cleanup if metadata creation fails"
 
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { error: "metadata creation failed" });
-  assert.deepEqual(calls.uploads, [{ customId: "owner_123:uuid-123", fileName: "hello.html" }]);
+  assert.deepEqual(calls.uploads, [{ objectId: "owner_123:uuid-123", fileName: "hello.html" }]);
   assert.deepEqual(calls.abandonedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
 });
 
@@ -328,6 +334,64 @@ test("a provider timeout is marked uncertain rather than safe for cleanup", asyn
   const response = await handler({ request: createUploadRequest() });
   assert.equal(response.status, 500);
   assert.equal(confirmed, false);
+});
+
+test("reserves the adapter locator before upload and forwards its absolute deadline", async () => {
+  const order: string[] = [];
+  const deadlineAt = Date.now() + 60_000;
+  const locator = { storageProvider: "uploadthing" as const, storageKey: "provider-owned-locator" };
+  const { handler } = createHandler({
+    getUploadLocator: (objectId) => {
+      assert.equal(objectId, "owner_123:uuid-123");
+      return locator;
+    },
+    reserveMetadata: async (_client, input) => {
+      order.push("reserve");
+      assert.equal(input.storageKey, locator.storageKey);
+      return { id: null, uploadDeadlineAt: deadlineAt };
+    },
+    uploadFile: async (input) => {
+      order.push("upload");
+      assert.equal(input.deadlineAt, deadlineAt);
+      assert.equal(input.objectId, "owner_123:uuid-123");
+      return locator;
+    },
+    createMetadata: async (_client, input) => {
+      order.push("commit");
+      assert.equal(input.storageKey, locator.storageKey);
+      return "document_123";
+    },
+  });
+  assert.equal((await handler({ request: createUploadRequest() })).status, 201);
+  assert.deepEqual(order, ["reserve", "upload", "commit"]);
+});
+
+test("a mismatched provider locator cannot authorize reserved-object cleanup or commit", async () => {
+  let confirmed: boolean | undefined;
+  const { calls, handler } = createHandler({
+    uploadFile: async () => ({ storageProvider: "uploadthing", storageKey: "different-object" }),
+    abandonMetadata: async (_client, _input, _ownerId, _request, uploadConfirmed) => {
+      confirmed = uploadConfirmed;
+      return null;
+    },
+  });
+  const response = await handler({ request: createUploadRequest() });
+  assert.equal(response.status, 500);
+  assert.match((await response.json()).error, /does not match its upload reservation/);
+  assert.equal(confirmed, false);
+  assert.equal(calls.metadata.length, 0);
+});
+
+test("an existing committed reservation skips provider bytes and metadata writes", async () => {
+  const { calls, handler } = createHandler({
+    reserveMetadata: async () => ({ id: "existing-document", uploadDeadlineAt: 0 }),
+  });
+  const response = await handler({ request: createUploadRequest() });
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), { id: "existing-document" });
+  assert.equal(calls.uploads.length, 0);
+  assert.equal(calls.metadata.length, 0);
+  assert.equal(calls.abandonedKeys.length, 0);
 });
 
 test("bundle multipart uploads validate before quota admission and preserve exact encoded charge", async () => {

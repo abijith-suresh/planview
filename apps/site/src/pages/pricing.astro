@@ -5,13 +5,13 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
 <SiteLayout
   title="Pricing | plansplease"
-  description="Simple for now. Clear about later."
+  description="Free during alpha. Paid plans are still being planned."
   activePath="pricing"
 >
   <header class="page-heading">
     <div>
       <h1>Pricing</h1>
-      <p>Simple for now. Clear about later.</p>
+      <p>Free during alpha. Paid plans are still being planned.</p>
     </div>
   </header>
 
@@ -26,10 +26,11 @@ import SiteLayout from "../layouts/SiteLayout.astro";
           <span class="price-number">$0</span>
           <span class="price-tenure">during alpha</span>
         </div>
-        <p class="pricing-intro">Everything available today is free while we build out the service with the developer community.</p>
+        <p class="pricing-intro">Try plansplease for free while we test the cloud workspace.</p>
         <ul class="pricing-features">
-          <li>Unlimited local previews with loopback daemon</li>
+          <li>Local HTML and folder previews</li>
           <li>Cloud copy of single-file HTML pages</li>
+          <li>HTML files up to 8 MiB each</li>
           <li>Account workspace with GitHub sign-in; public file URLs during alpha</li>
           <li>Full support for modern CSS, Tailwind CDN, and Canvas</li>
           <li>Standard community support via GitHub</li>
@@ -38,26 +39,23 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
       <article class="pricing-card">
         <div class="pricing-header">
-          <span class="pricing-label future">Future Roadmap</span>
-          <h2>Fair & Transparent</h2>
+          <span class="pricing-label future">Planned</span>
+          <h2>Paid plans</h2>
         </div>
         <div class="pricing-price-box">
-          <span class="price-number">Simple</span>
-          <span class="price-tenure">when limits arrive</span>
+          <span class="price-number">To come</span>
+          <span class="price-tenure">after alpha</span>
         </div>
-        <p class="pricing-intro">We are committed to maintaining a generous free tier for individual developers and clear pricing for teams.</p>
+        <p class="pricing-intro">We'll set pricing and storage limits after learning how people use the service.</p>
         <ul class="pricing-features">
-          <li>Always-free personal tier for individual developers</li>
-          <li>Team shared workspaces and collaborative access</li>
-          <li>Custom domains with automatic SSL</li>
-          <li>Higher persistent storage and asset bandwidth</li>
-          <li>Dedicated support and SLA</li>
+          <li>Higher storage limits</li>
+          <li>Private file storage</li>
         </ul>
       </article>
     </div>
 
     <p class="page-note">
-      Questions about plans or enterprise use cases? <a href="/faq/">Check the FAQ</a> or join the
+      Questions about plans? <a href="/faq/">Check the FAQ</a> or join the
       discussion on <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
     </p>
   </section>

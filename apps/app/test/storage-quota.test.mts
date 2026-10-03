@@ -148,13 +148,18 @@ async function withQuota<T>(operation: () => Promise<T>) {
   }
 }
 
-const input = async (key: string, sizeBytes: number, ownerId = "owner-a") => {
+const input = async (
+  key: string,
+  sizeBytes: number,
+  ownerId = "owner-a",
+  contentType = "text/html"
+) => {
   const metadata = {
     ownerId,
     title: "Plan",
     storageProvider: "uploadthing",
     storageKey: `uploadthing-custom-id:${ownerId}:${key}`,
-    contentType: "text/html",
+    contentType,
     sizeBytes,
   };
   return {
@@ -573,4 +578,32 @@ test("legacy deletion and first upload share one seeded counter without drift", 
       20,
       "repeated completion never subtracts twice"
     );
+  }));
+
+test("artifact bundles and standalone HTML share one quota and retain encoded bytes across commit retries", async () =>
+  withQuota(async () => {
+    const database = memoryDatabase();
+    const bundle = await input("bundle", 80, "owner-a", "application/vnd.planview.bundle");
+    await database.transaction((ctx) => reserveUploadForOwner(ctx, bundle.ownerId, bundle));
+    const html = await input("html", 21);
+    await assert.rejects(
+      database.transaction((ctx) => reserveUploadForOwner(ctx, html.ownerId, html)),
+      /storage limit/
+    );
+    const id = await database.transaction((ctx) => createForOwner(ctx, bundle.ownerId, bundle));
+    assert.equal(
+      firstRow(database.rows("documents"))["contentType"],
+      "application/vnd.planview.bundle"
+    );
+    assert.equal(firstRow(database.rows("accountStorageUsage"))["usedBytes"], 80);
+    assert.equal(
+      await database.transaction((ctx) => createForOwner(ctx, bundle.ownerId, bundle)),
+      id
+    );
+    assert.equal(
+      await database.transaction((ctx) => abandonUploadForOwner(ctx, bundle.ownerId, bundle)),
+      id
+    );
+    assert.equal(firstRow(database.rows("accountStorageUsage"))["usedBytes"], 80);
+    assert.equal(database.rows("uploadReservations").length, 0);
   }));

@@ -1,14 +1,23 @@
 import { Match, Switch } from "solid-js";
 
 export type IconName =
+  | "menu"
+  | "more"
+  | "book"
+  | "clock"
   | "copy"
   | "external"
   | "file"
+  | "github"
   | "grid"
   | "lock"
   | "log-out"
   | "plus"
-  | "trash";
+  | "settings"
+  | "terminal"
+  | "trash"
+  | "upload"
+  | "x";
 
 type IconProps = {
   name: IconName;
@@ -27,6 +36,19 @@ export default function Icon(props: IconProps) {
       xmlns="http://www.w3.org/2000/svg"
     >
       <Switch>
+        <Match when={props.name === "menu"}>
+          <path
+            d="M4 6h16M4 12h16M4 18h16"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "more"}>
+          <circle cx="5" cy="12" r="1.5" fill="currentColor" />
+          <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+          <circle cx="19" cy="12" r="1.5" fill="currentColor" />
+        </Match>
         <Match when={props.name === "grid"}>
           <rect height="5" rx="1" stroke="currentColor" stroke-width="1.7" width="5" x="3" y="3" />
           <rect height="5" rx="1" stroke="currentColor" stroke-width="1.7" width="5" x="16" y="3" />
@@ -136,6 +158,84 @@ export default function Icon(props: IconProps) {
           />
           <path
             d="M11 8l4 4-4 4M15 12H5"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "github"}>
+          <path
+            d="M9 19c-4.3 1.5-4.3-2.5-6-3m12 6v-3.7c0-1 .1-1.4-.5-2 2.7-.3 5.5-1.3 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.2 4.2 0 0 0-.1-3.1s-1.1-.3-3.5 1.3a12.3 12.3 0 0 0-6.2 0C6.5 2.8 5.4 3.1 5.4 3.1a4.2 4.2 0 0 0-.1 3.1A4.6 4.6 0 0 0 4 9.3c0 4.6 2.8 5.7 5.5 6-.6.6-.6 1.2-.5 2V21.5"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "x"}>
+          <path
+            d="M18 6L6 18M6 6l12 12"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "upload"}>
+          <path
+            d="M12 15.5v-11m0 0L7.5 9M12 4.5L16.5 9"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+          <path
+            d="M4 16.5v2A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-2"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "terminal"}>
+          <path
+            d="M5 8l4 4-4 4"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+          <path d="M12 17.5h7" stroke="currentColor" stroke-linecap="round" stroke-width="1.7" />
+        </Match>
+        <Match when={props.name === "book"}>
+          <path
+            d="M3 19.5A2.5 2.5 0 0 1 5.5 17H20V3H5.5A2.5 2.5 0 0 0 3 5.5v14Zm0 0A2.5 2.5 0 0 0 5.5 22H20v-4.5"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+          <path
+            d="M8 7.5h7M8 11h5"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "clock"}>
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7" />
+          <path
+            d="M12 7v5l3.5 2"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="1.7"
+          />
+        </Match>
+        <Match when={props.name === "settings"}>
+          <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.7" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"
             stroke="currentColor"
             stroke-linecap="round"
             stroke-linejoin="round"

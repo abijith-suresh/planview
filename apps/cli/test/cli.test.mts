@@ -141,7 +141,7 @@ test("--help and -h produce the same deterministic output", () => {
   assert.equal(long.error, undefined);
   assert.equal(long.stderr, "");
   assert.equal(long.stdout, short.stdout);
-  assert.match(long.stdout, /^Usage: planview \[global-options\] <command>/);
+  assert.match(long.stdout, /^Usage: plansplease \[global-options\] <command>/);
 });
 
 test("help exposes the root and command-specific documentation", () => {
@@ -266,9 +266,11 @@ test("the public declaration does not reference private workspace packages", () 
   assert.doesNotMatch(declaration, /@planview\//);
 });
 
-test("the public package is scoped while its CLI binary remains planview", () => {
+test("the public package retains its name and exposes only the plansplease command", () => {
   assert.equal(packageJson.name, "@abijith-suresh/planview");
-  assert.deepEqual(packageJson.bin, { planview: "./dist/index.js" });
+  assert.deepEqual(packageJson.bin, {
+    plansplease: "./dist/index.js",
+  });
 });
 
 test("--version and -v follow the Changesets-managed package version", () => {
@@ -280,7 +282,7 @@ test("--version and -v follow the Changesets-managed package version", () => {
   assert.equal(long.status, 0);
   assert.equal(long.error, undefined);
   assert.equal(long.stderr, "");
-  assert.equal(long.stdout, `planview ${packageJson.version}\n`);
+  assert.equal(long.stdout, `plansplease ${packageJson.version}\n`);
   assert.equal(short.stdout, long.stdout);
 });
 
@@ -328,7 +330,7 @@ test("programmatic help and version output await asynchronous writers", async ()
   assert.equal(outputs[0], formatHelp());
   const versionOutput = outputs[1];
   assert.ok(versionOutput);
-  assert.match(versionOutput, /^planview \d+\.\d+\.\d+\n$/);
+  assert.match(versionOutput, /^plansplease \d+\.\d+\.\d+\n$/);
 });
 
 test("unknown options fail with a useful error", () => {
@@ -338,7 +340,7 @@ test("unknown options fail with a useful error", () => {
   assert.equal(result.error, undefined);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /^Unknown option: --unknown\n/);
-  assert.match(result.stderr, /Usage: planview \[global-options\] <command>/);
+  assert.match(result.stderr, /Usage: plansplease \[global-options\] <command>/);
 });
 
 test("JSON errors stay machine-readable on stderr", () => {
@@ -417,17 +419,16 @@ test("publish --open is recognized and preview is not a command", () => {
   assert.match(preview.stderr, /^Unknown command: preview\n/);
 });
 
-test("the installed bin invokes the built CLI", () => {
+test("the installed plansplease bin invokes the built CLI", () => {
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const result = spawnSync(
     npm,
-    ["exec", "--workspace", "@abijith-suresh/planview", "--", "planview", "--version"],
+    ["exec", "--workspace", "@abijith-suresh/planview", "--", "plansplease", "--version"],
     { cwd: repositoryRoot, encoding: "utf8" }
   );
-
   assert.equal(result.status, 0);
   assert.equal(result.error, undefined);
-  assert.equal(result.stdout, `planview ${packageJson.version}\n`);
+  assert.equal(result.stdout, `plansplease ${packageJson.version}\n`);
   assert.equal(result.stderr, "");
 });
 
@@ -1294,7 +1295,7 @@ test("clean uses the authenticated daemon policy and startup reconciliation", as
     const cleaned = executeInFixture("clean");
     assert.equal(cleaned.status, 0, cleaned.stderr);
     assert.equal(cleaned.stderr, "");
-    assert.match(cleaned.stdout, /Planview cleanup removed 1 expired snapshot/);
+    assert.match(cleaned.stdout, /plansplease cleanup removed 1 expired snapshot/);
     database = new DatabaseSync(join(appDataDir, "metadata.sqlite"), { timeout: 5000 });
     assert.equal(
       database.prepare("SELECT id FROM documents WHERE id = :id").get({ ":id": secondDocumentId }),
@@ -1332,7 +1333,7 @@ test("skills install stages both skills, refuses conflicts, and supports explici
     const installed = executeInHome("skills", "install");
     assert.equal(installed.status, 0, installed.stderr);
     assert.match(installed.stdout, /Installed planview and create-html skills/);
-    assert.match(readFileSync(join(skillsRoot, "planview", "SKILL.md"), "utf8"), /# Planview/);
+    assert.match(readFileSync(join(skillsRoot, "planview", "SKILL.md"), "utf8"), /# plansplease/);
     assert.match(
       readFileSync(join(skillsRoot, "create-html", "SKILL.md"), "utf8"),
       /browser-native/

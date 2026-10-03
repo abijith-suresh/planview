@@ -243,9 +243,9 @@ test("repository foundation has the expected configuration", () => {
     "0.1.0",
     "CLI local application dependency"
   );
-  expectProperty(cliPackageJson.bin, "planview", "./dist/index.js", "CLI bin mapping");
+  expectProperty(cliPackageJson.bin, "plansplease", "./dist/index.js", "primary CLI bin mapping");
   expectEqual(cliPackageJson.files, ["dist", "skills", "man", "README.md"], "CLI publish files");
-  expectEqual(cliPackageJson.man, "./man/planview.1", "CLI man page");
+  expectEqual(cliPackageJson.man, "./man/plansplease.1", "CLI man page");
   expectProperty(
     cliPackageJson.scripts,
     "build",
@@ -453,6 +453,17 @@ test("repository foundation has the expected configuration", () => {
     "storage clean-checkout typecheck compiler options"
   );
   expectProperty(storagePackageJson.dependencies, "effect", "4.0.0", "storage Effect dependency");
+
+  const docsPackageJson = readJson("apps/docs/package.json");
+  expectProperty(docsPackageJson, "name", "@planview/docs", "docs package name");
+  expectProperty(docsPackageJson, "private", true, "docs package privacy");
+  expectProperty(docsPackageJson.scripts, "start", "node server.mjs", "docs static start command");
+  expectProperty(
+    readJson("apps/docs/tsconfig.json"),
+    "extends",
+    "../../tsconfig.base.json",
+    "docs shared compiler settings"
+  );
 
   const lockfile = readJson("package-lock.json");
   expectEqual(lockfile.lockfileVersion, 3, "lockfile version");

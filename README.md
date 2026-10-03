@@ -1,7 +1,10 @@
-# Planview
+# plansplease
 
-Planview is a TypeScript ESM monorepo for previewing HTML locally and saving pages or artifact folders in an
-account-based alpha cloud workspace. Cloud file URLs are public during testing.
+plansplease is a TypeScript ESM monorepo for previewing HTML locally and saving pages and artifact folders in an
+account-based alpha cloud workspace. Cloud file URLs are public during testing. The CLI command is `plansplease`;
+existing `planview` scripts need updating. Profiles, documents, credentials and daemon
+state retain their locations. Package names,
+local data paths, `PLANVIEW_*` settings and installed skill directories remain compatible.
 
 ## Bootstrap status
 
@@ -52,6 +55,15 @@ npm pack --dry-run --workspace @abijith-suresh/planview
 The package dry run invokes the CLI's `prepack` build, so it does not depend on
 an existing ignored `dist` directory. Workspace checks and builds run each
 package's matching script when present.
+
+## Documentation
+
+The private `apps/docs` workspace is a separate Astro + Starlight application.
+It contains current CLI/MCP guides, architecture, privacy/limits, troubleshooting,
+and dated labels for features that are merged but not deployed or still proposed.
+See [apps/docs/README.md](apps/docs/README.md) for development and static deployment.
+Marketing `/docs/`, `/cli/`, and `/mcp/` keep legacy entry pages and link to the
+canonical docs service. `PUBLIC_DOCS_URL` configures those marketing links.
 
 ## Marketing site
 
@@ -128,8 +140,10 @@ policy requirements.
 
 ## Planned structure
 
-- `apps/cli` — public npm package (`@abijith-suresh/planview`), with the `planview` command
+- `apps/cli` — public npm package (`@abijith-suresh/planview`), with the `plansplease` command
 - `apps/site` — private static project site
+- `apps/docs` — private static Starlight documentation app
+- `apps/app` — authenticated SolidStart cloud workspace and MCP endpoint
 - `packages/core` — private path, v1 policy, document identifier, and source-file validation primitives
 - `packages/daemon` — private detached lifecycle daemon and authenticated management boundary
 - `packages/storage` — private daemon-owned metadata and document-file storage boundary
@@ -138,4 +152,4 @@ policy requirements.
 
 SQLite-backed publication and CLI retrieval are implemented. The daemon performs
 startup reconciliation and authenticated 30-day last-access cleanup at startup and
-every 24 hours; `planview clean` invokes the same policy.
+every 24 hours; `plansplease clean` invokes the same policy.

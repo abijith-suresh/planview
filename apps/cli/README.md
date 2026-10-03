@@ -1,36 +1,50 @@
-# Planview CLI
+# plansplease CLI
 
 The public `@abijith-suresh/planview` command-line package. It publishes immutable,
 30-day-last-access-retained HTML snapshots through the private localhost daemon and
 can upload HTML files or artifact folders to the alpha cloud workspace:
 
-Install it once:
+The command is `plansplease`. This release replaces the `planview` executable;
+update existing scripts to use `plansplease`. Existing profiles, local documents,
+saved cloud credentials, daemon state and installed skills keep their locations.
+The command is installed from the existing `@abijith-suresh/planview` package;
+npm publication remains disabled.
+
+Build and install a tarball from the repository using Node.js 24.19.0 and npm 11.16.0:
 
 ```sh
-npm install --global @abijith-suresh/planview
+git clone https://github.com/abijith-suresh/planview.git
+cd planview
+npm ci
+npm pack --workspace @abijith-suresh/planview --pack-destination .
 ```
 
-For a one-off run, use `npx @abijith-suresh/planview` instead.
+Replace `FILE.tgz` with the filename printed by `npm pack`:
 
 ```sh
-planview publish ./report.html
+npm install --global --ignore-scripts ./FILE.tgz
+plansplease --version
+```
+
+```sh
+plansplease publish ./report.html
 # http://localhost:4777/<id>
 
 # A folder publishes index.html and its assets as one snapshot
-planview publish ./site
+plansplease publish ./site
 # http://localhost:4777/<id>
 
 # Publish and open the URL in the default browser
-planview publish --open ./site
+plansplease publish --open ./site
 
 # Sign in, then upload an HTML page or a folder containing index.html
-planview login
-planview upload ./report.html
-planview upload ./artifact/
+plansplease login
+plansplease upload ./report.html
+plansplease upload ./artifact/
 # https://plansplease-app-staging.up.railway.app/api/documents/<id>
 
 # Keep a feature build separate from the default installation
-planview --profile feature publish ./site
+plansplease --profile feature publish ./site
 
 ```
 
@@ -42,28 +56,28 @@ credentials for custom cloud origins or send them to an environment override.
 Get help for the whole CLI or for one command:
 
 ```sh
-planview help
-planview help publish
-planview publish --help
-planview help upload
+plansplease help
+plansplease help publish
+plansplease publish --help
+plansplease help upload
 ```
 
 Commands that return metadata also support one JSON object on stdout:
 
 ```sh
-planview publish --json ./report.html
-planview upload --json ./report.html
-planview status --json
+plansplease publish --json ./report.html
+plansplease upload --json ./report.html
+plansplease status --json
 ```
 
 The package includes a Unix manual page. On npm versions that register package
 man pages, a global install makes it available as:
 
 ```sh
-man planview
+man plansplease
 ```
 
-`planview help` is the portable help path. Newer npm versions may keep the
+`plansplease help` is the portable help path. Newer npm versions may keep the
 manual in the package without registering it with the system `man` command.
 
 ## Automation contract
@@ -89,18 +103,18 @@ normal publish result and adds the browser-opening side effect.
 
 ## Cloud uploads
 
-`planview login` opens GitHub sign-in in a browser and asks you to authorize the
+`plansplease login` opens GitHub sign-in in a browser and asks you to authorize the
 local CLI. The CLI stores the cloud credential in the selected profile's
 Planview data directory. On POSIX systems the directory is mode `0700` and the
 credential file is mode `0600`. The credential permits cloud uploads only and
-stays valid until revoked. `planview logout` revokes it on the cloud service,
-then removes the local file; it needs a connection to complete. Credentials
-saved before this change need a new `planview login`.
-Set `PLANVIEW_CLOUD_URL` or pass `--cloud-url <origin>` to `planview login` to
+stays valid until revoked. `plansplease logout` revokes it on the cloud service,
+then removes the local file; it needs a connection to complete. Renaming the
+command does not require signing in again.
+Set `PLANVIEW_CLOUD_URL` or pass `--cloud-url <origin>` to `plansplease login` to
 use another cloud app. The alpha default is
-`https://app-staging-a39a.up.railway.app`.
+`https://plansplease-app-staging.up.railway.app`.
 
-`planview upload <file.html>` accepts one standalone `.html` file up to 8 MiB
+`plansplease upload <file.html>` accepts one standalone `.html` file up to 8 MiB
 and returns its workspace preview link. The preview requires the same account to
 be signed in in the browser; it is not an anonymous share link. Use `--open` to
 open the returned link or `--json` to print the document ID and URL.
@@ -108,11 +122,11 @@ open the returned link or `--json` to print the document ID and URL.
 The daemon can also be managed directly:
 
 ```sh
-planview start
-planview status
-planview stop
-planview restart
-planview clean
+plansplease start
+plansplease status
+plansplease stop
+plansplease restart
+plansplease clean
 ```
 
 The daemon is detached and binds to `127.0.0.1:4777` when available. If that
@@ -120,7 +134,8 @@ port is occupied, it tries the next 50 ports and stores the selected port in
 the protected runtime descriptor. The URL printed by `publish` always uses
 the selected port. Each profile has its own durable app-data and runtime
 directory; the default profile keeps the existing Planview data location and
-named profiles live below `planview/profiles/<name>`. `publish` validates the `.html`/`.htm` source and inclusive 10 MiB
+named profiles live below `planview/profiles/<name>`. The existing `PLANVIEW_*`
+environment settings and local directories retain their names. `publish` validates the `.html`/`.htm` source and inclusive 10 MiB
 limit before starting the daemon, then prints only the resulting localhost URL.
 When the input is a folder, it must contain `index.html`; the folder is packed
 into one immutable snapshot, with asset paths available below `/<id>/`.
@@ -135,11 +150,11 @@ The package also bundles independent `planview` and `create-html` Agent Skills.
 Install both into `~/.agents/skills` with:
 
 ```sh
-planview skills install
+plansplease skills install
 ```
 
 Installation refuses to replace an existing skill directory. Use
-`planview skills install --force` for an explicit replacement. The installer
+`plansplease skills install --force` for an explicit replacement. The installer
 creates missing home parents, requires the destination parents to be owned by
 the current user and not writable by group/other, stages both trees privately,
 and uses a durable journal plus a per-destination lock. A later invocation

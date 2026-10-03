@@ -1,0 +1,77 @@
+---
+title: Connect MCP
+description: OAuth setup, current document tools, and pagination for remote agents.
+---
+import { Code } from '@astrojs/starlight/components';
+import { readPublicUrls } from '../../../lib/public-urls.ts';
+export const { appUrl } = readPublicUrls(import.meta.env);
+
+## Add the remote server
+
+Use this URL in your client's remote MCP server settings:
+
+<Code code={`${appUrl}mcp`} lang="text" />
+
+The server supports authenticated HTTP MCP. The current default requires a client
+that supports OAuth with Client ID Metadata Documents, or CIMD. Follow the client's
+browser authorization flow, sign in with GitHub, and approve consent for the
+plansplease workspace.
+
+Do not paste a CLI upload credential, GitHub token, UploadThing token, or backend
+secret into an MCP configuration. OAuth supplies the appropriate access token.
+
+## What consent allows
+
+The document permission is `cloud:documents`. It lets the client list, read,
+upload, and delete documents owned by the signed-in account. OAuth identity and
+refresh flows can also request `openid`, `profile`, `email`, and `offline_access`.
+No current document tool reads another account's workspace.
+
+## Tools on main
+
+| Tool | Input | Result |
+| --- | --- | --- |
+| `list_documents` | Optional `cursor`, `limit` from 1 to 50 | Document metadata and `nextCursor` |
+| `read_document` | `id`, optional `offset`, `maxCharacters`, and bundle asset `path` | Text and `nextOffset` |
+| `upload_document` | `title`, `html` | New document `id` and workspace preview `url` |
+| `upload_bundle` | `title`, `files` containing relative `path` and UTF-8 `content` | Artifact `id`, owner preview `url`, `kind`, and `fileCount` |
+| `list_bundle_files` | `id`, optional `offset` and `limit` from 1 to 50 | Asset paths and `nextOffset` |
+| `delete_document` | `id` | Hides the document and queues provider cleanup |
+
+The bundle tools and asset-path reads require the matching app/backend release.
+They are implemented on main and awaiting rollout; current staging still supports
+standalone HTML tools only. See [deployment status](../../reference/planned-features/).
+
+Bundles require root `index.html`, at most 512 files, and an encoded total up to
+8 MiB including the manifest. MCP uploads accept UTF-8 text assets only. A read
+without `path` opens `index.html`; binary assets can be listed and previewed but
+cannot be read as text. Continue file listing with `offset: nextOffset`.
+
+A title contains 1 to 200 characters. HTML is limited to 8 MiB of UTF-8 bytes.
+The preview URL requires the owning account's browser session; OAuth does not
+turn it into an anonymous share link.
+
+### Read all pages and chunks
+
+Continue listing with `cursor: nextCursor` until `nextCursor` is `null`.
+`read_document` returns at most 32,768 characters per call. Continue with the same
+`id` and `offset: nextOffset` until `nextOffset` is `null`. Preserve exact document
+IDs rather than reconstructing them from titles.
+
+### Revise or delete
+
+There is no update or revision tool on `main` today. Upload a new document after
+an edit and identify both links clearly. Ask the user before deleting useful work.
+Deletion hides the document immediately; provider bytes can remain until the
+cleanup worker succeeds.
+
+## Older clients
+
+Older clients can require dynamic registration or a native loopback callback.
+The server's legacy option is disabled by default and needs operator setup on
+both app and backend. It is not a switch users can enable in their client.
+An unsupported client may fail before the sign-in page appears.
+See [troubleshooting](../../reference/troubleshooting/) before changing credentials.
+
+Cloud bundles await deployment; explicit unlisted sharing remains
+[a separate feature under review](../../reference/planned-features/).

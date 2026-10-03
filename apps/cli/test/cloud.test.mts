@@ -698,6 +698,12 @@ test("cloud upload packs an artifact folder and rejects unsupported entries befo
       assert.ok(file instanceof File);
       assert.equal(file.type, "application/vnd.planview.bundle");
       assert.equal(form.get("title"), "artifact");
+      const { parseCloudBundle, cloudBundleEntry } = await import("@planview/core/cloud-bundle");
+      const bundle = parseCloudBundle(new Uint8Array(await file.arrayBuffer()));
+      assert.deepEqual(
+        Buffer.from(cloudBundleEntry(bundle, "pixel.png").bytes),
+        Buffer.from([137, 80, 78, 71, 0, 255])
+      );
       assert.equal(
         Buffer.from(await file.arrayBuffer())
           .subarray(0, 8)
@@ -711,6 +717,7 @@ test("cloud upload packs an artifact folder and rejects unsupported entries befo
       await saveTestCredentials("artifact-test", cloudUrl);
       const artifact = join(root, "artifact");
       mkdirSync(join(artifact, "scripts"), { recursive: true });
+      writeFileSync(join(artifact, "pixel.png"), Buffer.from([137, 80, 78, 71, 0, 255]));
       writeFileSync(join(artifact, "index.html"), '<script src="scripts/main.js"></script>');
       writeFileSync(join(artifact, "scripts", "main.js"), 'document.body.dataset.artifact="yes";');
       assert.equal((await uploadCloudDocument(artifact, "artifact-test")).id, "artifact-id");

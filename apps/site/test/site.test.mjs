@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { readSiteOrigin } from "../src/lib/public-site-url.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -15,6 +16,8 @@ const withBuild = ({ outputDirectory, basePath }, check) => {
   const environment = { ...process.env };
   // These builds verify the repository default, independent of shell overrides.
   delete environment.PUBLIC_APP_URL;
+  delete environment.PUBLIC_DOCS_URL;
+  delete environment.PUBLIC_SITE_URL;
   if (basePath === undefined) {
     delete environment.BASE_PATH;
   } else {
@@ -70,6 +73,16 @@ const assertCloudStorageCopy = (html) => {
 };
 
 const assertStylesheetAndInternalLinks = (html, output, expectedBase) => {
+  const origin = readSiteOrigin();
+  const socialImage = `${origin}${expectedBase}/social-preview.png?v=2`;
+  assert.ok(html.includes(`property="og:image" content="${socialImage}"`));
+  assert.ok(html.includes(`name="twitter:image" content="${socialImage}"`));
+  assert.ok(html.includes(`rel="canonical" href="${origin}${expectedBase}/"`));
+  for (const filename of ["favicon.svg", "favicon.ico", "apple-touch-icon.png"]) {
+    assert.ok(html.includes(`href="${expectedBase}/${filename}?v=2"`));
+    assert.ok(existsSync(resolve(output, filename)));
+  }
+  assert.ok(existsSync(resolve(output, "social-preview.png")));
   const stylesheetHrefs = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(
     ([, href]) => href
   );
@@ -125,7 +138,8 @@ const assertMarketingPages = (output) => {
     ["cli", "CLI | plansplease", "Give a local HTML file a URL."],
     ["about", "About | plansplease", "A place for the useful things agents make."],
     ["docs", "Docs | plansplease", "Docs for a small tool."],
-    ["pricing", "Pricing | plansplease", "Simple for now. Clear about later."],
+    ["mcp", "MCP | plansplease", "Connect your agent to plansplease."],
+    ["pricing", "Pricing | plansplease", "Free during alpha. Paid plans are still being planned."],
     ["faq", "FAQ | plansplease", "Questions we expect to hear."],
     ["privacy", "Privacy | plansplease", "Your pages are yours."],
   ];
@@ -153,14 +167,17 @@ const assertHomepage = (output, expectedBase) => {
   assert.ok(html.includes("Your agent made a page."));
   assert.ok(html.includes("Give it somewhere useful to live."));
   assert.ok(html.includes("Continue with GitHub"));
+  assert.ok(html.includes("CLI and MCP"));
+  assert.equal(html.includes("MCP soon"), false);
+  assert.ok(html.includes('href="https://plansplease-docs-staging.up.railway.app/"'));
   assert.ok(html.includes('class="demo"'));
-  assert.ok(html.includes("planview publish ./auth-migration-spec.html"));
+  assert.ok(html.includes("plansplease publish ./auth-migration-spec.html"));
   assert.ok(html.includes("plansplease.app/p/auth-migration-spec"));
   assert.ok(html.includes("http://localhost:4777/auth-migration-spec"));
   assert.ok(html.includes("Two commands, two homes"));
-  assert.ok(html.includes("planview upload ./auth-migration-spec.html"));
+  assert.ok(html.includes("plansplease upload ./auth-migration-spec.html"));
   assert.ok(html.includes("Keep it working"));
-  assert.ok(html.includes("plansplease-app-staging.up.railway.app/dashboard"));
+  assert.ok(html.includes('href="https://plansplease-app-staging.up.railway.app/"'));
   assert.ok(html.includes('class="mobile-menu"'));
   assert.ok(html.includes("Pricing"));
   assert.ok(html.includes("Docs"));
@@ -199,4 +216,18 @@ test("an unset BASE_PATH keeps the site at the domain root", () => {
   withBuild({ outputDirectory: "dist-root", basePath: undefined }, (output) =>
     assertHomepage(output, "")
   );
+});
+
+test("site canonical origin supports custom deployments and rejects unsafe metadata URLs", () => {
+  assert.equal(readSiteOrigin("https://product.example.com/"), "https://product.example.com");
+  assert.equal(readSiteOrigin("http://127.0.0.1:4321"), "http://127.0.0.1:4321");
+  for (const value of [
+    "javascript:alert(1)",
+    "http://product.example.com",
+    "https://user:secret@product.example.com",
+    "https://product.example.com/private",
+    "https://product.example.com/?x=1",
+    "https://product.example.com/#x",
+  ])
+    assert.throws(() => readSiteOrigin(value), undefined, value);
 });
