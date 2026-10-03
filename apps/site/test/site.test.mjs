@@ -74,12 +74,12 @@ const assertCloudStorageCopy = (html) => {
 
 const assertStylesheetAndInternalLinks = (html, output, expectedBase) => {
   const origin = readSiteOrigin();
-  const socialImage = `${origin}${expectedBase}/social-preview.png?v=1`;
+  const socialImage = `${origin}${expectedBase}/social-preview.png?v=2`;
   assert.ok(html.includes(`property="og:image" content="${socialImage}"`));
   assert.ok(html.includes(`name="twitter:image" content="${socialImage}"`));
   assert.ok(html.includes(`rel="canonical" href="${origin}${expectedBase}/"`));
   for (const filename of ["favicon.svg", "favicon.ico", "apple-touch-icon.png"]) {
-    assert.ok(html.includes(`href="${expectedBase}/${filename}?v=1"`));
+    assert.ok(html.includes(`href="${expectedBase}/${filename}?v=2"`));
     assert.ok(existsSync(resolve(output, filename)));
   }
   assert.ok(existsSync(resolve(output, "social-preview.png")));

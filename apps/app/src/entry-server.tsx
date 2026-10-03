@@ -4,10 +4,10 @@ import { readAppOrigin } from "~/lib/public-app-url";
 
 // These public values describe the app, never the requested document or account.
 const appOrigin = readAppOrigin(process.env["SITE_URL"]);
-const socialImage = `${appOrigin}/social-preview.png?v=1`;
-const socialTitle = "plansplease app";
+const socialImage = `${appOrigin}/social-preview.png?v=2`;
+const socialTitle = "plansplease";
 const socialDescription = "Review and manage the pages your agent makes.";
-const socialImageAlt = "plansplease app. Your pages, ready to review.";
+const socialImageAlt = "plansplease. Your pages, ready to review.";
 
 export default createHandler(() => (
   <StartServer
@@ -16,9 +16,9 @@ export default createHandler(() => (
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-          <link rel="icon" href="/favicon.ico?v=1" sizes="16x16 32x32 48x48" />
-          <link rel="icon" href="/favicon.svg?v=1" type="image/svg+xml" sizes="any" />
-          <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1" sizes="180x180" />
+          <link rel="icon" href="/favicon.ico?v=2" sizes="16x16 32x32 48x48" />
+          <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" sizes="any" />
+          <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" sizes="180x180" />
           <meta property="og:type" content="website" />
           <meta property="og:site_name" content="plansplease" />
           <meta property="og:title" content={socialTitle} />

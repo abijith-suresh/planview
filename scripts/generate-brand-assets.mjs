@@ -35,7 +35,7 @@ for (const app of ["site", "app", "docs"]) {
   ]) {
     await sharp(icon)
       .resize(size, size)
-      .flatten({ background: "#0c0c0e" })
+      .flatten({ background: "#e5795a" })
       .png()
       .toFile(fileURLToPath(new URL(filename, publicDirectory)));
   }
