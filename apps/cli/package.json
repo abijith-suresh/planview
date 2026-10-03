@@ -1,15 +1,15 @@
 {
   "name": "@abijith-suresh/planview",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Turn an HTML file into a durable, immutable localhost URL.",
   "type": "module",
   "engines": {
     "node": ">=24.19.0 <25"
   },
   "bin": {
-    "planview": "./dist/index.js"
+    "plansplease": "./dist/index.js"
   },
-  "man": "./man/planview.1",
+  "man": "./man/plansplease.1",
   "publishConfig": {
     "access": "public"
   },

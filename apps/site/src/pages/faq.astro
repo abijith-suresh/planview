@@ -27,12 +27,12 @@ import SiteLayout from "../layouts/SiteLayout.astro";
         </summary>
         <div class="faq-answer">
           <p>
-            plansplease gives agent-generated web artifacts a permanent, interactive home. Coding
+            plansplease gives agent-generated web artifacts a saved copy you can reopen. Coding
             agents (Claude, Cursor, ChatGPT, Gemini) often output complete single-page tools,
             simulators, or dashboards.
           </p>
           <p>
-            The plansplease CLI creates an instant, zero-latency local preview on your machine,
+            The plansplease CLI creates a local preview on your machine,
             while our cloud workspace saves your pages so they do not get lost in a
             closed chat thread.
           </p>
@@ -64,13 +64,12 @@ import SiteLayout from "../layouts/SiteLayout.astro";
         </summary>
         <div class="faq-answer">
           <p>
-            Modern browsers enforce strict security restrictions on <code>file://</code> URLs. They
-            block CORS requests, break relative asset fetching, prevent web workers from loading, and
-            restrict Canvas manipulation.
+            Browser security restrictions on <code>file://</code> URLs can prevent module imports,
+            asset requests, and web workers from working as expected.
           </p>
           <p>
             plansplease runs a minimal loopback daemon on <code>127.0.0.1</code> that serves your
-            files over genuine HTTP, eliminating all sandboxing errors with zero configuration.
+            files over HTTP, so relative assets work without starting a development server.
           </p>
         </div>
       </details>
@@ -82,9 +81,8 @@ import SiteLayout from "../layouts/SiteLayout.astro";
         </summary>
         <div class="faq-answer">
           <p>
-            Run the CLI right in your agent's terminal — any harness that can write a file can
-            publish. MCP support is planned, so agent harnesses will be able to publish and
-            inspect pages without leaving their own tools.
+            Use the CLI from your agent's terminal, or connect the <a href="../mcp/">hosted MCP server</a>.
+            After browser sign-in and consent, MCP can list, read, upload, and delete your cloud documents.
           </p>
         </div>
       </details>
@@ -97,7 +95,7 @@ import SiteLayout from "../layouts/SiteLayout.astro";
         <div class="faq-answer">
           <p>
             Local previews stay on your machine's loopback interface. Cloud uploads require GitHub
-            sign-in, and the dashboard lists only your account's documents. The underlying
+            sign-in, and the app lists only your account's documents. The underlying
             UploadThing files are public-read during alpha: anyone with a direct file URL can fetch
             one. Do not upload sensitive content.
           </p>
@@ -106,14 +104,13 @@ import SiteLayout from "../layouts/SiteLayout.astro";
 
       <details class="faq-item">
         <summary>
-          <span>Is plansplease open source?</span>
+          <span>Can I read the source code?</span>
           <span class="faq-toggle-icon" aria-hidden="true">+</span>
         </summary>
         <div class="faq-answer">
           <p>
-            Yes! The entire core runtime, CLI, local daemon, and storage engine are 100% open source
-            under an permissive license on
-            <a href="https://github.com/abijith-suresh/planview">GitHub</a>.
+            The app, CLI, local daemon, and storage implementation are available in the
+            <a href="https://github.com/abijith-suresh/planview">GitHub repository</a>.
           </p>
         </div>
       </details>

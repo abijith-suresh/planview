@@ -49,4 +49,4 @@ clear boundary; keep their public attributes and events small and documented.
 - Avoid inline secrets, unsafe HTML injection, third-party trackers, and opaque
   generated markup. Escape untrusted text and validate at the boundary.
 - Format the final file so it can be opened directly in a browser or published
-  with `planview publish ./page.html`.
+  with `plansplease publish ./page.html`.

@@ -98,34 +98,40 @@ export default function AuthorizeCli() {
     <>
       <Title>Authorize CLI | plansplease</Title>
       <Meta name="referrer" content="no-referrer" />
-      <main class="signed-out-page">
+      <main class="panel-page">
         <p class="eyebrow">plansplease · local CLI</p>
         <h1>Authorize this computer</h1>
         {session().error && (
           <p role="alert">Could not check your session. Refresh this page to try again.</p>
         )}
-        <p>
-          The Planview CLI on this computer is requesting permission to upload HTML pages to your
+        <p class="panel-lede">
+          The plansplease CLI on this computer is requesting permission to upload HTML pages to your
           workspace as {userName()}.
         </p>
         {isValidRequest() ? (
-          <>
+          <div class="panel-actions">
             <button
-              class="button button-primary"
+              class="button-primary"
               type="button"
               disabled={isAuthorizing() || session().isPending || !session().data}
               onClick={() => void authorize()}
             >
               {isAuthorizing() ? "Authorizing…" : "Authorize local CLI"}
             </button>
-            <a class="text-link" href="/dashboard">
+            <a class="text-link" href="/documents">
               Cancel
             </a>
-          </>
+          </div>
         ) : (
-          <p role="alert">This sign-in request is invalid. Return to the CLI and try again.</p>
+          <p class="error-message" role="alert">
+            This sign-in request is invalid. Return to the CLI and try again.
+          </p>
         )}
-        {error() ? <p role="alert">{error()}</p> : null}
+        {error() ? (
+          <p class="error-message" role="alert">
+            {error()}
+          </p>
+        ) : null}
       </main>
     </>
   );

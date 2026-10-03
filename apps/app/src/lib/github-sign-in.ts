@@ -64,7 +64,7 @@ export const startGitHubSignIn = async (
   const upstreamUrl = `${convexSiteUrl}/api/auth/sign-in/social`;
   const requestedReturnTo = requestUrl.searchParams.get("returnTo");
   const oauthQuery = requestUrl.searchParams.get("oauth_query");
-  let callbackURL = "/dashboard";
+  let callbackURL = "/documents";
 
   if (requestedReturnTo) {
     const returnUrl = new URL(requestedReturnTo, appUrl.origin);

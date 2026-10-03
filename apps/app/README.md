@@ -44,15 +44,39 @@ value must be set on the Railway app service and its Convex deployment:
 Convex uses it to delete UploadThing files in the background. Deploy the
 Convex variable before enabling this deletion flow.
 
-The server upload endpoint is limited to one standalone HTML file up to 8 MB.
+The server upload endpoint is limited to one standalone HTML file up to 8 MiB.
 The testing tier uses public-read objects, so anyone who
 obtains an UploadThing object URL may fetch it. The plansplease preview route
 still requires the signed-in workspace session. A future provider such as S3
-or R2 can implement the storage adapter in `src/lib/document-storage.ts`;
-Convex stores the provider name and logical storage locator, not
-provider-specific bytes. New UploadThing records use an owner-bound custom
+or R2 can implement the upload, read-URL, and deletion adapter in
+`src/lib/document-storage.ts`. Browser, CLI, and MCP uploads reserve the adapter's
+predictable provider and locator against the account quota before sending bytes.
+The returned locator must match that reservation before committing metadata or
+confirming storage for cleanup. The provider's network requests share the
+reservation's absolute deadline, including SDK cancellation. Adding a provider
+also requires its Convex metadata validation and
+background deletion implementation. Convex stores that provider and locator,
+not provider-specific bytes. New UploadThing records use an owner-bound custom
 identifier as that locator, while older records using raw UploadThing file
 keys remain supported during the transition.
+
+After authorizing an owner preview, the app returns a small HTML wrapper. The
+browser fetches the HTML bytes directly from UploadThing without credentials or
+a referrer, then opens an HTML Blob in an iframe sandbox without same-origin
+access. This also handles older CDN responses served as octet-stream attachments.
+The browser checks the actual streamed bytes against the 8 MiB limit and shows a
+retry action if delivery fails. Inline scripts continue to work, but the document
+cannot read the workspace session or the wrapper DOM. Relative assets are not
+supported by this standalone HTML flow.
+
+A replacement provider must return an HTTPS read URL with browser CORS support,
+including requests with `Origin: null` from the sandbox. Private providers should
+return short-lived signed read URLs after app authorization. The provider serves
+preview bytes directly, avoiding a second copy through Railway. Provider storage
+and bandwidth charges still apply. Legacy Convex previews and bounded MCP reads
+continue through the server; this change does not remove their service traffic.
+UploadThing objects remain public during this alpha. App authorization, no-store,
+and noindex headers do not turn those CDN URLs into private files.
 
 ## Authentication setup
 
@@ -174,3 +198,58 @@ own scripts without giving it access to the app session or same-origin
 application APIs. Existing Convex-backed records remain readable while the
 new provider boundary is rolled out. Bundles and private storage are later
 slices.
+
+## Account storage quota
+
+Cloud accounts have a default storage quota of 500 MB, or 500,000,000 bytes.
+Set `ACCOUNT_STORAGE_QUOTA_BYTES` to a positive integer in the Convex deployment
+if a different limit is needed. The app and CLI do not set this value.
+
+Browser, CLI, and MCP uploads reserve capacity in one backend transaction before
+sending any file bytes. Existing documents, documents waiting for storage deletion,
+and pending or failed uploads all count toward the limit. Lowering the limit does
+not delete existing documents; it prevents uploads until enough capacity is free.
+The single-file limit remains 8 MiB of HTML. The account limit uses decimal MB;
+the file limit uses binary MiB.
+
+A reservation allows five minutes for uploading. UploadThing requests use that
+absolute deadline. Provider-confirmed uploads whose metadata failed wait another ten minutes before
+storage cleanup. Cleanup retries durably, and capacity is released only after the
+provider confirms deletion or that the object is absent. Uploads with unknown
+provider outcomes, including process crashes and network timeouts, stay charged
+for manual reconciliation. A deadline or an absence check cannot prove a remote
+ingest has stopped, so these reservations are never automatically released.
+An ambiguous metadata response is checked transactionally before cleanup, so a
+successful upload is preserved even if its first response was lost. If reservation
+cancellation cannot reach Convex, the scheduled worker still reconciles it.
+
+Quota admission uses one materialized counter per account after a one-time seed
+from existing document and reservation metadata. Reserving increments it;
+committing exchanges a reservation for a document without changing the total.
+Successful storage cleanup or deletion decrements it in the same transaction
+that removes metadata. Pending deletions and unknown upload outcomes stay charged.
+The first seed may hit Convex transaction read limits for a very large legacy
+account; admission then fails closed. Such accounts need a paged administrator
+backfill during maintenance before accepting uploads. This alpha implementation
+has no billing or paid storage tiers.
+
+### Deployment order
+
+This change requires a short upload maintenance window. Do not roll the new
+backend underneath an old app that still uploads before creating metadata.
+
+1. Stop the app service accepting new uploads and let existing upload requests
+   finish. Wait for the existing provider requests to settle before proceeding.
+2. Deploy the Convex schema and functions, including the account counters,
+   reservations, and cleanup worker. Existing read and deletion endpoints remain
+   available in Convex. New metadata creation now requires a reservation.
+3. Deploy the matching app release, then resume the service. Check a small upload
+   through CLI or MCP, confirm its reservation was exchanged for a document, and
+   check the counter matches retained bytes.
+
+Keep the app and backend on this reservation flow together. App rollback to a
+pre-quota release requires another maintenance window and backend rollback;
+otherwise old uploads can store bytes and then fail reservation validation.
+If a pre-quota backend ever resumes accepting writes, rebuild usage counters from
+retained documents and reservations during maintenance before reenabling quotas.
+No deployment, backfill, or cleanup is performed by this code change.

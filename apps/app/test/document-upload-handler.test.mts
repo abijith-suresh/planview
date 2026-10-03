@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
@@ -14,10 +15,10 @@ const uploadRequestSizeLimit = 8 * 1024 * 1024 + 64 * 1024;
 function createHandler(overrides: Partial<DocumentUploadHandlerDependencies<TestClient>> = {}) {
   const calls = {
     getCurrentUser: 0,
-    uploads: [] as { customId: string; fileName: string }[],
+    uploads: [] as { objectId: string; fileName: string }[],
     metadata: [] as DocumentUploadMetadata[],
     metadataOwners: [] as string[],
-    deletedKeys: [] as string[],
+    abandonedKeys: [] as string[],
   };
   const handler = createDocumentUploadHandler<TestClient>({
     getAuthedClient: async () => ({ client: {}, token: "convex-token" }),
@@ -26,16 +27,23 @@ function createHandler(overrides: Partial<DocumentUploadHandlerDependencies<Test
       return { subject: "owner_123" };
     },
     isStorageConfigured: () => true,
-    uploadFile: async ({ file, customId }) => {
-      calls.uploads.push({ customId, fileName: file.name });
+    getUploadLocator: (objectId) => ({
+      storageProvider: "uploadthing",
+      storageKey: `uploadthing-custom-id:${objectId}`,
+    }),
+    uploadFile: async ({ file, objectId }) => {
+      calls.uploads.push({ objectId, fileName: file.name });
+      return { storageProvider: "uploadthing", storageKey: `uploadthing-custom-id:${objectId}` };
+    },
+    reserveMetadata: async () => ({ id: null, uploadDeadlineAt: Date.now() + 60_000 }),
+    abandonMetadata: async (_client, input) => {
+      calls.abandonedKeys.push(input.storageKey);
+      return null;
     },
     createMetadata: async (_client, input, ownerId) => {
       calls.metadata.push(input);
       calls.metadataOwners.push(ownerId);
       return "document_123";
-    },
-    deleteStorageObject: async (key) => {
-      calls.deletedKeys.push(key);
     },
     createUploadId: () => "uuid-123",
     missingServerConfigurationResponse: () =>
@@ -179,7 +187,7 @@ test("stores one HTML file and binds its storage key to the authenticated owner"
 
   assert.equal(response.status, 201);
   assert.deepEqual(await response.json(), { id: "document_123" });
-  assert.deepEqual(calls.uploads, [{ customId: "owner_123:uuid-123", fileName: "hello.html" }]);
+  assert.deepEqual(calls.uploads, [{ objectId: "owner_123:uuid-123", fileName: "hello.html" }]);
   assert.deepEqual(calls.metadata, [
     {
       title: "My document",
@@ -190,7 +198,7 @@ test("stores one HTML file and binds its storage key to the authenticated owner"
     },
   ]);
   assert.deepEqual(calls.metadataOwners, ["owner_123"]);
-  assert.deepEqual(calls.deletedKeys, []);
+  assert.deepEqual(calls.abandonedKeys, []);
 });
 
 test("does not create metadata when storing the uploaded file fails", async () => {
@@ -207,10 +215,10 @@ test("does not create metadata when storing the uploaded file fails", async () =
   assert.deepEqual(await response.json(), { error: "storage upload failed" });
   assert.equal(uploadAttempts, 1);
   assert.equal(calls.metadata.length, 0);
-  assert.deepEqual(calls.deletedKeys, []);
+  assert.deepEqual(calls.abandonedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
 });
 
-test("deletes the uploaded object if metadata creation fails", async () => {
+test("fences the reserved upload for durable cleanup if metadata creation fails", async () => {
   const { calls, handler } = createHandler({
     createMetadata: async () => {
       throw new Error("metadata creation failed");
@@ -220,11 +228,11 @@ test("deletes the uploaded object if metadata creation fails", async () => {
 
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { error: "metadata creation failed" });
-  assert.deepEqual(calls.uploads, [{ customId: "owner_123:uuid-123", fileName: "hello.html" }]);
-  assert.deepEqual(calls.deletedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
+  assert.deepEqual(calls.uploads, [{ objectId: "owner_123:uuid-123", fileName: "hello.html" }]);
+  assert.deepEqual(calls.abandonedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
 });
 
-test("reports a failed compensation and keeps the metadata error response", async () => {
+test("reports an unavailable cancellation and keeps the metadata error response", async () => {
   const metadataCause = new Error("metadata creation failed");
   const cleanupCause = new Error("storage deletion failed");
   const reports: Array<{
@@ -236,8 +244,8 @@ test("reports a failed compensation and keeps the metadata error response", asyn
     createMetadata: async () => {
       throw metadataCause;
     },
-    deleteStorageObject: async (key) => {
-      calls.deletedKeys.push(key);
+    abandonMetadata: async (_client, input) => {
+      calls.abandonedKeys.push(input.storageKey);
       throw cleanupCause;
     },
     reportCompensationFailure: async (failure) => {
@@ -250,7 +258,7 @@ test("reports a failed compensation and keeps the metadata error response", asyn
 
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { error: "metadata creation failed" });
-  assert.deepEqual(calls.deletedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
+  assert.deepEqual(calls.abandonedKeys, ["uploadthing-custom-id:owner_123:uuid-123"]);
   assert.equal(reports.length, 1);
   assert.deepEqual(reports[0], {
     objectKey: "uploadthing-custom-id:owner_123:uuid-123",
@@ -270,4 +278,116 @@ test("does not expose file storage when it is not configured", async () => {
   });
   assert.equal(calls.uploads.length, 0);
   assert.equal(calls.metadata.length, 0);
+});
+
+test("quota rejection happens before provider uploads and returns actionable structured data", async () => {
+  const failure = {
+    code: "STORAGE_QUOTA_EXCEEDED",
+    message: "Delete documents before uploading more.",
+    limitBytes: 500_000_000,
+    usedBytes: 499_999_999,
+    requestedBytes: 14,
+  };
+  const { calls, handler } = createHandler({
+    reserveMetadata: async () => {
+      throw new ConvexError(failure);
+    },
+  });
+  const response = await handler({ request: createUploadRequest() });
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), { ...failure, error: failure.message });
+  assert.equal(calls.uploads.length, 0);
+  assert.equal(calls.metadata.length, 0);
+  assert.equal(calls.abandonedKeys.length, 0);
+});
+
+test("an ambiguous committed response is recovered without deleting storage", async () => {
+  let confirmed: boolean | undefined;
+  const { handler } = createHandler({
+    createMetadata: async () => {
+      throw new Error("response lost after commit");
+    },
+    abandonMetadata: async (_client, _input, _ownerId, _request, uploadConfirmed) => {
+      confirmed = uploadConfirmed;
+      return "committed-document";
+    },
+  });
+  const response = await handler({ request: createUploadRequest() });
+  assert.equal(confirmed, true);
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), { id: "committed-document" });
+});
+
+test("a provider timeout is marked uncertain rather than safe for cleanup", async () => {
+  let confirmed: boolean | undefined;
+  const { handler } = createHandler({
+    uploadFile: async () => {
+      throw new Error("upload timeout");
+    },
+    abandonMetadata: async (_client, _input, _ownerId, _request, uploadConfirmed) => {
+      confirmed = uploadConfirmed;
+      return null;
+    },
+  });
+  const response = await handler({ request: createUploadRequest() });
+  assert.equal(response.status, 500);
+  assert.equal(confirmed, false);
+});
+
+test("reserves the adapter locator before upload and forwards its absolute deadline", async () => {
+  const order: string[] = [];
+  const deadlineAt = Date.now() + 60_000;
+  const locator = { storageProvider: "uploadthing" as const, storageKey: "provider-owned-locator" };
+  const { handler } = createHandler({
+    getUploadLocator: (objectId) => {
+      assert.equal(objectId, "owner_123:uuid-123");
+      return locator;
+    },
+    reserveMetadata: async (_client, input) => {
+      order.push("reserve");
+      assert.equal(input.storageKey, locator.storageKey);
+      return { id: null, uploadDeadlineAt: deadlineAt };
+    },
+    uploadFile: async (input) => {
+      order.push("upload");
+      assert.equal(input.deadlineAt, deadlineAt);
+      assert.equal(input.objectId, "owner_123:uuid-123");
+      return locator;
+    },
+    createMetadata: async (_client, input) => {
+      order.push("commit");
+      assert.equal(input.storageKey, locator.storageKey);
+      return "document_123";
+    },
+  });
+  assert.equal((await handler({ request: createUploadRequest() })).status, 201);
+  assert.deepEqual(order, ["reserve", "upload", "commit"]);
+});
+
+test("a mismatched provider locator cannot authorize reserved-object cleanup or commit", async () => {
+  let confirmed: boolean | undefined;
+  const { calls, handler } = createHandler({
+    uploadFile: async () => ({ storageProvider: "uploadthing", storageKey: "different-object" }),
+    abandonMetadata: async (_client, _input, _ownerId, _request, uploadConfirmed) => {
+      confirmed = uploadConfirmed;
+      return null;
+    },
+  });
+  const response = await handler({ request: createUploadRequest() });
+  assert.equal(response.status, 500);
+  assert.match((await response.json()).error, /does not match its upload reservation/);
+  assert.equal(confirmed, false);
+  assert.equal(calls.metadata.length, 0);
+});
+
+test("an existing committed reservation skips provider bytes and metadata writes", async () => {
+  const { calls, handler } = createHandler({
+    reserveMetadata: async () => ({ id: "existing-document", uploadDeadlineAt: 0 }),
+  });
+  const response = await handler({ request: createUploadRequest() });
+  assert.equal(response.status, 201);
+  assert.deepEqual(await response.json(), { id: "existing-document" });
+  assert.equal(calls.uploads.length, 0);
+  assert.equal(calls.metadata.length, 0);
+  assert.equal(calls.abandonedKeys.length, 0);
 });

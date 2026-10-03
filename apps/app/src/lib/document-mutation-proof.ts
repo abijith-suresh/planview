@@ -1,4 +1,9 @@
-import { signCreateDocumentProof, type CreateDocumentProofInput } from "../../convex/documentProof";
+import {
+  signCreateDocumentProof,
+  signAbandonDocumentProof,
+  type AbandonDocumentProofInput,
+  type CreateDocumentProofInput,
+} from "../../convex/documentProof";
 
 export const requireMutationSecret = () => {
   const secret = process.env["DOCUMENT_MUTATION_SECRET"];
@@ -10,3 +15,6 @@ export const requireMutationSecret = () => {
 
 export const createDocumentProof = (input: CreateDocumentProofInput) =>
   signCreateDocumentProof(requireMutationSecret(), input);
+
+export const createAbandonDocumentProof = (input: AbandonDocumentProofInput) =>
+  signAbandonDocumentProof(requireMutationSecret(), input);
