@@ -9,7 +9,7 @@ export default function App() {
     <Router
       root={(props) => (
         <MetaProvider>
-          <Title>plansplease workspace</Title>
+          <Title>plansplease app</Title>
           <Meta name="theme-color" content="#0c0c0e" />
           <Suspense>{props.children}</Suspense>
         </MetaProvider>

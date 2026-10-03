@@ -26,6 +26,7 @@ export default defineConfig({
     starlight({
       title: "plansplease docs",
       description: "Guides for local previews, cloud documents, and MCP agents.",
+      favicon: "/favicon.svg?v=2",
       customCss: ["./src/styles/docs.css"],
       tableOfContents: false,
       expressiveCode: {
@@ -41,7 +42,53 @@ export default defineConfig({
           },
         },
       },
-      head: [{ tag: "meta", attrs: { name: "theme-color", content: "#0c0c0e" } }],
+      head: [
+        { tag: "meta", attrs: { name: "theme-color", content: "#0c0c0e" } },
+        {
+          tag: "link",
+          attrs: {
+            rel: "icon",
+            href: `${urls.docsBasePath}favicon.ico?v=2`,
+            sizes: "16x16 32x32 48x48",
+          },
+        },
+        {
+          tag: "link",
+          attrs: {
+            rel: "apple-touch-icon",
+            href: `${urls.docsBasePath}apple-touch-icon.png?v=2`,
+            sizes: "180x180",
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            property: "og:image",
+            content: new URL("social-preview.png?v=2", urls.docsUrl).href,
+          },
+        },
+        { tag: "meta", attrs: { property: "og:image:type", content: "image/png" } },
+        { tag: "meta", attrs: { property: "og:image:width", content: "1200" } },
+        { tag: "meta", attrs: { property: "og:image:height", content: "630" } },
+        {
+          tag: "meta",
+          attrs: { property: "og:image:alt", content: "plansplease. Start with plansplease." },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:image",
+            content: new URL("social-preview.png?v=2", urls.docsUrl).href,
+          },
+        },
+        {
+          tag: "meta",
+          attrs: {
+            name: "twitter:image:alt",
+            content: "plansplease. Start with plansplease.",
+          },
+        },
+      ],
       components: {
         Header: "./src/components/Header.astro",
         ThemeProvider: "./src/components/DarkTheme.astro",

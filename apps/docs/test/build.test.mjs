@@ -66,6 +66,12 @@ test("production root and prefixed builds contain complete navigation, search, a
           .replace(/index\.html$/, "");
         const html = readFileSync(file, "utf8");
         assert.match(html, /plansplease docs/);
+        const socialImage = `${docsUrl}social-preview.png?v=2`;
+        assert.ok(html.includes(`property="og:image" content="${socialImage}"`));
+        assert.ok(html.includes(`name="twitter:image" content="${socialImage}"`));
+        assert.equal((html.match(/property="og:image"/g) ?? []).length, 1);
+        assert.ok(html.includes(`href="${base}favicon.svg?v=2"`));
+        assert.ok(html.includes(`href="${base}apple-touch-icon.png?v=2"`));
         assert.ok(html.includes("<site-search"), `search UI on ${route}`);
         assert.ok(
           html.includes('dataset["theme"] = "dark"'),
