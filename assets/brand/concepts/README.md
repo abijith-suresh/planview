@@ -4,15 +4,20 @@ The brief is precise and approachable, with a distinctive silhouette. The
 existing coral `#e5795a` and dark `#0c0c0e` palette stays. The mark must work in one
 color and at 16 pixels without changing application styles.
 
-![Return geometry developed into a P, with favicon exports](return-refinement.png)
+![B before and after refinement, with favicon exports](return-cleanup.png)
 
-The current proposal is **B, connected bowl**. A longer left stem extends below
+The current proposal is **refined B, connected bowl**. A longer left stem extends below
 the bowl, so the symbol reads as a P. The diagonal opening and rounded corners
 retain the third study's geometry. This variation is used in the PR for review.
+The [refined SVG](return-p-clean.svg) uses one continuous contour. Its stem and
+bowl widths are 12 units, the outer head curves have 12-unit radii, and the inner
+corners and stem ends have 4-unit radii. A 1-unit fillet softens the upper tip.
+Both opening edges run at 45 degrees; they sit on `x + y = 62` and `x + y = 68`.
+The mark fits inside `x = 10–54` and `y = 8–56` on the 64-unit canvas.
 
 Variation A keeps the two forms separate, with a diagonal cut at the lower join.
 Both variations have editable SVG sources and actual-size favicon exports. The
-original Return symbol is included for comparison.
+original Return symbol is included in the [earlier comparison](return-refinement.png).
 
 ## Initial exploration
 
@@ -41,6 +46,7 @@ To rerender the self-contained comparison SVG from the repository root:
 ```sh
 node --input-type=module -e 'import sharp from "sharp"; await sharp("assets/brand/concepts/comparison.svg").png().toFile("assets/brand/concepts/comparison.png")'
 node --input-type=module -e 'import sharp from "sharp"; await sharp("assets/brand/concepts/return-refinement.svg").png().toFile("assets/brand/concepts/return-refinement.png")'
+node --input-type=module -e 'import sharp from "sharp"; await sharp("assets/brand/concepts/return-cleanup.svg").png().toFile("assets/brand/concepts/return-cleanup.png")'
 ```
 
 Research informing the brief:
