@@ -1,33 +1,41 @@
 # Plansplease naming and environments
 
-Status: proposal for the remaining naming, environment, and storage decisions.
-The user approved the staging hostname cutover on 2026-10-01 and accepted GitHub
-sign-in downtime until they update the OAuth callback. They are the only current
-tester. The operational status below records that cutover; this PR itself changes
-documentation only.
+Status: alpha environment decisions accepted on 3 October 2026; production setup deferred pending owner provider configuration.
 
-Use plansplease for the product and public links. Keep published CLI identifiers
-compatible while we establish a separate production environment. For the alpha,
-continue using staging and describe file URLs as public.
+The owner selected public UploadThing storage for the small alpha and generated
+Railway domains. Friends should use a separate, stable production environment;
+staging remains available for development and breaking changes. Infrastructure
+must stay within Railway Hobby, use the smallest practical setup, and report costs
+before provisioning. No paid Convex or UploadThing plan is authorized.
+
+Production must have independent Convex data, a separate UploadThing app, GitHub
+OAuth registration, and independently generated signing/auth secrets. Production
+promotes reviewed commits deliberately; staging development must not deploy over
+friends' running release. Keep the GitHub repository and internal package/data
+identifiers compatible. The CLI command is already `plansplease` after PR #135.
+
+The original hostname cutover below is retained as historical operational context.
+It does not authorize repeating that cutover or changing staging credentials.
 
 ## Current state and proposed names
 
 | Resource | Current | Proposed |
 | --- | --- | --- |
 | Product | plansplease | plansplease |
-| GitHub repository | `abijith-suresh/planview` | Rename to `plansplease` after deployment sources and release automation have a migration plan |
-| Railway project | `planview-cloud` | `plansplease-cloud`, display name only |
-| Railway app service | `app` | `plansplease-app`, shared service name across environments |
+| GitHub repository | `abijith-suresh/planview` | Keep during alpha; any rename needs a separate automation migration |
+| Railway project | `planview-cloud` | Keep for now; display rename is optional |
+| Railway app services | Staging `app`; empty production `plansplease-app-alpha` | Keep explicit environment/service IDs |
 | Railway site service | `plansplease-site` | Keep |
 | Staging app origin | `https://plansplease-app-staging.up.railway.app` | Keep the user-selected host |
 | Staging site origin | `https://plansplease-site-staging.up.railway.app` | Keep |
-| Production app/site origins | No active app deployment or app domain verified | Prefer owned product domains; generated `plansplease-app-prod` and `plansplease-site-prod` are fallback labels |
-| npm package and CLI | `@abijith-suresh/planview`, `planview` | Keep until a separate compatibility release |
+| Production app origin | Reserved `plansplease-app-alpha-production.up.railway.app`; no deployment | Use generated Railway domains during alpha |
+| npm package and CLI | `@abijith-suresh/planview`, `plansplease` | Keep; npm publication is still disabled |
 | Workspace package names, local data paths, environment variable names | Existing `planview` identifiers | Keep until a separate compatibility release |
 
-Railway already has `staging` and `production` environments. The production app
-had no domains or deployments when checked. Provisioning a second running app
-is unnecessary for the current friends-and-family test.
+Railway already has `staging` and `production` environments. Production has a
+reserved app domain and empty services. The owner wants production for friends
+and staging for development.
+The production resources below still require provisioning and verification.
 
 ## Approved staging cutover
 
@@ -232,31 +240,54 @@ Verify login, upload, logout, and recovery of saved new-host credentials when th
 new host is unreachable, including preservation on failed revocation. Do not
 assume reverting Railway variables fixes the CLI default, alias, or credentials.
 
-## Add production when it has a purpose
+## Stable production for friends
 
-Keep staging for tests with friends. Once there is an owned domain and a launch
-date, configure the existing production environment with independent resources:
+The owner deferred provider setup on 3 October 2026. Prepare the existing Railway
+production environment using one app replica and
+small separate static site/docs services. Keep builds at the monorepo root and
+use each workspace's build/start commands. No Railway database, persistent volume,
+additional replicas, custom domain purchase, or Pro-only feature is needed.
+
+Use independent resources:
 
 - A separate Convex deployment and GitHub OAuth app with a production callback.
-- Separate document storage and signing/auth secrets. Never duplicate staging
-  secrets, test documents, or user sessions into production as an environment clone.
-- App and site deploys built from the same reviewed commit. Keep staging changes
-  out of production until checks pass, and retain the previous commit for rollback.
-- Environment-specific `SITE_URL`, `CONVEX_URL`, `CONVEX_SITE_URL`, and
-  `PUBLIC_APP_URL`, with production MCP clients using only the production origin.
+- A separate public UploadThing app and independently generated signing/auth secrets.
+  Do not clone staging secrets, accounts, sessions, or test documents.
+- App, backend, site, and docs built from one reviewed release. Promote an explicit
+  commit, record deployment IDs, verify health/auth/upload/preview/delete/MCP, and
+  keep the prior release for coordinated rollback. Never deploy an unreviewed
+  staging branch automatically to production.
+- Environment-specific app/backend origins and site/docs links. CLI friends use
+  `plansplease login --cloud-url <production-origin>` until a reviewed distribution
+  changes the default; existing staging credentials remain bound to staging.
 
-A second Railway environment does not isolate Convex or storage by itself. Those
-resources need their own credentials and data. Check Railway and provider usage
-before activating production; two running app deployments add resource usage.
+### Cost check before setup
 
-Rename the Railway project and app service display names separately after checking
-service-name variable references and automation. Use IDs in the URL runbook so a
-display-name change does not select the wrong service. Rename the repository last,
-then verify Railway source configuration, release credentials, CI links, and docs.
+Checked on 3 October 2026. Railway reports $0.69 of current-period project usage.
+Last-day average memory is approximately 0.101 GB for app, 0.053 GB for site, and
+0.049 GB for docs. Doubling those idle footprints gives approximately $4.04/month
+of RAM usage at Railway's current per-second rate, before CPU and traffic. This
+is an estimate from a lightly used staging deployment, not a production bill.
 
-Do not rename the published binary, npm package, skill name, local storage
-directories, or environment variables in that PR. Those changes need aliases and
-migration tests so existing installs and saved documents continue to work.
+[Railway Hobby](https://railway.com/pricing) has a $5 monthly minimum with $5 of
+usage included; excess usage is billed. Hobby is not a $5 spending cap. Keep one
+replica per service and inspect actual memory and egress after deployment rather
+than upgrading the plan. Avoid continuous health polling or idle connections that
+would defeat an intentionally enabled sleeping policy. Production availability
+and cold-start behavior must be verified before enabling sleep on its app.
+
+[Convex](https://www.convex.dev/pricing) has free resource allowances. Confirm the
+team's actual plan and aggregate usage when creating the separate deployment.
+[UploadThing](https://uploadthing.com/) lists 2 GB free storage shared across apps;
+a separate production app isolates credentials/files but adds no free allowance.
+The 500 MB account quota is not a global provider cap. Monitor aggregate storage,
+including staging and failed-upload cleanup, before adding more friends. Do not
+activate paid provider plans or silently change workspace-wide hard spending limits.
+
+Rename Railway display labels only if needed for clear environment selection.
+Repository renaming is deferred; it would require a separate automation/source
+migration. Internal package names, data paths, environment variables and skill
+folder names remain compatible.
 
 ## Private storage options for a later implementation PR
 
@@ -294,13 +325,42 @@ provider switch. Copy or re-upload them, verify the replacement, delete the old
 public object, and then update metadata. Only advertise private storage after
 that implementation and the migration checks pass.
 
-## Decisions to settle
+## Accepted decisions and remaining setup
 
-- The staging app label is chosen and active, and the owner confirmed GitHub
-  sign-in reaches the dashboard after updating the callback.
-- Is an owned plansplease domain already available, or should generated Railway
-  domains remain the testing URLs?
-- Keep public UploadThing storage for this test, or prioritize a private Convex
-  proof of concept before inviting more testers?
-- When do we need a separate production deployment, and what monthly resource
-  budget should it have?
+- Public UploadThing storage is accepted for this small alpha. Private storage
+  implementation is deferred; the public-file limitation must remain explicit.
+- Keep generated Railway origins. No domain purchase is needed for this alpha.
+- Set up production for friends while staging remains the development environment.
+- Stay within Railway Hobby and the smallest practical setup. Report costs first;
+  paid provider upgrades require a new decision.
+- Separate production OAuth credentials and the UploadThing app must be created
+  or supplied through their providers. Verify both before calling production ready.
+- Optional revisions, unlisted sharing, and supported self-hosting remain on hold.
+  Cloud artifact bundles in PR #133 are the next approved feature.
+
+## Prepared production resources, not deployed
+
+Railway production environment `e1aea48c-52b6-4103-ad64-3908e9274101` contains
+empty app and site placeholders. Neither has a source or running deployment.
+Staging remains unchanged.
+
+- App service `plansplease-app-alpha`, ID `1cb3cb4e-3a14-4363-a4a6-99e9eb2da15d`.
+- Reserved app origin `https://plansplease-app-alpha-production.up.railway.app`.
+- Site service `plansplease-site-alpha`, ID `8b39c22b-5597-4d06-b186-45b4fe3f64e2`.
+- Docs service creation was rejected by Railway's free-plan resource limit.
+  The second environment already exists; the limit is on provisioned resources,
+  not on creating a second environment. Activate Hobby before completing this
+  three-service production setup, or review a lower-service-count alternative.
+
+The production GitHub OAuth application should use the reserved app origin as its
+homepage and this exact callback:
+
+```text
+https://plansplease-app-alpha-production.up.railway.app/api/auth/callback/github
+```
+
+Create a separate UploadThing app and Convex deployment when resuming. Save provider
+secrets directly to production through provider/CLI inputs; do not paste them in
+chat or commit them. No production backend, OAuth registration, storage app,
+source connection, or running service has been created. Empty Railway placeholders
+do not make the alpha ready for friends.
