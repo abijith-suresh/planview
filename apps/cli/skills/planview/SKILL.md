@@ -42,12 +42,13 @@ it; `status` is read-only. Local snapshots expire after 30 days without access.
 
 ## Cloud upload from the CLI
 
-Sign in once in the browser, then upload one standalone `.html` file up to 8 MiB:
+Sign in once, then upload a standalone `.html` file or an artifact folder up to 8 MiB including its manifest:
 
 ```sh
 plansplease login
 plansplease upload --open ./report.html
 plansplease upload --json ./report.html
+plansplease upload ./artifact/
 ```
 
 `upload` returns the document's workspace preview link. The preview requires the
@@ -69,11 +70,22 @@ Do not copy CLI credentials into MCP configuration.
   request the next page until `nextCursor` is `null`.
 - `read_document` retrieves HTML in chunks of up to 32,768 characters. Continue
   with the same `id` and pass `nextOffset` as `offset` until it is `null`.
+- `list_bundle_files` lists up to 50 files in a bundle. Pass `nextOffset` as `offset`
+  to continue. Bundle documents report `kind: "bundle"` in listing results.
+- `upload_bundle` saves one artifact. Pass `title` and `files`, each with a relative
+  `path` and UTF-8 `content`. Include `index.html`; use URL-safe paths. Keep the
+  encoded bundle within 8 MiB and 512 files. MCP accepts text assets only; the CLI
+  folder flow also supports common image, font, and video assets.
 - `upload_document` saves a new standalone HTML document. Pass `title` and `html`,
   with a title of 1 to 200 characters and a maximum UTF-8 HTML size of 8 MiB.
   Each upload creates a separate document.
 - `delete_document` takes an `id`, hides the document, and queues storage deletion. Confirm the
   user's intent before deleting work they may want to keep.
+
+For bundle reads, `read_document` defaults to `index.html`. Supply `path`, such as
+`styles/main.css` or `scripts/main.mjs`, to inspect a text asset. Its existing `html`
+result field contains the selected text, with `path` and `kind` identifying the
+bundle read. Binary assets are listed but cannot be read as UTF-8 text through MCP.
 
 There is no revision or update tool yet. Keep the original document when creating
 a revised upload, and identify both documents clearly in your response.

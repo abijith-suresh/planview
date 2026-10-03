@@ -2,7 +2,7 @@
 title: Features under review
 description: Separate live staging behavior, merged implementation, feature PRs, and proposals.
 ---
-Status reviewed on **2 October 2026**. A merged repository change is not proof that
+Status reviewed on **3 October 2026**. A merged repository change is not proof that
 staging has deployed it. Check the running service before relying on a new behavior.
 
 ## Current staging workflows
@@ -34,19 +34,22 @@ UploadThing object URLs remain public during alpha.
   uses `plansplease` as the only command. Install a repository build to use it;
   npm publication remains disabled.
 
+- [Cloud artifact bundles, #133](https://github.com/abijith-suresh/planview/pull/133)
+  adds CLI folder uploads and MCP text assets, with relative CSS/JS/module previews.
+  This implementation needs a coordinated app/backend rollout before staging or
+  production can accept bundles. It is not a current live-service promise.
+
 ## Open implementations
 
 | PR | Behavior | Staging status |
 | --- | --- | --- |
 | [#130: unlisted sharing](https://github.com/abijith-suresh/planview/pull/130) | Optional bearer links with rotation/revocation and noindex | Awaiting merge and deployment |
-| [#132: auth routing](https://github.com/abijith-suresh/planview/pull/132) | Correct app/site sign-in and sign-out destinations | Helpers merged in #120; this duplicate PR remains open |
-| [#133: cloud bundles](https://github.com/abijith-suresh/planview/pull/133) | CLI folders, MCP text assets, and relative CSS/JS/module previews | Awaiting merge and deployment |
 
-Cloud bundles would require root `index.html`, at most 512 files, and an 8 MiB
+Cloud bundles require root `index.html`, at most 512 files, and an 8 MiB
 encoded object. MCP text assets and CLI binary assets have different inputs.
-Bundle delivery would pass through the app with a bounded cache, so app bandwidth
+Bundle delivery passes through the app with a bounded cache, so app bandwidth
 costs still apply. Cloud bundles, sharing, and direct browser delivery are not
-current staging promises. The routing helpers are merged in #120, while their original PR remains open.
+current staging promises. The routing helpers are merged in #120, while their original PR #132 is closed as superseded.
 
 ## Proposals only
 

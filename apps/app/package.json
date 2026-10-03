@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prebuild": "node ../../scripts/prepare-auth-adapter.mjs",
-    "pretest": "node ../../scripts/prepare-auth-adapter.mjs",
-    "pretypecheck": "node ../../scripts/prepare-auth-adapter.mjs",
+    "predev": "npm run build --workspace @planview/core && node ../../scripts/prepare-auth-adapter.mjs",
+    "prebuild": "npm run build --workspace @planview/core && node ../../scripts/prepare-auth-adapter.mjs",
+    "pretest": "npm run build --workspace @planview/core && node ../../scripts/prepare-auth-adapter.mjs",
+    "pretypecheck": "npm run build --workspace @planview/core && node ../../scripts/prepare-auth-adapter.mjs",
     "dev": "vite dev",
     "build": "vite build",
     "start": "node .output/server/index.mjs",
@@ -29,7 +30,8 @@
     "solid-js": "1.9.15",
     "uploadthing": "^7.7.4",
     "vite": "8.3.0",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@planview/core": "0.1.0"
   },
   "engines": {
     "node": ">=24"

@@ -58,7 +58,7 @@ export function createUploadThingStorageAdapter(
       remainingUploadTime(deadlineAt);
       const result = await getApi(deadlineAt).uploadFiles(
         new UTFile([bytes], file.name, {
-          type: "text/html",
+          type: file.type,
           customId: objectId,
         }),
         { acl: "public-read", contentDisposition: "inline" }

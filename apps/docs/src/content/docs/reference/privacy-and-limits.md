@@ -43,9 +43,9 @@ reservations, pending deletion, and unresolved provider outcomes. It releases
 charged capacity only when cleanup is confirmed. The object limit uses binary
 MiB; the account default uses decimal MB.
 
-Paid plans and unlimited storage are not available or promised. Cloud bundles
-would count their complete encoded object, including the manifest, against the
-same quota once their separate feature is approved.
+Paid plans and unlimited storage are not available or promised. Cloud bundles on main count their complete encoded object, including the manifest,
+against the same quota. They require the matching app/backend release and are not
+yet deployed.
 
 ## Local retention and deletion
 

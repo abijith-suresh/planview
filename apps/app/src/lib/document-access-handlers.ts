@@ -3,6 +3,7 @@ import { documentPreviewResponse } from "./document-preview.ts";
 
 export type DocumentAccessRecord = Readonly<{
   readonly contentType: string;
+  readonly ownerId?: string;
   readonly title?: string;
   readonly storageProvider?: string;
   readonly storageKey?: string;
@@ -14,6 +15,7 @@ export type DocumentAccessHandlerDependencies<Client> = {
     token: string | null | undefined;
   }>;
   getDocument(client: Client, id: string): Promise<DocumentAccessRecord | null | undefined>;
+  bundlePreview?(id: string, document: DocumentAccessRecord): Promise<Response>;
   getDocumentStorage(provider: string): DocumentStorageAdapter;
   fetch(input: string, init?: RequestInit): Promise<Response>;
   readonly convexSiteUrl: string | undefined;
@@ -50,6 +52,10 @@ export function createDocumentPreviewHandler<Client>(
         return new Response("Not found", { status: 404 });
       }
 
+      if (document.contentType === "application/vnd.planview.bundle") {
+        if (!dependencies.bundlePreview) return new Response("Not found", { status: 404 });
+        return dependencies.bundlePreview(params.id, document);
+      }
       if (document.storageProvider && document.storageKey) {
         const storage = dependencies.getDocumentStorage(document.storageProvider);
         return documentPreviewResponse(

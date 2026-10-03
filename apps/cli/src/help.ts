@@ -20,7 +20,7 @@ const ROOT_HELP = `Usage: plansplease [global-options] <command> [options]
 
 Commands:
   publish <file|folder>  Publish a snapshot and print its URL
-  upload <file>          Upload an HTML page to your cloud workspace
+  upload <file|folder>   Upload an HTML page or artifact to your cloud workspace
   login                  Sign in to your cloud workspace
   logout                 Remove this computer's saved cloud sign-in
   get <id|url>           Write a stored snapshot to standard output
@@ -53,10 +53,10 @@ Options:
   --open                 Open the published URL in the default browser
   --json                 Print the snapshot id and URL as one JSON object
 `,
-  upload: `Usage: plansplease upload [options] <file.html>
+  upload: `Usage: plansplease upload [options] <file.html|folder>
 
-Upload one standalone HTML file to your cloud workspace and print its link.
-Run plansplease login first. The cloud upload limit is 8 MiB.
+Upload an HTML file or artifact folder to your cloud workspace and print its link.
+Run plansplease login first. Folders need index.html; the total cloud limit is 8 MiB.
 
 Options:
   -h, --help             Show this help message

@@ -5,6 +5,7 @@ import {
   existsSync,
   lstatSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   symlinkSync,
@@ -678,5 +679,57 @@ test("cloud upload refuses credentials stored through a symbolic link on POSIX",
 
     assert.equal(lstatSync(credentialsPath).isSymbolicLink(), true);
     await assert.rejects(uploadCloudDocument("unused.html", profile), { code: "ELOOP" });
+  });
+});
+
+test("cloud upload packs an artifact folder and rejects unsupported entries before sending bytes", async () => {
+  await withIsolatedAppData(async (root) => {
+    let uploads = 0;
+    const server = createServer(async (request, response) => {
+      uploads += 1;
+      const chunks: Buffer[] = [];
+      for await (const chunk of request) chunks.push(Buffer.from(chunk));
+      const form = await new Request("http://localhost/upload", {
+        method: "POST",
+        headers: { "content-type": String(request.headers["content-type"]) },
+        body: Buffer.concat(chunks),
+      }).formData();
+      const file = form.get("file");
+      assert.ok(file instanceof File);
+      assert.equal(file.type, "application/vnd.planview.bundle");
+      assert.equal(form.get("title"), "artifact");
+      const { parseCloudBundle, cloudBundleEntry } = await import("@planview/core/cloud-bundle");
+      const bundle = parseCloudBundle(new Uint8Array(await file.arrayBuffer()));
+      assert.deepEqual(
+        Buffer.from(cloudBundleEntry(bundle, "pixel.png").bytes),
+        Buffer.from([137, 80, 78, 71, 0, 255])
+      );
+      assert.equal(
+        Buffer.from(await file.arrayBuffer())
+          .subarray(0, 8)
+          .toString(),
+        "PLVWBND1"
+      );
+      sendJson(response, 201, { id: "artifact-id" });
+    });
+    try {
+      const cloudUrl = await listen(server);
+      await saveTestCredentials("artifact-test", cloudUrl);
+      const artifact = join(root, "artifact");
+      mkdirSync(join(artifact, "scripts"), { recursive: true });
+      writeFileSync(join(artifact, "pixel.png"), Buffer.from([137, 80, 78, 71, 0, 255]));
+      writeFileSync(join(artifact, "index.html"), '<script src="scripts/main.js"></script>');
+      writeFileSync(join(artifact, "scripts", "main.js"), 'document.body.dataset.artifact="yes";');
+      assert.equal((await uploadCloudDocument(artifact, "artifact-test")).id, "artifact-id");
+      assert.equal(uploads, 1);
+      writeFileSync(join(artifact, "unsupported.exe"), "unsupported");
+      await assert.rejects(
+        uploadCloudDocument(artifact, "artifact-test"),
+        /Unsupported bundle file extension/
+      );
+      assert.equal(uploads, 1);
+    } finally {
+      await close(server);
+    }
   });
 });

@@ -27,14 +27,25 @@ upload, and delete documents owned by the signed-in account. OAuth identity and
 refresh flows can also request `openid`, `profile`, `email`, and `offline_access`.
 No current document tool reads another account's workspace.
 
-## Current tools
+## Tools on main
 
 | Tool | Input | Result |
 | --- | --- | --- |
 | `list_documents` | Optional `cursor`, `limit` from 1 to 50 | Document metadata and `nextCursor` |
-| `read_document` | `id`, optional `offset` and `maxCharacters` | HTML text and `nextOffset` |
+| `read_document` | `id`, optional `offset`, `maxCharacters`, and bundle asset `path` | Text and `nextOffset` |
 | `upload_document` | `title`, `html` | New document `id` and workspace preview `url` |
+| `upload_bundle` | `title`, `files` containing relative `path` and UTF-8 `content` | Artifact `id`, owner preview `url`, `kind`, and `fileCount` |
+| `list_bundle_files` | `id`, optional `offset` and `limit` from 1 to 50 | Asset paths and `nextOffset` |
 | `delete_document` | `id` | Hides the document and queues provider cleanup |
+
+The bundle tools and asset-path reads require the matching app/backend release.
+They are implemented on main and awaiting rollout; current staging still supports
+standalone HTML tools only. See [deployment status](../../reference/planned-features/).
+
+Bundles require root `index.html`, at most 512 files, and an encoded total up to
+8 MiB including the manifest. MCP uploads accept UTF-8 text assets only. A read
+without `path` opens `index.html`; binary assets can be listed and previewed but
+cannot be read as text. Continue file listing with `offset: nextOffset`.
 
 A title contains 1 to 200 characters. HTML is limited to 8 MiB of UTF-8 bytes.
 The preview URL requires the owning account's browser session; OAuth does not
@@ -62,5 +73,5 @@ both app and backend. It is not a switch users can enable in their client.
 An unsupported client may fail before the sign-in page appears.
 See [troubleshooting](../../reference/troubleshooting/) before changing credentials.
 
-Cloud bundle tools and explicit unlisted sharing are
-[separate features under review](../../reference/planned-features/).
+Cloud bundles await deployment; explicit unlisted sharing remains
+[a separate feature under review](../../reference/planned-features/).

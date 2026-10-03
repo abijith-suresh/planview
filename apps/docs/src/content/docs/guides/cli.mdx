@@ -83,3 +83,17 @@ plansplease skills install
 
 The skill installer writes `planview` and `create-html` to `~/.agents/skills`.
 It refuses existing directories unless `--force` is supplied.
+
+## Cloud artifact folders on main
+
+The repository CLI accepts `plansplease upload ./artifact/`. The destination must
+run the matching bundle-enabled app/backend release; current staging has not
+received that rollout. A folder needs root `index.html`, no more than 512 files,
+and an encoded total up to 8 MiB including its manifest. Relative CSS, JavaScript,
+module imports, supported images, fonts, and media stay with the HTML.
+
+The returned preview requires its owner account. It checks current document access
+before serving each asset. Reopen the stable preview link if its five-minute asset
+capability expires. Asset delivery uses the app service and consumes Railway
+bandwidth; UploadThing alpha objects remain public. See
+[privacy and limits](../../reference/privacy-and-limits/).

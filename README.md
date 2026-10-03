@@ -1,6 +1,6 @@
 # plansplease
 
-plansplease is a TypeScript ESM monorepo for previewing HTML locally and saving standalone pages in an
+plansplease is a TypeScript ESM monorepo for previewing HTML locally and saving pages and artifact folders in an
 account-based alpha cloud workspace. Cloud file URLs are public during testing. The CLI command is `plansplease`;
 existing `planview` scripts need updating. Profiles, documents, credentials and daemon
 state retain their locations. Package names,

@@ -44,7 +44,9 @@ value must be set on the Railway app service and its Convex deployment:
 Convex uses it to delete UploadThing files in the background. Deploy the
 Convex variable before enabling this deletion flow.
 
-The server upload endpoint is limited to one standalone HTML file up to 8 MiB.
+The server upload endpoint accepts standalone HTML or one artifact bundle up to 8 MiB.
+See [cloud artifacts](./CLOUD_BUNDLES.md) for folder uploads, supported assets,
+preview capabilities, and delivery costs.
 The testing tier uses public-read objects, so anyone who
 obtains an UploadThing object URL may fetch it. The plansplease preview route
 still requires the signed-in workspace session. A future provider such as S3
@@ -106,7 +108,9 @@ with Client ID Metadata Documents (CIMD), account sign-in, explicit consent,
 and a `cloud:documents` scope. Agents can list, read, upload, and delete only
 the signed-in account's cloud documents. `read_document` returns at most 32,768
 characters per call; repeat with `nextOffset` to read the rest. Uploads accept
-one HTML document up to 8 MiB. `upload_document` returns `{ id, url }`, where
+one HTML document or artifact bundle up to 8 MiB. `upload_bundle` accepts UTF-8
+assets, and `list_bundle_files` lists their paths. `read_document` accepts an
+optional asset `path`. `upload_document` returns `{ id, url }`, where
 `url` is the account workspace preview and requires the owning account to be
 signed in. It is not an anonymous share link or a direct storage URL.
 There is no document count quota during
@@ -178,7 +182,7 @@ The current staging service is configured with that contract. It needs
   `continueCursor`. Pass `cursor=<continueCursor>` to read the next page. The
   limit must be between 1 and 100. Requests without pagination parameters
   retain the original array response for existing clients.
-- `POST /api/documents/upload` uploads an HTML file and records its metadata
+- `POST /api/documents/upload` uploads HTML or a validated bundle and records its metadata
   in one server request. It accepts either a web session or a CLI upload-only
   credential; CLI credentials cannot list, view, or delete documents.
 - `POST /api/cli/session` issues a revocable upload-only credential after the
@@ -209,7 +213,7 @@ Browser, CLI, and MCP uploads reserve capacity in one backend transaction before
 sending any file bytes. Existing documents, documents waiting for storage deletion,
 and pending or failed uploads all count toward the limit. Lowering the limit does
 not delete existing documents; it prevents uploads until enough capacity is free.
-The single-file limit remains 8 MiB of HTML. The account limit uses decimal MB;
+The single-object limit is 8 MiB, including a bundle manifest and all its assets. The account limit uses decimal MB;
 the file limit uses binary MiB.
 
 A reservation allows five minutes for uploading. UploadThing requests use that

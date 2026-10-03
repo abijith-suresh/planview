@@ -11,7 +11,7 @@ export type DocumentUploadMetadata = {
   title: string;
   storageProvider: StoredDocument["storageProvider"];
   storageKey: string;
-  contentType: "text/html";
+  contentType: "text/html" | "application/vnd.planview.bundle";
   sizeBytes: number;
 };
 

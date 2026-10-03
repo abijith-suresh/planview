@@ -1,3 +1,4 @@
+import { cloudBundleContentType, packCloudBundle } from "../src/lib/cloud-bundle.ts";
 import { ConvexError } from "convex/values";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -158,7 +159,8 @@ test("rejects invalid titles, multiple files, non-HTML files, and files larger t
 
       assert.equal(response.status, 400);
       assert.deepEqual(await response.json(), {
-        error: "Upload one .html file up to 8 MiB with a title of 1 to 200 characters",
+        error:
+          "Upload one HTML file or artifact bundle up to 8 MiB with a title of 1 to 200 characters",
       });
       assert.equal(calls.uploads.length, 0);
       assert.equal(calls.metadata.length, 0);
@@ -390,4 +392,36 @@ test("an existing committed reservation skips provider bytes and metadata writes
   assert.equal(calls.uploads.length, 0);
   assert.equal(calls.metadata.length, 0);
   assert.equal(calls.abandonedKeys.length, 0);
+});
+
+test("bundle multipart uploads validate before quota admission and preserve exact encoded charge", async () => {
+  const bytes = packCloudBundle([
+    { path: "index.html", content: "<h1>Artifact</h1>" },
+    { path: "style.css", content: "h1{color:red}" },
+  ]);
+  const { calls, handler } = createHandler();
+  const response = await handler({
+    request: createUploadRequest({
+      files: [
+        new File([new Uint8Array(bytes)], "artifact.planview", { type: cloudBundleContentType }),
+      ],
+    }),
+  });
+  assert.equal(response.status, 201);
+  assert.equal(calls.metadata[0]?.contentType, cloudBundleContentType);
+  assert.equal(calls.metadata[0]?.sizeBytes, bytes.byteLength);
+  const invalid = createHandler({
+    reserveMetadata: async () => assert.fail("invalid bundle must not reserve"),
+  });
+  assert.equal(
+    (
+      await invalid.handler({
+        request: createUploadRequest({
+          files: [new File(["invalid"], "artifact.planview", { type: cloudBundleContentType })],
+        }),
+      })
+    ).status,
+    400
+  );
+  assert.equal(invalid.calls.uploads.length, 0);
 });

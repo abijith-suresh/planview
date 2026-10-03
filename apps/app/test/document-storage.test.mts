@@ -5,6 +5,7 @@ import { setTimeout } from "node:timers/promises";
 import { createUploadThingUploadFetch } from "../src/lib/document-storage-uploadthing.ts";
 
 import { createUploadThingStorageAdapter } from "../src/lib/document-storage.ts";
+import { cloudBundleContentType, packCloudBundle } from "../src/lib/cloud-bundle.ts";
 
 test("passes custom IDs to UploadThing and accepts an idempotent zero-count deletion", async () => {
   const calls: Array<{ key: string; keyType: string }> = [];
@@ -50,7 +51,7 @@ test("upload owns provider-specific options and returns its locator", async () =
   });
   assert.deepEqual(
     await adapter.upload({
-      file: new File(["<h1>Plan</h1>"], "plan.html"),
+      file: new File(["<h1>Plan</h1>"], "plan.html", { type: "text/html" }),
       objectId: "owner_123:object-456",
       deadlineAt: Date.now() + 60_000,
     }),
@@ -59,6 +60,34 @@ test("upload owns provider-specific options and returns its locator", async () =
       storageKey: "uploadthing-custom-id:owner_123:object-456",
     }
   );
+});
+
+test("bundle uploads preserve encoded bytes, MIME and the reserved provider locator", async () => {
+  const bytes = packCloudBundle([
+    { path: "index.html", content: '<link rel="stylesheet" href="style.css"><h1>Plan</h1>' },
+    { path: "style.css", content: "h1{color:coral}" },
+  ]);
+  const objectId = "owner:artifact";
+  const deadlineAt = Date.now() + 60_000;
+  const adapter = createUploadThingStorageAdapter((deadline) => {
+    assert.equal(deadline, deadlineAt);
+    return {
+      uploadFiles: async (file) => {
+        assert.equal(file.type, cloudBundleContentType);
+        assert.equal(file.customId, objectId);
+        assert.deepEqual(new Uint8Array(await file.arrayBuffer()), bytes);
+        return { data: { key: "provider-result" }, error: null };
+      },
+      getFileUrls: async () => ({ data: [] }),
+      deleteFiles: async () => ({ success: true, deletedCount: 0 }),
+    };
+  });
+  const result = await adapter.upload({
+    file: new File([new Uint8Array(bytes)], "artifact.planview", { type: cloudBundleContentType }),
+    objectId,
+    deadlineAt,
+  });
+  assert.deepEqual(result, adapter.getUploadLocator(objectId));
 });
 
 test("reads both custom locators and older raw file keys", async () => {

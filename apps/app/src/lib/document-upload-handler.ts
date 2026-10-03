@@ -1,3 +1,5 @@
+import { cloudBundleContentType, parseCloudBundle } from "./cloud-bundle.ts";
+
 import {
   uploadReservedDocument,
   storageQuotaErrorResponse,
@@ -129,28 +131,41 @@ export function createDocumentUploadHandler<Client>(
       const titleField = formData.get("title");
       const title = typeof titleField === "string" ? titleField.trim() : "";
 
+      const bundle =
+        file instanceof File &&
+        file.type === cloudBundleContentType &&
+        file.name.toLowerCase().endsWith(".planview");
       if (
         files.length !== 1 ||
         typeof File === "undefined" ||
         !(file instanceof File) ||
-        !file.name.toLowerCase().endsWith(".html") ||
-        file.type !== "text/html" ||
+        (!bundle && (!file.name.toLowerCase().endsWith(".html") || file.type !== "text/html")) ||
         file.size > MAX_FILE_SIZE_BYTES ||
         title.length === 0 ||
         title.length > 200
       ) {
         return Response.json(
-          { error: "Upload one .html file up to 8 MiB with a title of 1 to 200 characters" },
+          {
+            error:
+              "Upload one HTML file or artifact bundle up to 8 MiB with a title of 1 to 200 characters",
+          },
           { status: 400 }
         );
       }
 
+      if (bundle) {
+        try {
+          parseCloudBundle(new Uint8Array(await file.arrayBuffer()));
+        } catch {
+          return Response.json({ error: "Invalid HTML/CSS/JS bundle" }, { status: 400 });
+        }
+      }
       const objectId = `${identity.subject}:${dependencies.createUploadId()}`;
       const locator = dependencies.getUploadLocator(objectId);
       const metadata: DocumentUploadMetadata = {
         title,
         ...locator,
-        contentType: "text/html",
+        contentType: bundle ? cloudBundleContentType : "text/html",
         sizeBytes: file.size,
       };
       const id = await uploadReservedDocument({

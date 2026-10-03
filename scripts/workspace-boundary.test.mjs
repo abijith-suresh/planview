@@ -434,12 +434,12 @@ test("require.resolve and import.meta.resolve calls are dependency references", 
       root,
       "apps/app/src/resolve-apis.mts",
       [
-        'require.resolve("@planview/core");',
+        'require.resolve("@planview/local");',
         'import.meta.resolve("@planview/daemon");',
         "const loader = require;",
         'loader.resolve("@planview/storage");',
         "const object = { resolve: (specifier: string) => specifier };",
-        'object.resolve("@planview/core");',
+        'object.resolve("@planview/local");',
         "function shadowed(require: { resolve: (specifier: string) => string }) {",
         '  require.resolve("@planview/daemon");',
         "}",
@@ -448,7 +448,7 @@ test("require.resolve and import.meta.resolve calls are dependency references", 
 
     assert.deepEqual(
       auditWorkspaceBoundaries(root).map(({ target, specifier }) => ({ target, specifier })),
-      ["@planview/core", "@planview/daemon", "@planview/storage"].map((specifier) => ({
+      ["@planview/daemon", "@planview/local", "@planview/storage"].map((specifier) => ({
         target: specifier,
         specifier,
       }))
@@ -925,7 +925,7 @@ test("process.getBuiltinModule bootstraps node:module with aliases and respects 
       [
         'const moduleApi = process.getBuiltinModule("node:module");',
         'moduleApi.createRequire(import.meta.url)("@planview/daemon");',
-        'process.getBuiltinModule("node:module").createRequire(import.meta.url)("@planview/core");',
+        'process.getBuiltinModule("node:module").createRequire(import.meta.url)("@planview/local");',
         "const processAlias = process;",
         'const moduleAlias = processAlias.getBuiltinModule("module");',
         'moduleAlias.createRequire(import.meta.url)("@planview/storage");',
@@ -946,15 +946,15 @@ test("process.getBuiltinModule bootstraps node:module with aliases and respects 
       [
         {
           kind: "import",
-          target: "@planview/core",
-          message:
-            "apps/app/src/process-builtin-module.mts: @planview/app may not depend on @planview/core through @planview/core",
-        },
-        {
-          kind: "import",
           target: "@planview/daemon",
           message:
             "apps/app/src/process-builtin-module.mts: @planview/app may not depend on @planview/daemon through @planview/daemon",
+        },
+        {
+          kind: "import",
+          target: "@planview/local",
+          message:
+            "apps/app/src/process-builtin-module.mts: @planview/app may not depend on @planview/local through @planview/local",
         },
         {
           kind: "import",
@@ -1314,7 +1314,7 @@ test("unresolved workspace aliases fail closed", () => {
 
 test("workspace-root configs, scripts, and Astro inline scripts are scanned", () => {
   withFixture((root) => {
-    writeFixtureFile(root, "apps/app/vite.config.ts", 'import "@planview/core";\n');
+    writeFixtureFile(root, "apps/app/vite.config.ts", 'import "@planview/local";\n');
     writeFixtureFile(root, "apps/site/astro.config.ts", 'import "@planview/daemon";\n');
     writeFixtureFile(root, "apps/site/server.mjs", 'require("@planview/storage");\n');
     writeFixtureFile(root, "apps/site/.storybook/main.ts", 'import "@planview/daemon";\n');
@@ -1329,7 +1329,7 @@ test("workspace-root configs, scripts, and Astro inline scripts are scanned", ()
       specifier,
     }));
     const expected = [
-      { file: "apps/app/vite.config.ts", specifier: "@planview/core" },
+      { file: "apps/app/vite.config.ts", specifier: "@planview/local" },
       { file: "apps/site/astro.config.ts", specifier: "@planview/daemon" },
       { file: "apps/site/server.mjs", specifier: "@planview/storage" },
       { file: "apps/site/src/inline-script.astro", specifier: "@planview/core" },

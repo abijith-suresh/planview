@@ -16,7 +16,7 @@ The npm package, local data paths, and PLANVIEW environment settings retain thei
 .PP
 .B plansplease
 publishes an HTML file or page folder to a local daemon and returns a stable
-localhost URL. It can also upload a standalone HTML file to the cloud workspace.
+localhost URL. It can also upload an HTML file or artifact folder to the cloud workspace.
 A page folder must contain
 .B index.html
 and is published with its assets.
@@ -56,8 +56,8 @@ to sign in to another app origin.
 .B logout
 Remove the saved cloud sign-in from this computer.
 .TP
-.B upload [options] file.html
-Upload one standalone HTML file up to 8 MiB and print its workspace preview URL.
+.B upload [options] file.html|folder
+Upload an HTML file or artifact folder and print its workspace preview URL. Folders require index.html, at most 512 files, and 8 MiB including the manifest.
 The preview requires an authenticated browser session.
 .TP
 .B get id|url

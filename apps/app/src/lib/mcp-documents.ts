@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { readBundleText, listBundleFilePage } from "./mcp-bundle-reads.ts";
+import { cloudBundleContentType, packCloudBundle, cloudBundleMime } from "./cloud-bundle.ts";
+import { serverBundleReadCache, bundleCacheKey, readBoundedBundle } from "./bundle-read-cache.ts";
 
 import type { Id } from "../../convex/_generated/dataModel";
 
@@ -14,12 +17,14 @@ const maxReadCharacters = 32_768;
 // Each MCP request creates a service, but sequential chunk reads can share one
 // bounded document in this process. Access is still checked by Convex first.
 const documentReadCache = createDocumentReadCache();
+const bundleReadCache = serverBundleReadCache;
 
 export type McpDocument = {
   id: string;
   title: string;
   sizeBytes: number;
   createdAt: number;
+  kind?: "bundle";
 };
 
 const present = (document: {
@@ -27,11 +32,13 @@ const present = (document: {
   title: string;
   sizeBytes: number;
   createdAt: number;
+  contentType?: string;
 }): McpDocument => ({
   id: document._id,
   title: document.title,
   sizeBytes: document.sizeBytes,
   createdAt: document.createdAt,
+  ...(document.contentType === cloudBundleContentType ? { kind: "bundle" as const } : {}),
 });
 
 const readBoundedHtml = async (response: Response) => {
@@ -66,6 +73,65 @@ export function createMcpDocumentService(ownerId: string) {
   if (!ownerId) throw new Error("MCP identity is missing");
   const client = getUnauthedConvexClient();
 
+  const upload = async (
+    title: string,
+    bytes: Uint8Array<ArrayBuffer>,
+    contentType: "text/html" | typeof cloudBundleContentType
+  ) => {
+    const cleanTitle = title.trim();
+    if (cleanTitle.length < 1 || cleanTitle.length > 200) {
+      throw new Error("Title must be between 1 and 200 characters");
+    }
+    if (bytes.length > maxFileBytes) throw new Error("Document exceeds the 8 MiB limit");
+    const objectId = `${ownerId}:${randomUUID()}`;
+    const storage = getDocumentStorage();
+    const locator = storage.getUploadLocator(objectId);
+    const input = {
+      title: cleanTitle,
+      ...locator,
+      contentType,
+      sizeBytes: bytes.length,
+    };
+    const arguments_ = [
+      input.title,
+      input.storageProvider,
+      input.storageKey,
+      input.contentType,
+      input.sizeBytes,
+    ];
+    const uploadArguments = async (action: "reserve" | "create" | "abandon") => ({
+      ownerId,
+      ...input,
+      proof: await createMcpDocumentProof({ action, ownerId, arguments: arguments_ }),
+      createProof: await createDocumentProof({ ownerId, ...input }),
+    });
+    const id = await uploadReservedDocument({
+      metadata: input,
+      file: new File(
+        [bytes],
+        contentType === cloudBundleContentType ? "document.planview" : "document.html",
+        { type: contentType }
+      ),
+      objectId,
+      reserve: async () =>
+        client.mutation(api.mcpDocuments.reserveUpload, await uploadArguments("reserve")),
+      upload: (input) => storage.upload(input),
+      commit: async () => client.mutation(api.mcpDocuments.create, await uploadArguments("create")),
+      abandon: async (uploadConfirmed) =>
+        client.mutation(api.mcpDocuments.abandonUpload, {
+          ...(await uploadArguments("abandon")),
+          uploadConfirmed,
+          proof: await createMcpDocumentProof({
+            action: "abandon",
+            ownerId,
+            arguments: [...arguments_, Number(uploadConfirmed)],
+          }),
+          outcomeProof: await createAbandonDocumentProof({ ownerId, ...input, uploadConfirmed }),
+        }),
+    });
+    return { id };
+  };
+
   return {
     async list(cursor: string | null = null, limit = 25) {
       if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) {
@@ -86,7 +152,8 @@ export function createMcpDocumentService(ownerId: string) {
       };
     },
 
-    async read(id: string, offset = 0, maxCharacters = maxReadCharacters) {
+    async read(id: string, offset = 0, maxCharacters = maxReadCharacters, path?: string) {
+      if (path !== undefined) cloudBundleMime(path);
       if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Invalid read offset");
       if (
         !Number.isSafeInteger(maxCharacters) ||
@@ -102,6 +169,25 @@ export function createMcpDocumentService(ownerId: string) {
       });
       if (!result) return null;
       const { document, legacyReadUrl } = result;
+      if (document.contentType === cloudBundleContentType) {
+        if (!document.storageProvider || !document.storageKey)
+          throw new Error("Bundle storage is unavailable");
+        const bundle = await bundleReadCache.load(
+          bundleCacheKey(document.storageProvider, document.storageKey),
+          async () => {
+            const url = await getDocumentStorage(document.storageProvider!).getReadUrl(
+              document.storageKey!
+            );
+            return readBoundedBundle(await fetch(url, { signal: AbortSignal.timeout(20_000) }));
+          }
+        );
+        return {
+          ...present(document),
+          ...readBundleText(bundle, path ?? "index.html", offset, maxCharacters),
+        };
+      }
+      if (path !== undefined && path !== "index.html")
+        throw new Error("Standalone HTML documents do not contain asset files");
       const html = await documentReadCache.load(JSON.stringify([ownerId, id]), async () => {
         const url =
           document.storageProvider && document.storageKey
@@ -119,57 +205,50 @@ export function createMcpDocumentService(ownerId: string) {
       };
     },
 
-    async upload(title: string, html: string) {
-      const cleanTitle = title.trim();
-      const bytes = new TextEncoder().encode(html);
-      if (cleanTitle.length < 1 || cleanTitle.length > 200) {
-        throw new Error("Title must be between 1 and 200 characters");
-      }
-      if (bytes.length > maxFileBytes) throw new Error("HTML exceeds the 8 MiB limit");
-      const objectId = `${ownerId}:${randomUUID()}`;
-      const storage = getDocumentStorage();
-      const locator = storage.getUploadLocator(objectId);
-      const input = {
-        title: cleanTitle,
-        ...locator,
-        contentType: "text/html" as const,
-        sizeBytes: bytes.length,
-      };
-      const arguments_ = [
-        input.title,
-        input.storageProvider,
-        input.storageKey,
-        input.contentType,
-        input.sizeBytes,
-      ];
-      const uploadArguments = async (action: "reserve" | "create" | "abandon") => ({
+    upload(title: string, html: string) {
+      return upload(title, new TextEncoder().encode(html), "text/html");
+    },
+    async uploadBundle(title: string, files: readonly { path: string; content: string }[]) {
+      const result = await upload(
+        title,
+        new Uint8Array(packCloudBundle(files)),
+        cloudBundleContentType
+      );
+      return { ...result, kind: "bundle" as const, fileCount: files.length };
+    },
+
+    async listBundleFiles(id: string, offset = 0, limit = 50) {
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(limit) ||
+        limit < 1 ||
+        limit > 50
+      )
+        throw new Error("Invalid bundle file page");
+      const result = await client.query(api.mcpDocuments.get, {
         ownerId,
-        ...input,
-        proof: await createMcpDocumentProof({ action, ownerId, arguments: arguments_ }),
-        createProof: await createDocumentProof({ ownerId, ...input }),
+        id: id as Id<"documents">,
+        proof: await createMcpDocumentProof({ action: "get", ownerId, arguments: [id] }),
       });
-      const id = await uploadReservedDocument({
-        metadata: input,
-        file: new File([bytes], "document.html", { type: "text/html" }),
-        objectId,
-        reserve: async () =>
-          client.mutation(api.mcpDocuments.reserveUpload, await uploadArguments("reserve")),
-        upload: (input) => storage.upload(input),
-        commit: async () =>
-          client.mutation(api.mcpDocuments.create, await uploadArguments("create")),
-        abandon: async (uploadConfirmed) =>
-          client.mutation(api.mcpDocuments.abandonUpload, {
-            ...(await uploadArguments("abandon")),
-            uploadConfirmed,
-            proof: await createMcpDocumentProof({
-              action: "abandon",
-              ownerId,
-              arguments: [...arguments_, Number(uploadConfirmed)],
-            }),
-            outcomeProof: await createAbandonDocumentProof({ ownerId, ...input, uploadConfirmed }),
-          }),
-      });
-      return { id };
+      if (!result) return null;
+      const { document } = result;
+      if (
+        document.contentType !== cloudBundleContentType ||
+        !document.storageProvider ||
+        !document.storageKey
+      )
+        throw new Error("Document is not a bundle");
+      const bundle = await bundleReadCache.load(
+        bundleCacheKey(document.storageProvider!, document.storageKey!),
+        async () => {
+          const url = await getDocumentStorage(document.storageProvider!).getReadUrl(
+            document.storageKey!
+          );
+          return readBoundedBundle(await fetch(url, { signal: AbortSignal.timeout(20_000) }));
+        }
+      );
+      return { id, ...listBundleFilePage(bundle, offset, limit) };
     },
 
     async delete(id: string) {
