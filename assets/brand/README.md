@@ -1,7 +1,8 @@
 # plansplease brand assets
 
-All three apps use the Held icon on the existing coral and dark palette. Its
-page-shaped head and rounded supporting stem suggest a lowercase p. The site,
+All three apps use the proposed Return P icon on the existing coral and dark
+palette. A long stem and connected bowl establish the P; rounded corners and a
+diagonal opening retain the geometry of the Return study. The site,
 app and docs each have a 1200 × 630 PNG preview. Text is outlined in the editable
 SVG sources using Schibsted Grotesk 600 and Instrument Sans 400, matching the UI.
 Their font licenses are included here. Outlines keep rendering independent of
@@ -26,5 +27,5 @@ HTML content or account details in link previews. The larger icons are static
 assets for future use; this change does not add a service worker or install flow.
 
 The [icon studies](concepts/README.md) record the alternatives and actual-size
-favicon exports. Held is used in this PR. The studies remain outside the public
+favicon exports. Return P, the connected-bowl variation, is used in this PR. The studies remain outside the public
 directories and are not served by the applications.
